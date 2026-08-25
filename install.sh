@@ -199,29 +199,35 @@ if (fs.existsSync(dataFile)) {
   }
 }
 
-// Если профилей еще нет, создаем профиль Default из существующих файлов на роутере
+// Если профилей нет, создаем профиль Default из существующих файлов на роутере
 if (!data.profiles || data.profiles.length === 0) {
-  let outboundContent = '{\\n  \"outbounds\": []\\n}';
-  let routingContent = '{\\n  \"routing\": {\\n    \"rules\": []\\n  }\\n}';
+  let outboundContent = '{\n  \"outbounds\": []\n}';
+  let routingContent = '{\n  \"routing\": {\n    \"rules\": []\n  }\n}';
   let extractedAddress = '';
 
   if (fs.existsSync(outboundPath)) {
     try {
       outboundContent = fs.readFileSync(outboundPath, 'utf8').trim();
       
-      // Попытка извлечь адрес сервера из outbound
+      // Извлечение адреса сервера
       try {
         const clean = outboundContent.replace(/(\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)/g, '');
         const parsed = JSON.parse(clean);
-        if (parsed.outbounds && parsed.outbounds[0]) {
-          const ob = parsed.outbounds[0];
+        const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        for (const ob of list) {
+          if (!ob || ob.tag === 'direct' || ob.tag === 'block') continue;
           if (ob.settings && ob.settings.vnext && ob.settings.vnext[0] && ob.settings.vnext[0].address) {
             extractedAddress = ob.settings.vnext[0].address;
-          } else if (ob.settings && ob.settings.servers && ob.settings.servers[0] && ob.settings.servers[0].address) {
+            break;
+          }
+          if (ob.settings && ob.settings.servers && ob.settings.servers[0] && ob.settings.servers[0].address) {
             extractedAddress = ob.settings.servers[0].address;
+            break;
           }
         }
-      } catch (err) {
+      } catch (err) {}
+
+      if (!extractedAddress) {
         const match = outboundContent.match(/\"address\"\s*:\s*\"([^\"]+)\"/i);
         if (match && match[1]) {
           extractedAddress = match[1];
@@ -241,7 +247,7 @@ if (!data.profiles || data.profiles.length === 0) {
   }
 
   const defaultProfileId = 'prof_default_' + Date.now();
-  const description = extractedAddress ? 'Адрес: ' + extractedAddress : 'Текущая конфигурация роутера';
+  const description = extractedAddress ? extractedAddress : 'Текущая конфигурация роутера';
 
   const defaultProfile = {
     id: defaultProfileId,
@@ -254,7 +260,7 @@ if (!data.profiles || data.profiles.length === 0) {
 
   data.profiles = [defaultProfile];
   data.settings.activeProfileId = defaultProfileId;
-  console.log('Создан профиль Default' + (extractedAddress ? ' (найден адрес: ' + extractedAddress + ')' : ''));
+  console.log('Создан профиль Default' + (extractedAddress ? ' (адрес в описании: ' + extractedAddress + ')' : ''));
 }
 
 fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), 'utf8');
