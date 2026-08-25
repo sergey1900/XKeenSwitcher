@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0e1526" />
+      <stop offset="100%" stop-color="#050811" />
+    </linearGradient>
+
+    <!-- Outer Ring Gradient -->
+    <linearGradient id="ringGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+
+    <!-- Top Arrow Gradient -->
+    <linearGradient id="topArrowGrad" x1="12" y1="12" x2="52" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#22d3ee" />
+    </linearGradient>
+
+    <!-- Bottom Arrow Gradient -->
+    <linearGradient id="bottomArrowGrad" x1="52" y1="52" x2="12" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+
+    <!-- Core Glow Gradient -->
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="35%" stop-color="#38bdf8" stop-opacity="0.95" />
+      <stop offset="70%" stop-color="#06b6d4" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Soft Filter Glow -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Container -->
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="url(#bgGrad)" stroke="rgba(255, 255, 255, 0.15)" stroke-width="1.5" />
+
+  <!-- Outer Orbital Ring -->
+  <circle cx="32" cy="32" r="27" fill="none" stroke="url(#ringGrad)" stroke-width="2" stroke-opacity="0.45" stroke-dasharray="3 3.5" />
+
+  <!-- Top Curved Arc & Arrow (Enlarged) -->
+  <g filter="url(#glow)">
+    <path d="M 14 32 A 18 18 0 0 1 45 16" fill="none" stroke="url(#topArrowGrad)" stroke-width="4.5" stroke-linecap="round" />
+    <polygon points="43,9 54,18 41,24" fill="#22d3ee" />
+  </g>
+
+  <!-- Bottom Curved Arc & Arrow (Enlarged) -->
+  <g filter="url(#glow)">
+    <path d="M 50 32 A 18 18 0 0 1 19 48" fill="none" stroke="url(#bottomArrowGrad)" stroke-width="4.5" stroke-linecap="round" />
+    <polygon points="21,55 10,46 23,40" fill="#22d3ee" />
+  </g>
+
+  <!-- Inner Orbit Track -->
+  <circle cx="32" cy="32" r="9" fill="none" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.35" />
+
+  <!-- Glowing Core Pulse (Enlarged) -->
+  <circle cx="32" cy="32" r="8" fill="url(#coreGlow)" />
+  <circle cx="32" cy="32" r="3.5" fill="#ffffff" />
+</svg>
