@@ -1,7 +1,7 @@
 {
   "settings": {
     "outboundPath": "/opt/etc/xray/configs/05_outbounds.json",
-    "routingPath": "/opt/etc/xray/configs/03_routing.json",
+    "routingPath": "/opt/etc/xray/configs/05_routing.json",
     "restartCommand": "xkeen -restart",
     "startCommand": "xkeen -start",
     "stopCommand": "xkeen -stop",

@@ -12,12 +12,47 @@ REPO_NAME="XKeenSwitcher"
 REPO_BRANCH="main"
 DEFAULT_PORT="3000"
 
-OUTBOUND_PATH="/opt/etc/xray/configs/05_outbounds.json"
-ROUTING_PATH="/opt/etc/xray/configs/03_routing.json"
+# Поиск файлов конфигураций Xray / XKeen по всем возможным директориям
+OUTBOUND_PATH=""
+ROUTING_PATH=""
 
-# Альтернативные пути к файлам xray в зависимости от сборки
-[ ! -f "$OUTBOUND_PATH" ] && [ -f "/opt/etc/xray/configs/04_outbounds.json" ] && OUTBOUND_PATH="/opt/etc/xray/configs/04_outbounds.json"
-[ ! -f "$ROUTING_PATH" ] && [ -f "/opt/etc/xray/configs/04_routing.json" ] && ROUTING_PATH="/opt/etc/xray/configs/04_routing.json"
+CANDIDATE_DIRS="/opt/etc/xray/configs /opt/etc/xray/config /opt/etc/xray /opt/etc/xkeen/configs /opt/etc/xkeen/config /opt/etc/xkeen /opt/etc/v2ray/configs /opt/etc/v2ray/config /opt/etc/v2ray"
+
+# Поиск файла outbounds
+for dir in $CANDIDATE_DIRS; do
+  [ ! -d "$dir" ] && continue
+  for f in "$dir"/*outbound*.json "$dir"/*outbounds*.json "$dir"/05_outbounds.json "$dir"/04_outbounds.json "$dir"/06_outbounds.json "$dir"/07_outbounds.json "$dir"/03_outbounds.json "$dir"/outbounds.json "$dir"/outbound.json; do
+    if [ -f "$f" ]; then
+      OUTBOUND_PATH="$f"
+      break 2
+    fi
+  done
+  for f in "$dir"/*.json; do
+    if [ -f "$f" ] && grep -q '"outbounds"' "$f" 2>/dev/null; then
+      OUTBOUND_PATH="$f"
+      break 2
+    fi
+  done
+done
+[ -z "$OUTBOUND_PATH" ] && OUTBOUND_PATH="/opt/etc/xray/configs/05_outbounds.json"
+
+# Поиск файла routing (05_routing.json, 04_routing.json, 03_routing.json, routing.json и др.)
+for dir in $CANDIDATE_DIRS; do
+  [ ! -d "$dir" ] && continue
+  for f in "$dir"/*routing*.json "$dir"/*routes*.json "$dir"/05_routing.json "$dir"/04_routing.json "$dir"/03_routing.json "$dir"/06_routing.json "$dir"/02_routing.json "$dir"/07_routing.json "$dir"/routing.json "$dir"/routes.json; do
+    if [ -f "$f" ]; then
+      ROUTING_PATH="$f"
+      break 2
+    fi
+  done
+  for f in "$dir"/*.json; do
+    if [ -f "$f" ] && grep -q '"routing"' "$f" 2>/dev/null; then
+      ROUTING_PATH="$f"
+      break 2
+    fi
+  done
+done
+[ -z "$ROUTING_PATH" ] && ROUTING_PATH="/opt/etc/xray/configs/05_routing.json"
 
 # Цвета для вывода в терминал
 RED='\033[0;31m'
@@ -172,8 +207,59 @@ const fs = require('fs');
 const path = require('path');
 
 const dataFile = path.join('$INSTALL_DIR', 'data', 'profiles.json');
-const outboundPath = '$OUTBOUND_PATH';
-const routingPath = '$ROUTING_PATH';
+let outboundPath = '$OUTBOUND_PATH';
+let routingPath = '$ROUTING_PATH';
+
+// Функция поиска файла конфигурации
+function findConfigFile(preferred, type) {
+  if (preferred && fs.existsSync(preferred)) return preferred;
+  const dirs = [
+    preferred ? path.dirname(preferred) : '',
+    '/opt/etc/xray/configs',
+    '/opt/etc/xray/config',
+    '/opt/etc/xray',
+    '/opt/etc/xkeen/configs',
+    '/opt/etc/xkeen/config',
+    '/opt/etc/xkeen',
+    '/opt/etc/v2ray/configs',
+    '/opt/etc/v2ray/config',
+    '/opt/etc/v2ray'
+  ].filter(d => d && fs.existsSync(d));
+
+  for (const dir of dirs) {
+    try {
+      const files = fs.readdirSync(dir);
+      if (type === 'outbound') {
+        const match = files.find(f => /outbounds?\.jsonc?$/i.test(f))
+          || files.find(f => /0[34567]_outbounds?\.jsonc?$/i.test(f));
+        if (match) return path.join(dir, match);
+        for (const file of files) {
+          if (!file.endsWith('.json') && !file.endsWith('.jsonc')) continue;
+          try {
+            const content = fs.readFileSync(path.join(dir, file), 'utf8');
+            if (content.includes('\"outbounds\"') || content.includes('\"outbound\"')) return path.join(dir, file);
+          } catch(e) {}
+        }
+      } else if (type === 'routing') {
+        const match = files.find(f => /0[234567]_routing\.jsonc?$/i.test(f))
+          || files.find(f => /routing\.jsonc?$/i.test(f))
+          || files.find(f => /routes?\.jsonc?$/i.test(f));
+        if (match) return path.join(dir, match);
+        for (const file of files) {
+          if (!file.endsWith('.json') && !file.endsWith('.jsonc')) continue;
+          try {
+            const content = fs.readFileSync(path.join(dir, file), 'utf8');
+            if (content.includes('\"routing\"') || (content.includes('\"rules\"') && !content.includes('\"outbounds\"'))) return path.join(dir, file);
+          } catch(e) {}
+        }
+      }
+    } catch (e) {}
+  }
+  return preferred;
+}
+
+outboundPath = findConfigFile(outboundPath, 'outbound');
+routingPath = findConfigFile(routingPath, 'routing');
 
 let data = {
   settings: {
@@ -197,6 +283,14 @@ if (fs.existsSync(dataFile)) {
   } catch (e) {
     console.error('Ошибка чтения существующего profiles.json:', e.message);
   }
+}
+
+// Если пути в настройках не существуют, но обнаружены рабочие пути на диске - обновляем
+if ((!data.settings.outboundPath || !fs.existsSync(data.settings.outboundPath)) && fs.existsSync(outboundPath)) {
+  data.settings.outboundPath = outboundPath;
+}
+if ((!data.settings.routingPath || !fs.existsSync(data.settings.routingPath)) && fs.existsSync(routingPath)) {
+  data.settings.routingPath = routingPath;
 }
 
 // Если профилей нет, создаем профиль Default из существующих файлов на роутере
@@ -261,6 +355,22 @@ if (!data.profiles || data.profiles.length === 0) {
   data.profiles = [defaultProfile];
   data.settings.activeProfileId = defaultProfileId;
   console.log('Создан профиль Default' + (extractedAddress ? ' (адрес в описании: ' + extractedAddress + ')' : ''));
+} else {
+  // Исправляем профиль Default если при прошлой установке он получил пустой routing
+  const defaultProf = data.profiles.find(p => p.name === 'Default');
+  if (defaultProf && fs.existsSync(data.settings.routingPath || routingPath)) {
+    const targetRoutingPath = data.settings.routingPath || routingPath;
+    const cleanRouting = (defaultProf.routingContent || '').replace(/\s+/g, '');
+    if (!cleanRouting || cleanRouting === '{\"routing\":{\"rules\":[]}}' || cleanRouting === '{\"rules\":[]}') {
+      try {
+        const realRouting = fs.readFileSync(targetRoutingPath, 'utf8').trim();
+        if (realRouting && realRouting.replace(/\s+/g, '') !== cleanRouting) {
+          defaultProf.routingContent = realRouting;
+          console.log('Обновлен routing.json для профиля Default из ' + targetRoutingPath);
+        }
+      } catch (e) {}
+    }
+  }
 }
 
 fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), 'utf8');

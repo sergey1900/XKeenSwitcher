@@ -3,7 +3,7 @@ let state = {
   profiles: [],
   settings: {
     outboundPath: '/opt/etc/xray/configs/05_outbounds.json',
-    routingPath: '/opt/etc/xray/configs/03_routing.json',
+    routingPath: '/opt/etc/xray/configs/05_routing.json',
     restartCommand: 'xkeen -restart',
     startCommand: 'xkeen -start',
     stopCommand: 'xkeen -stop',
@@ -15,1064 +15,699 @@ let state = {
     status: 'loading', // 'running' | 'stopped' | 'error' | 'loading'
     output: '',
     error: '',
-    code: 0,
-    timestamp: null,
-    command: ''
+    timestamp: null
   },
-  currentViewProfileId: null,
-  currentViewTab: 'outbound',
-  activatingProfileId: null
+  currentEditingProfileId: null,
+  activeTab: 'outbound' // 'outbound' | 'routing'
 };
 
-let statusPollingInterval = null;
+// Monaco / CodeMirror / Textarea editor wrappers
+let outboundEditor = null;
+let routingEditor = null;
 
 // Initialize App
-document.addEventListener('DOMContentLoaded', () => {
-  preventGlobalDragDrop();
-  initEventListeners();
-  fetchData();
-  fetchServiceStatus();
+document.addEventListener('DOMContentLoaded', async () => {
+  initModals();
+  initDragAndDrop();
+  initSearch();
+  initFormValidation();
 
-  // Poll service status every 12 seconds
-  if (statusPollingInterval) clearInterval(statusPollingInterval);
-  statusPollingInterval = setInterval(() => {
-    fetchServiceStatus(true); // silent background poll
-  }, 12000);
+  // Load initial data
+  await loadProfiles();
+  await loadServiceStatus();
+
+  // Periodic status poll every 10 seconds
+  setInterval(loadServiceStatus, 10000);
 });
 
-// Prevent browser from opening dropped files in new window
-function preventGlobalDragDrop() {
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    window.addEventListener(eventName, (e) => {
-      e.preventDefault();
-    }, false);
-  });
+// Toast notification helper
+function showToast(message, type = 'success', duration = 4000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  
+  const icon = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-exclamation');
+  
+  toast.innerHTML = `
+    <i class="fa-solid ${icon}"></i>
+    <div class="toast-content">
+      <div class="toast-message">${escapeHtml(message)}</div>
+    </div>
+    <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+  `;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 0.3s ease forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
 }
 
-// Strip single-line (//) and multi-line (/* */) comments from JSON string
-function stripJsonComments(str) {
+// Escape HTML for safe rendering
+function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*")|(\/\*[\s\S]*?\*\/)|(\/\/[^\r\n]*)/g, (match, stringToken, p2, multiComment, singleComment) => {
-    if (stringToken) return stringToken;
-    if (singleComment || multiComment) return '';
-    return match;
-  });
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-function parseJsonWithComments(str) {
-  const stripped = stripJsonComments(str);
-  return JSON.parse(stripped);
-}
-
-// Fetch data from backend
-async function fetchData() {
+// Fetch and render profiles
+async function loadProfiles() {
+  const listEl = document.getElementById('profiles-list');
   try {
     const res = await fetch('/api/profiles');
-    if (!res.ok) throw new Error('Не удалось загрузить данные');
+    if (!res.ok) throw new Error('Ошибка загрузки профилей');
     const data = await res.json();
-    
+
     state.profiles = data.profiles || [];
-    state.settings = { ...state.settings, ...(data.settings || {}) };
-    
+    state.settings = data.settings || state.settings;
+
     renderProfiles();
+    updateActiveProfileBadge();
   } catch (err) {
     showToast(err.message, 'error');
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-circle-exclamation" style="color: var(--danger-color);"></i>
+          <p>Не удалось подключиться к серверу</p>
+        </div>
+      `;
+    }
   }
 }
 
-// Render Profile Cards
-function renderProfiles() {
-  const grid = document.getElementById('profiles-grid');
-  const emptyState = document.getElementById('empty-state');
-  const countEl = document.getElementById('profiles-count');
+// Extract server address from outbound JSON
+function extractServerAddress(outboundContent) {
+  if (!outboundContent) return '';
+  try {
+    const clean = outboundContent.replace(/(\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)/g, '');
+    const parsed = JSON.parse(clean);
+    
+    // Check root or outbounds list
+    const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+    for (const ob of list) {
+      if (!ob) continue;
+      // Skip direct, block
+      if (ob.tag === 'direct' || ob.tag === 'block') continue;
 
-  if (countEl) countEl.textContent = state.profiles.length;
-  if (!grid) return;
-  
-  grid.innerHTML = '';
-
-  if (state.profiles.length === 0) {
-    if (emptyState) emptyState.classList.remove('hidden');
-    return;
-  } else {
-    if (emptyState) emptyState.classList.add('hidden');
-  }
-
-  state.profiles.forEach(profile => {
-    const isActive = profile.id === state.settings.activeProfileId;
-    const isActivating = profile.id === state.activatingProfileId;
-    const card = document.createElement('article');
-    card.className = `glass-card profile-card ${isActive ? 'active-card' : ''}`;
-
-    let activateBtnHtml = '';
-    if (!isActive) {
-      if (isActivating) {
-        activateBtnHtml = `
-          <button class="btn btn-activate loading" disabled title="Включение профиля...">
-            <svg class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l6.17-5.19"/></svg>
-            Включение...
-          </button>
-        `;
-      } else {
-        activateBtnHtml = `
-          <button class="btn btn-activate" onclick="activateProfile('${profile.id}')" ${state.activatingProfileId ? 'disabled' : ''}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Включить
-          </button>
-        `;
+      // VLESS, VMess, Trojan, ShadowSocks
+      if (ob.settings && ob.settings.vnext && ob.settings.vnext[0] && ob.settings.vnext[0].address) {
+        return ob.settings.vnext[0].address;
+      }
+      if (ob.settings && ob.settings.servers && ob.settings.servers[0] && ob.settings.servers[0].address) {
+        return ob.settings.servers[0].address;
       }
     }
+  } catch (e) {
+    // If not strict JSON or parsing failed, try regex match for address
+    const match = outboundContent.match(/"address"\s*:\s*"([^"]+)"/i);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return '';
+}
 
-    card.innerHTML = `
-      <div>
-        <div class="card-header">
-          <h3 class="card-title">${escapeHtml(profile.name)}</h3>
-          <span class="card-badge ${isActive ? 'badge-active' : 'badge-inactive'}">
-            ${isActive ? 'АКТИВЕН' : (isActivating ? 'Включение...' : 'Не активен')}
-          </span>
-        </div>
-        <p class="card-desc">${escapeHtml(profile.description || 'Без описания')}</p>
-      </div>
+// Render profiles list
+function renderProfiles(filterQuery = '') {
+  const listEl = document.getElementById('profiles-list');
+  if (!listEl) return;
 
-      <div class="card-actions">
-        <div class="card-actions-left">
-          ${activateBtnHtml}
+  const query = filterQuery.toLowerCase().trim();
+  const filtered = state.profiles.filter(p => {
+    return p.name.toLowerCase().includes(query) || (p.description && p.description.toLowerCase().includes(query));
+  });
+
+  if (filtered.length === 0) {
+    if (state.profiles.length === 0) {
+      listEl.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-layer-group"></i>
+          <p>У вас пока нет профилей</p>
+          <p class="help-text" style="margin-top: 4px;">Нажмите «Добавить профиль» или перетащите ZIP архив с конфигурациями</p>
         </div>
-        <div class="card-actions-right">
-          <button class="btn btn-icon btn-secondary" onclick="openEditModal('${profile.id}')" title="Просмотр и редактирование конфигурации" ${isActivating ? 'disabled' : ''}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 01-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      `;
+    } else {
+      listEl.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <p>Профили не найдены</p>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(profile => {
+    const isActive = state.settings.activeProfileId === profile.id;
+    const serverAddress = extractServerAddress(profile.outboundContent);
+
+    return `
+      <div class="profile-card ${isActive ? 'active' : ''}" data-id="${escapeHtml(profile.id)}">
+        <div class="profile-header">
+          <div>
+            <div class="profile-title">
+              <i class="fa-solid fa-shield-halved" style="color: ${isActive ? 'var(--primary-color)' : 'var(--text-muted)'};"></i>
+              ${escapeHtml(profile.name)}
+            </div>
+            ${profile.description ? `<div class="profile-desc">${escapeHtml(profile.description)}</div>` : ''}
+          </div>
+          ${isActive ? '<span class="badge badge-active"><i class="fa-solid fa-check"></i> Активен</span>' : ''}
+        </div>
+
+        ${serverAddress ? `
+          <div class="profile-meta">
+            <span class="meta-item" title="Адрес сервера">
+              <i class="fa-solid fa-server"></i> ${escapeHtml(serverAddress)}
+            </span>
+          </div>
+        ` : ''}
+
+        <div class="profile-actions">
+          ${isActive ? `
+            <button class="btn btn-outline btn-sm" disabled style="opacity: 0.7; cursor: default;">
+              <i class="fa-solid fa-circle-check" style="color: var(--success-color);"></i> Активен
+            </button>
+          ` : `
+            <button class="btn btn-primary btn-sm" onclick="activateProfile('${escapeHtml(profile.id)}')">
+              <i class="fa-solid fa-bolt"></i> Активировать
+            </button>
+          `}
+          
+          <button class="btn btn-secondary btn-sm" onclick="openEditProfileModal('${escapeHtml(profile.id)}')">
+            <i class="fa-solid fa-pen-to-square"></i> Изменить
           </button>
-          <a href="/api/profiles/${profile.id}/download" class="btn btn-icon btn-secondary ${isActivating ? 'disabled' : ''}" title="Скачать ZIP архив" download>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          </a>
-          <button class="btn btn-icon btn-danger" onclick="deleteProfile('${profile.id}', '${escapeHtml(profile.name)}')" title="Удалить профиль" ${isActivating ? 'disabled' : ''}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          
+          <button class="btn btn-outline btn-sm" onclick="downloadProfile('${escapeHtml(profile.id)}')">
+            <i class="fa-solid fa-download"></i> ZIP
+          </button>
+
+          <button class="btn btn-danger btn-sm" onclick="deleteProfile('${escapeHtml(profile.id)}', '${escapeHtml(profile.name)}')">
+            <i class="fa-solid fa-trash"></i>
           </button>
         </div>
       </div>
     `;
-
-    grid.appendChild(card);
-  });
+  }).join('');
 }
 
-// Activate profile in 1 click
-async function activateProfile(id) {
-  if (state.activatingProfileId) return;
+// Update top navbar active profile badge
+function updateActiveProfileBadge() {
+  const badge = document.getElementById('active-profile-badge');
+  if (!badge) return;
 
-  state.activatingProfileId = id;
-  renderProfiles();
-  renderServiceStatus();
+  const active = state.profiles.find(p => p.id === state.settings.activeProfileId);
+  if (active) {
+    badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${escapeHtml(active.name)}`;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.innerHTML = `<i class="fa-solid fa-circle-pause"></i> Не выбран`;
+    badge.style.display = 'inline-flex';
+  }
+}
+
+// Activate Profile
+async function activateProfile(id) {
+  const profile = state.profiles.find(p => p.id === id);
+  if (!profile) return;
+
+  showToast(`Применение профиля "${profile.name}"...`, 'warning', 2500);
 
   try {
     const res = await fetch(`/api/profiles/${id}/activate`, { method: 'POST' });
     const data = await res.json();
 
-    if (!res.ok) throw new Error(data.error || 'Ошибка активации');
-
-    let msg = data.message;
-    if (data.restartStatus && data.restartStatus.executed) {
-      msg += data.restartStatus.error ? ` (Перезапуск: ${data.restartStatus.error})` : ' (Служба XKeen перезапущена)';
+    if (!res.ok) {
+      throw new Error(data.error || 'Ошибка активации профиля');
     }
 
-    showToast(msg, data.restartStatus && data.restartStatus.error ? 'error' : 'success');
+    state.settings.activeProfileId = id;
+    renderProfiles();
+    updateActiveProfileBadge();
 
-    if (data.serviceStatus) {
-      state.service = data.serviceStatus;
-    } else {
-      await fetchServiceStatus();
-    }
+    showToast(data.message || 'Профиль успешно активирован!', 'success');
+    
+    // Refresh service status
+    setTimeout(loadServiceStatus, 1500);
   } catch (err) {
     showToast(err.message, 'error');
-    await fetchServiceStatus();
-  } finally {
-    state.activatingProfileId = null;
-    await fetchData();
-    renderServiceStatus();
   }
 }
 
-// Delete profile
+// Delete Profile
 async function deleteProfile(id, name) {
-  if (!confirm(`Удалить профиль "${name}"?`)) return;
+  if (!confirm(`Вы действительно хотите удалить профиль "${name}"?`)) {
+    return;
+  }
 
   try {
     const res = await fetch(`/api/profiles/${id}`, { method: 'DELETE' });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка удаления');
 
-    showToast(data.message, 'success');
-    fetchData();
+    if (!res.ok) {
+      throw new Error(data.error || 'Ошибка при удалении');
+    }
+
+    showToast(data.message || 'Профиль удален', 'success');
+    await loadProfiles();
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
 
-// Initialize Event Listeners
-function initEventListeners() {
-  const btnAdd = document.getElementById('btn-add-profile');
-  if (btnAdd) btnAdd.addEventListener('click', openAddModal);
+// Download Profile ZIP
+function downloadProfile(id) {
+  window.open(`/api/profiles/${id}/download`, '_blank');
+}
 
-  const btnSettings = document.getElementById('btn-settings');
-  if (btnSettings) btnSettings.addEventListener('click', openSettingsModal);
+// Search Filter
+function initSearch() {
+  const searchInput = document.getElementById('search-profiles');
+  if (!searchInput) return;
 
-  // Add Form Submit
-  const addForm = document.getElementById('add-profile-form');
-  if (addForm) addForm.addEventListener('submit', handleAddProfile);
-
-  // View/Edit Form Submit
-  const viewForm = document.getElementById('view-profile-form');
-  if (viewForm) viewForm.addEventListener('submit', handleSaveViewEdit);
-
-  // Settings Form Submit
-  const settingsForm = document.getElementById('settings-form');
-  if (settingsForm) settingsForm.addEventListener('submit', handleSaveSettings);
-
-  // Import ZIP listener
-  const importZipInput = document.getElementById('import-zip-file');
-  if (importZipInput) {
-    importZipInput.addEventListener('change', handleImportZip);
-  }
-
-  // Setup Dropzone logic for outbound & routing (Add form)
-  setupDropzone('outbound-dropzone', 'outbound-file-input', 'outbound-text', 'outbound-json-status', null, 'outbound-code');
-  setupDropzone('routing-dropzone', 'routing-file-input', 'routing-text', 'routing-json-status', null, 'routing-code');
-
-  // Setup Dropzone logic for outbound & routing (View/Edit modal)
-  setupDropzone('view-outbound-dropzone', 'view-outbound-file-input', 'view-outbound-text', 'view-outbound-json-status', 'tab-outbound-dot', 'view-outbound-code');
-  setupDropzone('view-routing-dropzone', 'view-routing-file-input', 'view-routing-text', 'view-routing-json-status', 'tab-routing-dot', 'view-routing-code');
-
-  // Setup Code Editors with real-time syntax highlighting
-  setupCodeEditor('outbound-text', 'outbound-code', 'outbound-json-status');
-  setupCodeEditor('routing-text', 'routing-code', 'routing-json-status');
-  setupCodeEditor('view-outbound-text', 'view-outbound-code', 'view-outbound-json-status', 'tab-outbound-dot');
-  setupCodeEditor('view-routing-text', 'view-routing-code', 'view-routing-json-status', 'tab-routing-dot');
-
-  // Multi-file drag & drop on add-modal and view-modal containers
-  setupModalMultiFileDrop('add-modal', {
-    outboundTextId: 'outbound-text',
-    outboundCodeId: 'outbound-code',
-    outboundStatusId: 'outbound-json-status',
-    routingTextId: 'routing-text',
-    routingCodeId: 'routing-code',
-    routingStatusId: 'routing-json-status',
-    nameInputId: 'profile-name'
-  });
-
-  setupModalMultiFileDrop('view-modal', {
-    outboundTextId: 'view-outbound-text',
-    outboundCodeId: 'view-outbound-code',
-    outboundStatusId: 'view-outbound-json-status',
-    outboundDotId: 'tab-outbound-dot',
-    routingTextId: 'view-routing-text',
-    routingCodeId: 'view-routing-code',
-    routingStatusId: 'view-routing-json-status',
-    routingDotId: 'tab-routing-dot'
+  searchInput.addEventListener('input', (e) => {
+    renderProfiles(e.target.value);
   });
 }
 
-// JSON Syntax Highlighter (with // and /* */ comment support)
-function highlightJson(jsonStr) {
-  if (!jsonStr) return '';
-
-  let html = jsonStr
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  // Group 1: comments (//... or /*...*/)
-  // Group 2: strings + optional colon for keys ("key": or "string")
-  // Group 5: booleans and null
-  // Group 6: numbers
-  // Group 7: punctuation/brackets
-  const regex = /(\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)|("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)|(\b(true|false|null)\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|([{}[\],:])/g;
-
-  let result = html.replace(regex, (match, commentToken, strToken, p3, isKey, keywordToken, boolNull, numToken, punctToken) => {
-    if (commentToken) {
-      return `<span class="tok-comment">${commentToken}</span>`;
-    } else if (strToken) {
-      if (isKey) {
-        const colonIndex = strToken.lastIndexOf(':');
-        const keyPart = strToken.slice(0, colonIndex);
-        return `<span class="tok-key">${keyPart}</span><span class="tok-punct">:</span>`;
-      } else {
-        return `<span class="tok-string">${strToken}</span>`;
-      }
-    } else if (keywordToken) {
-      return `<span class="tok-bool">${keywordToken}</span>`;
-    } else if (numToken !== undefined && numToken !== '') {
-      return `<span class="tok-num">${numToken}</span>`;
-    } else if (punctToken) {
-      return `<span class="tok-punct">${punctToken}</span>`;
-    }
-    return match;
-  });
-
-  if (jsonStr.endsWith('\n')) {
-    result += ' ';
-  }
-
-  return result;
-}
-
-// Setup Code Editor with Syntax Highlighting and Scroll/Tab Sync
-function setupCodeEditor(textareaId, codeId, statusId, dotId) {
-  const textarea = document.getElementById(textareaId);
-  const code = document.getElementById(codeId);
-  if (!textarea || !code) return;
-
-  function update() {
-    code.innerHTML = highlightJson(textarea.value);
-    validateJsonInput(textareaId, statusId, dotId);
-  }
-
-  function syncScroll() {
-    const pre = code.parentElement;
-    if (pre) {
-      pre.scrollTop = textarea.scrollTop;
-      pre.scrollLeft = textarea.scrollLeft;
-    }
-  }
-
-  textarea.addEventListener('input', update);
-  textarea.addEventListener('scroll', syncScroll);
-
-  // Tab key indentation support (inserts 2 spaces)
-  textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const val = textarea.value;
-
-      textarea.value = val.substring(0, start) + '  ' + val.substring(end);
-      textarea.selectionStart = textarea.selectionEnd = start + 2;
-      update();
-    }
-  });
-}
-
-function bindJsonValidation(textId, statusId, dotId) {
-  const el = document.getElementById(textId);
-  if (el) {
-    el.addEventListener('input', () => validateJsonInput(textId, statusId, dotId));
-  }
-}
-
-// Format JSON content helper button
-function formatJsonField(textareaId, statusId, dotId) {
-  const textarea = document.getElementById(textareaId);
-  if (!textarea) return;
-
-  const val = textarea.value.trim();
-  if (!val) return;
-
-  try {
-    const parsed = parseJsonWithComments(val);
-    textarea.value = JSON.stringify(parsed, null, 2);
-    
-    // Refresh highlight code layer if present
-    const codeId = textareaId.replace('-text', '-code');
-    const code = document.getElementById(codeId);
-    if (code) {
-      code.innerHTML = highlightJson(textarea.value);
-    }
-
-    validateJsonInput(textareaId, statusId, dotId);
-    showToast('JSON успешно отформатирован', 'success');
-  } catch (err) {
-    validateJsonInput(textareaId, statusId, dotId);
-    showToast('Невозможно отформатировать: ошибка синтаксиса JSON', 'error');
-  }
-}
-
-// Handle ZIP archive import in Add Profile modal
-async function handleImportZip(e) {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-
-  try {
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const base64 = event.target.result.split(',')[1];
-        const res = await fetch('/api/parse-zip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ zipBase64: base64, filename: file.name })
-        });
-        const data = await res.json();
-
-        if (!res.ok) throw new Error(data.error || 'Ошибка чтения ZIP архива');
-
-        if (data.name) {
-          document.getElementById('profile-name').value = data.name;
-        }
-        if (data.description !== undefined) {
-          document.getElementById('profile-desc').value = data.description;
-        }
-        if (data.outboundContent) {
-          const outboundEl = document.getElementById('outbound-text');
-          if (outboundEl) {
-            outboundEl.value = data.outboundContent;
-            formatJsonField('outbound-text', 'outbound-json-status');
-          }
-        }
-        if (data.routingContent) {
-          const routingEl = document.getElementById('routing-text');
-          if (routingEl) {
-            routingEl.value = data.routingContent;
-            formatJsonField('routing-text', 'routing-json-status');
-          }
-        }
-
-        showToast('Профиль успешно импортирован из ZIP архива!', 'success');
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        e.target.value = '';
-      }
-    };
-    reader.readAsDataURL(file);
-  } catch (err) {
-    showToast('Не удалось прочитать файл', 'error');
-    e.target.value = '';
-  }
-}
-
-// Dropzone file loader helper with drag & drop support
-function setupDropzone(dropzoneId, inputId, textId, statusId, dotId, codeId) {
-  const dropzone = document.getElementById(dropzoneId);
-  const input = document.getElementById(inputId);
-  const textarea = document.getElementById(textId);
-
-  if (!dropzone) return;
-
-  if (input) {
-    dropzone.addEventListener('click', (e) => {
-      if (e.target !== input) {
-        input.click();
-      }
-    });
-
-    input.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files.length > 0) {
-        handleFilesList(e.target.files, dropzoneId, textId, statusId, dotId, codeId);
-        input.value = '';
-      }
-    });
-  }
-
-  let dragCounter = 0;
-
-  dropzone.addEventListener('dragenter', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter++;
-    dropzone.classList.add('dragover');
-  });
-
-  dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!dropzone.classList.contains('dragover')) {
-      dropzone.classList.add('dragover');
-    }
-  });
-
-  dropzone.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter--;
-    if (dragCounter <= 0) {
-      dragCounter = 0;
-      dropzone.classList.remove('dragover');
-    }
-  });
-
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter = 0;
-    dropzone.classList.remove('dragover');
-
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFilesList(e.dataTransfer.files, dropzoneId, textId, statusId, dotId, codeId);
-    }
-  });
-}
-
-// Smart file handler
-function handleFilesList(files, dropzoneId, targetTextId, targetStatusId, dotId, codeId) {
-  const fileArray = Array.from(files);
-
-  // If multiple files dropped
-  if (fileArray.length > 1) {
-    let outboundFile = null;
-    let routingFile = null;
-
-    fileArray.forEach(file => {
-      const lower = file.name.toLowerCase();
-      if (lower.includes('outbound') || lower.includes('05_') || lower.includes('04_') || lower.includes('out')) {
-        outboundFile = file;
-      } else if (lower.includes('routing') || lower.includes('03_') || lower.includes('05_') || lower.includes('route')) {
-        routingFile = file;
-      }
-    });
-
-    const isViewModal = dropzoneId.startsWith('view-');
-    const prefix = isViewModal ? 'view-' : '';
-    const outboundDot = isViewModal ? 'tab-outbound-dot' : null;
-    const routingDot = isViewModal ? 'tab-routing-dot' : null;
-    const outboundCode = isViewModal ? 'view-outbound-code' : null;
-    const routingCode = isViewModal ? 'view-routing-code' : null;
-
-    if (outboundFile) {
-      const el = document.getElementById(`${prefix}outbound-text`);
-      if (el) readJsonFile(outboundFile, el, `${prefix}outbound-json-status`, outboundDot, outboundCode);
-    }
-    if (routingFile) {
-      const el = document.getElementById(`${prefix}routing-text`);
-      if (el) readJsonFile(routingFile, el, `${prefix}routing-json-status`, routingDot, routingCode);
-    }
-
-    if (outboundFile && routingFile) {
-      showToast('Загружены outbound.json и routing.json', 'success');
-      return;
-    }
-  }
-
-  // Single file dropped directly on dropzone
-  const singleFile = fileArray[0];
-  const textarea = document.getElementById(targetTextId);
-  if (textarea && singleFile) {
-    readJsonFile(singleFile, textarea, targetStatusId, dotId, codeId);
-    showToast(`Файл "${singleFile.name}" загружен`, 'success');
-
-    const nameInput = document.getElementById('profile-name');
-    if (nameInput && !nameInput.value.trim()) {
-      const cleanName = singleFile.name.replace(/\.json$/i, '').replace(/^(05_|04_|03_)/, '');
-      if (cleanName && cleanName.toLowerCase() !== 'outbound' && cleanName.toLowerCase() !== 'routing') {
-        nameInput.value = cleanName;
-      }
-    }
-  }
-}
-
-// Support dragging files onto modal card directly
-function setupModalMultiFileDrop(modalId, config) {
-  const modal = document.getElementById(modalId);
-  if (!modal) return;
-
-  const card = modal.querySelector('.modal-card');
-  if (!card) return;
-
-  card.addEventListener('dragover', (e) => {
-    e.preventDefault();
-  });
-
-  card.addEventListener('drop', (e) => {
-    if (e.target.closest('.file-dropzone')) return;
-
-    e.preventDefault();
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const files = Array.from(e.dataTransfer.files);
-      files.forEach(file => {
-        const lower = file.name.toLowerCase();
-        if (lower.includes('outbound') || lower.includes('04_') || (lower.includes('05_') && lower.includes('out'))) {
-          const el = document.getElementById(config.outboundTextId);
-          if (el) readJsonFile(file, el, config.outboundStatusId, config.outboundDotId, config.outboundCodeId);
-        } else if (lower.includes('routing') || lower.includes('03_') || (lower.includes('05_') && lower.includes('rout'))) {
-          const el = document.getElementById(config.routingTextId);
-          if (el) readJsonFile(file, el, config.routingStatusId, config.routingDotId, config.routingCodeId);
-        }
-      });
-      showToast('Файлы обработаны', 'success');
-    }
-  });
-}
-
-function readJsonFile(file, textarea, statusId, dotId, codeId) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const parsed = parseJsonWithComments(e.target.result);
-      // If it has no comments, format it; otherwise keep comments intact
-      if (!/\/\/|\/\*/.test(e.target.result)) {
-        textarea.value = JSON.stringify(parsed, null, 2);
-      } else {
-        textarea.value = e.target.result;
-      }
-    } catch {
-      textarea.value = e.target.result;
-    }
-
-    if (codeId) {
-      const code = document.getElementById(codeId);
-      if (code) {
-        code.innerHTML = highlightJson(textarea.value);
-      }
-    }
-
-    validateJsonInput(textarea.id, statusId, dotId);
-  };
-  reader.readAsText(file);
-}
-
-function validateJsonInput(textareaId, statusId, dotId) {
-  const textarea = document.getElementById(textareaId);
-  const statusEl = document.getElementById(statusId);
-  const dotEl = dotId ? document.getElementById(dotId) : null;
-  if (!textarea || !statusEl) return;
-
-  const val = textarea.value.trim();
-
-  if (!val) {
-    statusEl.textContent = '';
-    statusEl.className = 'json-status';
-    if (dotEl) dotEl.className = 'tab-status-dot';
-    return;
-  }
-
-  try {
-    parseJsonWithComments(val);
-    statusEl.textContent = '✓ Валидный JSON';
-    statusEl.className = 'json-status valid';
-    if (dotEl) dotEl.className = 'tab-status-dot valid';
-  } catch (err) {
-    statusEl.textContent = '✗ Ошибка JSON: ' + err.message.replace(/^JSON\.parse:\s*/i, '');
-    statusEl.className = 'json-status invalid';
-    if (dotEl) dotEl.className = 'tab-status-dot invalid';
-  }
-}
-
-// Handle Add Profile Submission
-async function handleAddProfile(e) {
-  e.preventDefault();
-  const name = document.getElementById('profile-name').value.trim();
-  const description = document.getElementById('profile-desc').value.trim();
-  const outboundContent = document.getElementById('outbound-text').value.trim();
-  const routingContent = document.getElementById('routing-text').value.trim();
-
-  if (!name || !outboundContent || !routingContent) {
-    showToast('Пожалуйста, заполните все обязательные поля', 'error');
-    return;
-  }
-
-  try {
-    parseJsonWithComments(outboundContent);
-  } catch (err) {
-    showToast('Ошибка в outbound.json: ' + err.message, 'error');
-    return;
-  }
-
-  try {
-    parseJsonWithComments(routingContent);
-  } catch (err) {
-    showToast('Ошибка в routing.json: ' + err.message, 'error');
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/profiles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, outboundContent, routingContent })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка сохранения');
-
-    showToast('Профиль успешно создан!', 'success');
-    closeModal('add-modal');
-    document.getElementById('add-profile-form').reset();
-    document.getElementById('outbound-json-status').textContent = '';
-    document.getElementById('routing-json-status').textContent = '';
-    fetchData();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-// Handle View/Edit Profile Submission (Save + Restart)
-async function handleSaveViewEdit(e) {
-  e.preventDefault();
-  const id = document.getElementById('view-profile-id').value;
-  const name = document.getElementById('view-profile-name').value.trim();
-  const description = document.getElementById('view-profile-desc').value.trim();
-  const outboundContent = document.getElementById('view-outbound-text').value.trim();
-  const routingContent = document.getElementById('view-routing-text').value.trim();
-
-  if (!id || !name || !outboundContent || !routingContent) {
-    showToast('Заполните название и конфигурацию обоих файлов', 'error');
-    return;
-  }
-
-  try {
-    parseJsonWithComments(outboundContent);
-  } catch (err) {
-    switchViewTab('outbound');
-    showToast('Ошибка синтаксиса в outbound.json: ' + err.message, 'error');
-    return;
-  }
-
-  try {
-    parseJsonWithComments(routingContent);
-  } catch (err) {
-    switchViewTab('routing');
-    showToast('Ошибка синтаксиса в routing.json: ' + err.message, 'error');
-    return;
-  }
-
-  const saveBtn = document.getElementById('btn-save-view-edit');
-  if (saveBtn) saveBtn.disabled = true;
-
-  try {
-    const res = await fetch(`/api/profiles/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, outboundContent, routingContent })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка сохранения');
-
-    showToast(data.message || 'Профиль успешно сохранен!', 'success');
-    closeModal('view-modal');
-    fetchData();
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    if (saveBtn) saveBtn.disabled = false;
-  }
-}
-
-// Handle Settings Submission
-async function handleSaveSettings(e) {
-  e.preventDefault();
-  const outboundPath = document.getElementById('setting-outbound-path').value.trim();
-  const routingPath = document.getElementById('setting-routing-path').value.trim();
-  const restartCommand = document.getElementById('setting-restart-cmd').value.trim();
-  const startCommand = document.getElementById('setting-start-cmd').value.trim();
-  const stopCommand = document.getElementById('setting-stop-cmd').value.trim();
-  const statusCommand = document.getElementById('setting-status-cmd').value.trim();
-  const portVal = document.getElementById('setting-panel-port').value.trim();
-  const port = parseInt(portVal, 10);
-
-  if (isNaN(port) || port < 1 || port > 65535) {
-    showToast('Укажите корректный номер порта (1-65535)', 'error');
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        outboundPath,
-        routingPath,
-        restartCommand,
-        startCommand,
-        stopCommand,
-        statusCommand,
-        port
-      })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка сохранения');
-
-    showToast(data.message || 'Настройки сохранены!', 'success');
-    closeModal('settings-modal');
-
-    if (data.portChanged && data.newPort) {
-      const currentPort = window.location.port ? parseInt(window.location.port, 10) : (window.location.protocol === 'https:' ? 443 : 80);
-      if (currentPort !== data.newPort) {
-        showToast(`Перенаправление на порт ${data.newPort}...`, 'info');
-        setTimeout(() => {
-          window.location.href = `${window.location.protocol}//${window.location.hostname}:${data.newPort}/`;
-        }, 2500);
-        return;
-      }
-    }
-
-    fetchData();
-    fetchServiceStatus();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-// Fetch Service Status
-async function fetchServiceStatus(silent = false) {
-  const badgeEl = document.getElementById('service-status-badge');
-  const textEl = document.getElementById('service-status-text');
-  
-  if (!silent && badgeEl && textEl) {
-    badgeEl.className = 'service-status-badge status-loading';
-    textEl.textContent = 'Проверка...';
-  }
+// Service status management
+async function loadServiceStatus() {
+  const dot = document.getElementById('service-status-dot');
+  const text = document.getElementById('service-status-text');
 
   try {
     const res = await fetch('/api/service/status');
-    if (!res.ok) throw new Error('Ошибка связи с сервером');
+    if (!res.ok) throw new Error('Ошибка статуса');
     const data = await res.json();
+
     state.service = data;
-    renderServiceStatus();
+
+    if (dot && text) {
+      dot.className = 'status-dot';
+      if (data.status === 'running') {
+        dot.classList.add('running');
+        text.innerText = 'XKeen работает';
+      } else if (data.status === 'stopped') {
+        dot.classList.add('stopped');
+        text.innerText = 'XKeen остановлен';
+      } else if (data.status === 'error') {
+        dot.classList.add('error');
+        text.innerText = 'Ошибка службы XKeen';
+      } else {
+        dot.classList.add('loading');
+        text.innerText = 'Статус неизвестен';
+      }
+    }
   } catch (err) {
-    state.service = {
-      status: 'error',
-      output: '',
-      error: err.message,
-      code: 1,
-      timestamp: new Date().toISOString(),
-      command: state.settings.statusCommand || 'xkeen -status'
-    };
-    renderServiceStatus();
+    if (dot && text) {
+      dot.className = 'status-dot error';
+      text.innerText = 'Связь потеряна';
+    }
   }
 }
 
-// Render Service Status Badge & Action Buttons
-function renderServiceStatus() {
-  const badgeEl = document.getElementById('service-status-badge');
-  const textEl = document.getElementById('service-status-text');
-  const btnRestart = document.getElementById('btn-service-restart');
-  const btnStart = document.getElementById('btn-service-start');
-  const btnStop = document.getElementById('btn-service-stop');
+// Restart Service
+async function restartService() {
+  showToast('Перезапуск службы XKeen...', 'warning', 3000);
+  try {
+    const res = await fetch('/api/service/restart', { method: 'POST' });
+    const data = await res.json();
 
-  if (!badgeEl || !textEl) return;
+    if (!res.ok || data.status === 'error') {
+      showToast(`Ошибка перезапуска: ${data.error || data.output || 'Неизвестная ошибка'}`, 'error', 6000);
+    } else {
+      showToast('Служба XKeen успешно перезапущена!', 'success');
+    }
+    await loadServiceStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
 
-  if (state.activatingProfileId) {
-    badgeEl.className = 'service-status-badge status-loading';
-    textEl.textContent = 'Применение и перезапуск...';
-    if (btnStart) btnStart.classList.add('hidden');
-    if (btnRestart) btnRestart.classList.add('hidden');
-    if (btnStop) btnStop.classList.add('hidden');
+// Start Service
+async function startService() {
+  showToast('Запуск службы XKeen...', 'warning', 3000);
+  try {
+    const res = await fetch('/api/service/start', { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok || data.status === 'error') {
+      showToast(`Ошибка запуска: ${data.error || data.output || 'Неизвестная ошибка'}`, 'error', 6000);
+    } else {
+      showToast('Служба XKeen успешно запущена!', 'success');
+    }
+    await loadServiceStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// Stop Service
+async function stopService() {
+  if (!confirm('Остановить службу XKeen? Интернет через прокси перестанет работать.')) {
     return;
   }
 
-  const status = state.service.status || 'unknown';
-
-  badgeEl.className = `service-status-badge status-${status}`;
-
-  if (status === 'running') {
-    textEl.textContent = 'XKeen: Работает';
-    // Active: Show Restart & Stop, Hide Start
-    if (btnStart) btnStart.classList.add('hidden');
-    if (btnRestart) btnRestart.classList.remove('hidden');
-    if (btnStop) btnStop.classList.remove('hidden');
-  } else if (status === 'stopped') {
-    textEl.textContent = 'XKeen: Остановлен';
-    // Inactive: Show ONLY Start, Hide Restart & Stop
-    if (btnStart) btnStart.classList.remove('hidden');
-    if (btnRestart) btnRestart.classList.add('hidden');
-    if (btnStop) btnStop.classList.add('hidden');
-  } else if (status === 'error') {
-    textEl.textContent = 'XKeen: Ошибка ⚠️ (детали)';
-    // Error / Failed to start: Show Start & Restart for recovery
-    if (btnStart) btnStart.classList.remove('hidden');
-    if (btnRestart) btnRestart.classList.remove('hidden');
-    if (btnStop) btnStop.classList.add('hidden');
-  } else {
-    textEl.textContent = 'Проверка...';
-    if (btnStart) btnStart.classList.add('hidden');
-    if (btnRestart) btnRestart.classList.add('hidden');
-    if (btnStop) btnStop.classList.add('hidden');
-  }
-}
-
-// Control Service (restart, start, stop)
-async function controlService(action) {
-  const btnRestart = document.getElementById('btn-service-restart');
-  const btnStart = document.getElementById('btn-service-start');
-  const btnStop = document.getElementById('btn-service-stop');
-  const badgeEl = document.getElementById('service-status-badge');
-  const textEl = document.getElementById('service-status-text');
-
-  const buttons = [btnRestart, btnStart, btnStop].filter(Boolean);
-  buttons.forEach(b => b.disabled = true);
-
-  if (badgeEl && textEl) {
-    badgeEl.className = 'service-status-badge status-loading';
-    textEl.textContent = action === 'restart' ? 'Перезапуск...' : (action === 'start' ? 'Запуск...' : 'Остановка...');
-  }
-
-  const actionLabels = {
-    restart: 'Перезапуск',
-    start: 'Запуск',
-    stop: 'Остановка'
-  };
-
+  showToast('Остановка службы XKeen...', 'warning', 3000);
   try {
-    const res = await fetch(`/api/service/${action}`, { method: 'POST' });
+    const res = await fetch('/api/service/stop', { method: 'POST' });
     const data = await res.json();
-    state.service = data;
-    renderServiceStatus();
 
-    if (res.ok && data.status !== 'error') {
-      showToast(data.message || `${actionLabels[action]} выполнен успешно`, 'success');
-    } else {
-      showToast(`${actionLabels[action]} завершился с ошибкой. Нажмите на статус для лога`, 'error');
-      // If error, auto open details modal
-      openServiceStatusModal();
-    }
+    showToast('Служба XKeen остановлена', 'success');
+    await loadServiceStatus();
   } catch (err) {
-    state.service = {
-      status: 'error',
-      output: '',
-      error: err.message,
-      code: 1,
-      timestamp: new Date().toISOString(),
-      command: `POST /api/service/${action}`
-    };
-    renderServiceStatus();
-    showToast(`Ошибка: ${err.message}`, 'error');
-  } finally {
-    buttons.forEach(b => b.disabled = false);
+    showToast(err.message, 'error');
   }
 }
 
-// On Status Badge Click
-function onStatusBadgeClick() {
-  openServiceStatusModal();
+// Show Service Console Details Modal
+function openServiceModal() {
+  const modal = document.getElementById('service-modal');
+  const term = document.getElementById('service-terminal-output');
+  const time = document.getElementById('service-last-check');
+  const badge = document.getElementById('service-modal-badge');
+
+  if (term) {
+    term.innerText = state.service.output || state.service.error || 'Нет данных вывода команды';
+  }
+  if (time) {
+    time.innerText = state.service.timestamp ? new Date(state.service.timestamp).toLocaleString('ru-RU') : 'Только что';
+  }
+  if (badge) {
+    badge.className = 'badge';
+    if (state.service.status === 'running') {
+      badge.classList.add('badge-active');
+      badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Работает';
+    } else if (state.service.status === 'stopped') {
+      badge.classList.add('badge-inactive');
+      badge.innerHTML = '<i class="fa-solid fa-circle-pause"></i> Остановлен';
+    } else {
+      badge.classList.add('badge-error');
+      badge.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Ошибка';
+    }
+  }
+
+  openModal('service-modal');
 }
 
-// Open Service Status Details Modal
-function openServiceStatusModal() {
-  const modal = document.getElementById('service-status-modal');
-  if (!modal) return;
+// Modals Management
+function initModals() {
+  // Close modals on overlay click
+  window.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal-overlay')) {
+      e.target.classList.remove('active');
+    }
+  });
 
-  const service = state.service || {};
-  const status = service.status || 'unknown';
-
-  const badgeEl = document.getElementById('service-modal-badge');
-  const badgeText = document.getElementById('service-modal-badge-text');
-  const cmdEl = document.getElementById('service-modal-cmd');
-  const timeEl = document.getElementById('service-modal-time');
-  const logEl = document.getElementById('service-modal-log');
-
-  if (badgeEl) badgeEl.className = `service-status-badge status-${status}`;
-  if (badgeText) {
-    if (status === 'running') badgeText.textContent = 'Работает';
-    else if (status === 'stopped') badgeText.textContent = 'Остановлен';
-    else if (status === 'error') badgeText.textContent = 'Ошибка';
-    else badgeText.textContent = 'Проверка...';
-  }
-
-  if (cmdEl) cmdEl.textContent = service.command || state.settings.statusCommand || 'xkeen -status';
-  if (timeEl) {
-    timeEl.textContent = service.timestamp ? new Date(service.timestamp).toLocaleString('ru-RU') : 'Только что';
-  }
-
-  let fullLog = '';
-  if (service.output) fullLog += service.output;
-  if (service.error) {
-    if (fullLog) fullLog += '\n\n[STDERR / ERROR]:\n';
-    fullLog += service.error;
-  }
-  if (!fullLog) {
-    fullLog = '(Вывод пуст. Команда завершилась с кодом: ' + (service.code !== undefined ? service.code : 0) + ')';
-  }
-
-  if (logEl) logEl.textContent = fullLog;
-
-  modal.classList.remove('hidden');
-}
-
-// Copy Terminal Service Log
-function copyServiceLog() {
-  const logEl = document.getElementById('service-modal-log');
-  if (!logEl) return;
-  
-  navigator.clipboard.writeText(logEl.textContent).then(() => {
-    showToast('Лог скопирован в буфер обмена', 'success');
-  }).catch(() => {
-    showToast('Не удалось скопировать лог', 'error');
+  // Close modals on ESC key
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+    }
   });
 }
 
-// Modal Handlers
-function openAddModal() {
-  document.getElementById('add-profile-form').reset();
-  const outCode = document.getElementById('outbound-code');
-  const routCode = document.getElementById('routing-code');
-  if (outCode) outCode.innerHTML = '';
-  if (routCode) routCode.innerHTML = '';
-  document.getElementById('outbound-json-status').textContent = '';
-  document.getElementById('routing-json-status').textContent = '';
-  document.getElementById('add-modal').classList.remove('hidden');
+function openModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
 }
 
-function openEditModal(profileId) {
-  state.currentViewProfileId = profileId;
-  const profile = state.profiles.find(p => p.id === profileId);
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('active');
+}
+
+// Switch Editor Tabs
+function switchEditorTab(tabName) {
+  state.activeTab = tabName;
+
+  document.querySelectorAll('.editor-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.tab === tabName);
+  });
+
+  const outboundPane = document.getElementById('pane-outbound');
+  const routingPane = document.getElementById('pane-routing');
+
+  if (outboundPane) outboundPane.classList.toggle('active', tabName === 'outbound');
+  if (routingPane) routingPane.classList.toggle('active', tabName === 'routing');
+}
+
+// JSON Syntax / Comment validator and formatter
+function validateAndFormatJson(textareaId) {
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+
+  const raw = textarea.value.trim();
+  if (!raw) {
+    showToast('Поле пустое', 'warning');
+    return;
+  }
+
+  try {
+    // Strip comments for validation and formatting
+    const clean = raw.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*")|(\/\*[\s\S]*?\*\/)|(\/\/[^\r\n]*)/g, (match, stringToken) => {
+      return stringToken || '';
+    });
+    const parsed = JSON.parse(clean);
+    textarea.value = JSON.stringify(parsed, null, 2);
+    showToast('JSON успешно отформатирован!', 'success');
+  } catch (err) {
+    showToast(`Ошибка в JSON: ${err.message}`, 'error', 5000);
+  }
+}
+
+// Open Add Profile Modal
+function openAddProfileModal() {
+  state.currentEditingProfileId = null;
+  document.getElementById('profile-modal-title').innerText = 'Новый профиль';
+  document.getElementById('profile-id').value = '';
+  document.getElementById('profile-name').value = '';
+  document.getElementById('profile-desc').value = '';
+  
+  // Default templates
+  document.getElementById('profile-outbound-editor').value = JSON.stringify({
+    "outbounds": [
+      {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "example.server.com",
+              "port": 443,
+              "users": [
+                {
+                  "id": "00000000-0000-0000-0000-000000000000",
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "security": "reality",
+          "realitySettings": {
+            "serverName": "yahoo.com",
+            "fingerprint": "chrome",
+            "show": false,
+            "publicKey": "",
+            "shortId": "",
+            "spiderX": ""
+          }
+        }
+      }
+    ]
+  }, null, 2);
+
+  document.getElementById('profile-routing-editor').value = JSON.stringify({
+    "routing": {
+      "domainStrategy": "IPIfNonMatch",
+      "rules": [
+        {
+          "type": "field",
+          "outboundTag": "proxy",
+          "domain": [
+            "geosite:youtube",
+            "geosite:netflix",
+            "geosite:instagram"
+          ]
+        },
+        {
+          "type": "field",
+          "outboundTag": "direct",
+          "domain": [
+            "geosite:category-ru",
+            "domain:ru"
+          ]
+        },
+        {
+          "type": "field",
+          "outboundTag": "proxy",
+          "network": "tcp,udp"
+        }
+      ]
+    }
+  }, null, 2);
+
+  switchEditorTab('outbound');
+  openModal('profile-modal');
+}
+
+// Open Edit Profile Modal
+function openEditProfileModal(id) {
+  const profile = state.profiles.find(p => p.id === id);
   if (!profile) return;
 
-  const isActive = profile.id === state.settings.activeProfileId;
-  const badgeEl = document.getElementById('view-modal-badge');
-  if (badgeEl) {
-    badgeEl.textContent = isActive ? 'АКТИВЕН' : 'Не активен';
-    badgeEl.className = `card-badge ${isActive ? 'badge-active' : 'badge-inactive'}`;
-  }
+  state.currentEditingProfileId = id;
+  document.getElementById('profile-modal-title').innerText = `Редактирование: ${profile.name}`;
+  document.getElementById('profile-id').value = profile.id;
+  document.getElementById('profile-name').value = profile.name;
+  document.getElementById('profile-desc').value = profile.description || '';
+  document.getElementById('profile-outbound-editor').value = profile.outboundContent;
+  document.getElementById('profile-routing-editor').value = profile.routingContent;
 
-  document.getElementById('view-modal-title').textContent = `Конфигурация профиля`;
-  document.getElementById('view-profile-id').value = profile.id;
-  document.getElementById('view-profile-name').value = profile.name;
-  document.getElementById('view-profile-desc').value = profile.description || '';
-  
-  const outboundText = document.getElementById('view-outbound-text');
-  const routingText = document.getElementById('view-routing-text');
-  const outboundCode = document.getElementById('view-outbound-code');
-  const routingCode = document.getElementById('view-routing-code');
-
-  outboundText.value = profile.outboundContent;
-  routingText.value = profile.routingContent;
-
-  if (outboundCode) outboundCode.innerHTML = highlightJson(profile.outboundContent);
-  if (routingCode) routingCode.innerHTML = highlightJson(profile.routingContent);
-
-  validateJsonInput('view-outbound-text', 'view-outbound-json-status', 'tab-outbound-dot');
-  validateJsonInput('view-routing-text', 'view-routing-json-status', 'tab-routing-dot');
-
-  switchViewTab('outbound');
-  document.getElementById('view-modal').classList.remove('hidden');
+  switchEditorTab('outbound');
+  openModal('profile-modal');
 }
 
-function switchViewTab(tab) {
-  state.currentViewTab = tab;
-  const isOutbound = tab === 'outbound';
+// Form validation and submit handling
+function initFormValidation() {
+  const profileForm = document.getElementById('profile-form');
+  if (profileForm) {
+    profileForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-  const tabOutboundBtn = document.getElementById('tab-outbound-btn');
-  const tabRoutingBtn = document.getElementById('tab-routing-btn');
-  const paneOutbound = document.getElementById('pane-outbound');
-  const paneRouting = document.getElementById('pane-routing');
+      const id = document.getElementById('profile-id').value;
+      const name = document.getElementById('profile-name').value.trim();
+      const description = document.getElementById('profile-desc').value.trim();
+      const outboundContent = document.getElementById('profile-outbound-editor').value.trim();
+      const routingContent = document.getElementById('profile-routing-editor').value.trim();
 
-  if (tabOutboundBtn) tabOutboundBtn.classList.toggle('active', isOutbound);
-  if (tabRoutingBtn) tabRoutingBtn.classList.toggle('active', !isOutbound);
+      if (!name) {
+        showToast('Введите название профиля', 'warning');
+        return;
+      }
+      if (!outboundContent) {
+        showToast('Заполните конфигурацию outbound.json', 'warning');
+        return;
+      }
+      if (!routingContent) {
+        showToast('Заполните конфигурацию routing.json', 'warning');
+        return;
+      }
 
-  if (paneOutbound) {
-    if (isOutbound) paneOutbound.classList.remove('hidden');
-    else paneOutbound.classList.add('hidden');
+      // Pre-flight JSON syntax validation
+      try {
+        const cleanOb = outboundContent.replace(/(\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)/g, '');
+        JSON.parse(cleanOb);
+      } catch (err) {
+        showToast(`Ошибка в outbound.json: ${err.message}`, 'error', 5000);
+        switchEditorTab('outbound');
+        return;
+      }
+
+      try {
+        const cleanRt = routingContent.replace(/(\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)/g, '');
+        JSON.parse(cleanRt);
+      } catch (err) {
+        showToast(`Ошибка в routing.json: ${err.message}`, 'error', 5000);
+        switchEditorTab('routing');
+        return;
+      }
+
+      const isEdit = Boolean(id);
+      const url = isEdit ? `/api/profiles/${id}` : '/api/profiles';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, outboundContent, routingContent })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Ошибка при сохранении профиля');
+        }
+
+        showToast(data.message || (isEdit ? 'Профиль сохранен!' : 'Профиль добавлен!'), 'success');
+        closeModal('profile-modal');
+        await loadProfiles();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
-  if (paneRouting) {
-    if (!isOutbound) paneRouting.classList.remove('hidden');
-    else paneRouting.classList.add('hidden');
-  }
+  // Settings form
+  const settingsForm = document.getElementById('settings-form');
+  if (settingsForm) {
+    settingsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-  // Ensure highlight layer scroll matches textarea when switching tab
-  setTimeout(() => {
-    const textId = isOutbound ? 'view-outbound-text' : 'view-routing-text';
-    const codeId = isOutbound ? 'view-outbound-code' : 'view-routing-code';
-    const text = document.getElementById(textId);
-    const code = document.getElementById(codeId);
-    if (text && code && code.parentElement) {
-      code.parentElement.scrollTop = text.scrollTop;
-      code.parentElement.scrollLeft = text.scrollLeft;
-    }
-  }, 10);
+      const outboundPath = document.getElementById('setting-outbound-path').value.trim();
+      const routingPath = document.getElementById('setting-routing-path').value.trim();
+      const restartCommand = document.getElementById('setting-restart-cmd').value.trim();
+      const startCommand = document.getElementById('setting-start-cmd').value.trim();
+      const stopCommand = document.getElementById('setting-stop-cmd').value.trim();
+      const statusCommand = document.getElementById('setting-status-cmd').value.trim();
+      const portVal = document.getElementById('setting-port').value.trim();
+
+      const port = portVal ? parseInt(portVal, 10) : 3000;
+      if (isNaN(port) || port < 1 || port > 65535) {
+        showToast('Введите корректный номер порта (1-65535)', 'warning');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            outboundPath,
+            routingPath,
+            restartCommand,
+            startCommand,
+            stopCommand,
+            statusCommand,
+            port
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Ошибка сохранения настроек');
+        }
+
+        state.settings = data.settings;
+        showToast(data.message || 'Настройки сохранены!', 'success');
+        closeModal('settings-modal');
+
+        if (data.portChanged) {
+          showToast(`Порт изменен на ${data.newPort}. Страница перезагрузится по новому адресу через 3 секунды...`, 'warning', 5000);
+          setTimeout(() => {
+            const loc = window.location;
+            window.location.href = `${loc.protocol}//${loc.hostname}:${data.newPort}${loc.pathname}`;
+          }, 3000);
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  }
 }
 
+// Open Settings Modal
 function openSettingsModal() {
   document.getElementById('setting-outbound-path').value = state.settings.outboundPath || '';
   document.getElementById('setting-routing-path').value = state.settings.routingPath || '';
@@ -1080,42 +715,106 @@ function openSettingsModal() {
   document.getElementById('setting-start-cmd').value = state.settings.startCommand || '';
   document.getElementById('setting-stop-cmd').value = state.settings.stopCommand || '';
   document.getElementById('setting-status-cmd').value = state.settings.statusCommand || '';
-  document.getElementById('setting-panel-port').value = state.settings.port || 3000;
-  document.getElementById('settings-modal').classList.remove('hidden');
+  document.getElementById('setting-port').value = state.settings.port || 3000;
+
+  openModal('settings-modal');
 }
 
-function closeModal(modalId) {
-  const modal = document.getElementById(modalId);
-  if (modal) modal.classList.add('hidden');
-}
+// Drag & Drop / File upload archive handling
+function initDragAndDrop() {
+  const dropZone = document.getElementById('drag-drop-overlay');
+  const fileInput = document.getElementById('archive-file-input');
 
-// Toast helper
-function showToast(message, type = 'success') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.innerHTML = `
-    <span>${type === 'success' ? '✓' : '⚠️'}</span>
-    <span>${escapeHtml(message)}</span>
-  `;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.remove();
-  }, 4000);
-}
-
-// Helper: Escape HTML
-function escapeHtml(str) {
-  return (str || '').replace(/[&<>"']/g, function(m) {
-    return {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    }[m];
+  ['dragenter', 'dragover'].forEach(eventName => {
+    window.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dropZone) dropZone.classList.add('active');
+    }, false);
   });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    window.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.target === dropZone || eventName === 'drop') {
+        if (dropZone) dropZone.classList.remove('active');
+      }
+    }, false);
+  });
+
+  window.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files && files.length > 0) {
+      handleUploadedArchive(files[0]);
+    }
+  });
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleUploadedArchive(e.target.files[0]);
+        fileInput.value = '';
+      }
+    });
+  }
+}
+
+// Upload and Parse Archive (ZIP, TAR, GZ, TGZ)
+async function handleUploadedArchive(file) {
+  const allowedExtensions = ['.zip', '.tar.gz', '.tgz', '.tar', '.json'];
+  const nameLower = file.name.toLowerCase();
+  const isAllowed = allowedExtensions.some(ext => nameLower.endsWith(ext));
+
+  if (!isAllowed) {
+    showToast('Поддерживаются только архивы .zip, .tar.gz, .tgz или файлы .json', 'warning');
+    return;
+  }
+
+  showToast(`Обработка архива "${file.name}"...`, 'warning', 2500);
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const arrayBuffer = e.target.result;
+    const base64 = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    try {
+      const res = await fetch('/api/parse-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zipBase64: base64, filename: file.name })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Ошибка распаковки архива');
+      }
+
+      // Populate form and open modal
+      state.currentEditingProfileId = null;
+      document.getElementById('profile-modal-title').innerText = 'Импорт из архива: ' + (data.name || file.name);
+      document.getElementById('profile-id').value = '';
+      document.getElementById('profile-name').value = data.name || file.name.replace(/\.[^/.]+$/, '');
+      document.getElementById('profile-desc').value = data.description || '';
+      document.getElementById('profile-outbound-editor').value = data.outboundContent || '{\n  "outbounds": []\n}';
+      document.getElementById('profile-routing-editor').value = data.routingContent || '{\n  "routing": {\n    "rules": []\n  }\n}';
+
+      switchEditorTab('outbound');
+      openModal('profile-modal');
+      showToast('Архив успешно распознан!', 'success');
+    } catch (err) {
+      showToast(err.message, 'error', 5000);
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+// Trigger hidden file input
+function triggerArchiveUpload() {
+  const input = document.getElementById('archive-file-input');
+  if (input) input.click();
 }

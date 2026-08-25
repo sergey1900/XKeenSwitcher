@@ -21,16 +21,94 @@ let lastServiceStatus = {
   command: ''
 };
 
+// Auto-detect existing xray/xkeen config paths on router
+function detectConfigPaths() {
+  const possibleDirs = [
+    '/opt/etc/xray/configs',
+    '/opt/etc/xray/config',
+    '/opt/etc/xray',
+    '/opt/etc/xkeen/configs',
+    '/opt/etc/xkeen/config',
+    '/opt/etc/xkeen',
+    '/opt/etc/v2ray/configs',
+    '/opt/etc/v2ray/config',
+    '/opt/etc/v2ray'
+  ];
+
+  let detectedDir = '/opt/etc/xray/configs';
+  for (const dir of possibleDirs) {
+    if (fs.existsSync(dir)) {
+      try {
+        if (fs.statSync(dir).isDirectory()) {
+          detectedDir = dir;
+          break;
+        }
+      } catch (e) {}
+    }
+  }
+
+  let outboundPath = path.join(detectedDir, '05_outbounds.json');
+  let routingPath = path.join(detectedDir, '05_routing.json');
+
+  if (fs.existsSync(detectedDir)) {
+    try {
+      const files = fs.readdirSync(detectedDir);
+
+      // Look for outbound file
+      const obFile = files.find(f => /outbounds?\.jsonc?$/i.test(f))
+        || files.find(f => /0[34567]_outbounds?\.jsonc?$/i.test(f));
+      if (obFile) {
+        outboundPath = path.join(detectedDir, obFile);
+      } else {
+        for (const file of files) {
+          if (!file.endsWith('.json') && !file.endsWith('.jsonc')) continue;
+          try {
+            const content = fs.readFileSync(path.join(detectedDir, file), 'utf8');
+            if (content.includes('"outbounds"') || content.includes('"outbound"')) {
+              outboundPath = path.join(detectedDir, file);
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Look for routing file (05_routing.json, 04_routing.json, 03_routing.json, routing.json, etc.)
+      const rtFile = files.find(f => /0[234567]_routing\.jsonc?$/i.test(f))
+        || files.find(f => /routing\.jsonc?$/i.test(f))
+        || files.find(f => /routes?\.jsonc?$/i.test(f));
+      if (rtFile) {
+        routingPath = path.join(detectedDir, rtFile);
+      } else {
+        for (const file of files) {
+          if (!file.endsWith('.json') && !file.endsWith('.jsonc')) continue;
+          try {
+            const content = fs.readFileSync(path.join(detectedDir, file), 'utf8');
+            if (content.includes('"routing"') || (content.includes('"rules"') && !content.includes('"outbounds"'))) {
+              routingPath = path.join(detectedDir, file);
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      console.error('Error scanning config directory:', err);
+    }
+  }
+
+  return { outboundPath, routingPath };
+}
+
 // Load data from file
 function loadData() {
+  const detected = detectConfigPaths();
   try {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, 'utf8');
       const parsed = JSON.parse(content);
       // Ensure defaults for new settings
       parsed.settings = {
-        outboundPath: '/opt/etc/xray/configs/05_outbounds.json',
-        routingPath: '/opt/etc/xray/configs/03_routing.json',
+        outboundPath: detected.outboundPath,
+        routingPath: detected.routingPath,
         restartCommand: 'xkeen -restart',
         startCommand: 'xkeen -start',
         stopCommand: 'xkeen -stop',
@@ -39,6 +117,40 @@ function loadData() {
         port: 3000,
         ...(parsed.settings || {})
       };
+
+      let changed = false;
+
+      // Auto-correct paths if stored paths do not exist on disk but detected paths do
+      if (parsed.settings.outboundPath && !fs.existsSync(parsed.settings.outboundPath) && fs.existsSync(detected.outboundPath)) {
+        parsed.settings.outboundPath = detected.outboundPath;
+        changed = true;
+      }
+      if (parsed.settings.routingPath && !fs.existsSync(parsed.settings.routingPath) && fs.existsSync(detected.routingPath)) {
+        parsed.settings.routingPath = detected.routingPath;
+        changed = true;
+      }
+
+      // Auto-heal Default profile if its routingContent was dummy empty rules and real routing file exists
+      if (Array.isArray(parsed.profiles)) {
+        const defaultProf = parsed.profiles.find(p => p.name === 'Default');
+        if (defaultProf && fs.existsSync(parsed.settings.routingPath)) {
+          const cleanRouting = (defaultProf.routingContent || '').replace(/\s+/g, '');
+          if (!cleanRouting || cleanRouting === '{"routing":{"rules":[]}}' || cleanRouting === '{"rules":[]}') {
+            try {
+              const realRouting = fs.readFileSync(parsed.settings.routingPath, 'utf8').trim();
+              if (realRouting && realRouting.replace(/\s+/g, '') !== cleanRouting) {
+                defaultProf.routingContent = realRouting;
+                changed = true;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (changed) {
+        saveData(parsed);
+      }
+
       return parsed;
     }
   } catch (err) {
@@ -46,8 +158,8 @@ function loadData() {
   }
   return {
     settings: {
-      outboundPath: '/opt/etc/xray/configs/05_outbounds.json',
-      routingPath: '/opt/etc/xray/configs/03_routing.json',
+      outboundPath: detected.outboundPath,
+      routingPath: detected.routingPath,
       restartCommand: 'xkeen -restart',
       startCommand: 'xkeen -start',
       stopCommand: 'xkeen -stop',
