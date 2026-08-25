@@ -112,8 +112,15 @@ fi
 
 if [ "$DOWNLOAD_SUCCESS" -eq 0 ]; then
   echo -e "${YELLOW}[!] Репозиторий приватный или архив не скачался напрямую.${NC}"
-  echo -e "Пожалуйста, введите ваш Personal Access Token (GitHub Token) или нажмите Enter для отмены:"
-  read -r INPUT_TOKEN
+  INPUT_TOKEN=""
+  if [ -r /dev/tty ]; then
+    printf "Пожалуйста, введите ваш Personal Access Token (GitHub Token) или нажмите Enter для отмены: " > /dev/tty
+    read -r INPUT_TOKEN < /dev/tty
+  else
+    printf "Пожалуйста, введите ваш Personal Access Token (GitHub Token) или нажмите Enter для отмены: "
+    read -r INPUT_TOKEN
+  fi
+
   if [ -n "$INPUT_TOKEN" ]; then
     if curl -sL -H "Authorization: token $INPUT_TOKEN" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/tarball/${REPO_BRANCH}" -o "$TMP_DIR/app.tar.gz"; then
       DOWNLOAD_SUCCESS=1

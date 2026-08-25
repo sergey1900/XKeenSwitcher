@@ -46,14 +46,26 @@ fi
 
 echo -e "${GREEN}[OK] Служба остановлена.${NC}"
 
+# Функция для интерактивного ввода при запуске через curl | sh
+prompt_user() {
+  PROMPT_TEXT="$1"
+  if [ -r /dev/tty ]; then
+    printf "%s" "$PROMPT_TEXT" > /dev/tty
+    read -r USER_REPLY < /dev/tty
+  else
+    printf "%s" "$PROMPT_TEXT"
+    read -r USER_REPLY
+  fi
+}
+
 # 2. Подтверждение удаления файлов приложения и профилей
 echo ""
 echo -e "${YELLOW}----------------------------------------------------${NC}"
-printf "Удалить файлы приложения XKeenSwitcher и сохраненные профили (%s)? [y/N]: " "$INSTALL_DIR"
-read -r CONFIRM_APP
+prompt_user "Удалить файлы приложения XKeenSwitcher и сохраненные профили ($INSTALL_DIR)? [y/N]: "
+CONFIRM_APP="$USER_REPLY"
 
 case "$CONFIRM_APP" in
-  [yY][eE][sS]|[yY]|"д"|"Д"|"да"|"Да")
+  y*|Y*|д*|Д*)
     echo -e "  Удаление файлов приложения..."
     rm -rf "$INSTALL_DIR"
     rm -f "$LOGFILE"
@@ -68,11 +80,11 @@ esac
 echo ""
 echo -e "${YELLOW}----------------------------------------------------${NC}"
 if command -v node >/dev/null 2>&1; then
-  printf "Удалить пакет Node.js из Entware (opkg remove node)? [y/N]: "
-  read -r CONFIRM_NODE
+  prompt_user "Удалить пакет Node.js из Entware (opkg remove node)? [y/N]: "
+  CONFIRM_NODE="$USER_REPLY"
 
   case "$CONFIRM_NODE" in
-    [yY][eE][sS]|[yY]|"д"|"Д"|"да"|"Да")
+    y*|Y*|д*|Д*)
       echo -e "  Удаление Node.js..."
       opkg remove node || true
       echo -e "${GREEN}[OK] Пакет Node.js удален из системы.${NC}"
