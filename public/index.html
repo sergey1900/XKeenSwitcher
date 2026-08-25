@@ -3,221 +3,314 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XKeenSwitcher — Управление профилями XKeen</title>
-  
-  <!-- Fonts & Icons -->
+  <title>XKeen Switcher</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#080c14">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  
-  <!-- Styles -->
-  <link rel="stylesheet" href="style.css?v=2">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
+  <div class="app-background"></div>
 
-  <!-- Toast notifications -->
-  <div id="toast-container" class="toast-container"></div>
+  <div class="container">
+    <!-- HEADER -->
+    <header class="main-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="30" height="30" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="headerTopArrowGrad" x1="12" y1="12" x2="52" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#818cf8" />
+                <stop offset="100%" stop-color="#22d3ee" />
+              </linearGradient>
+              <linearGradient id="headerBottomArrowGrad" x1="52" y1="52" x2="12" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#06b6d4" />
+                <stop offset="100%" stop-color="#6366f1" />
+              </linearGradient>
+              <radialGradient id="headerCoreGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#ffffff" />
+                <stop offset="35%" stop-color="#38bdf8" stop-opacity="0.95" />
+                <stop offset="70%" stop-color="#06b6d4" stop-opacity="0.5" />
+                <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.5" />
+              </radialGradient>
+              <filter id="headerGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="1.8" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            </defs>
+            <!-- Orbit Track -->
+            <circle cx="32" cy="32" r="27" stroke="#6366f1" stroke-width="1.8" stroke-opacity="0.4" stroke-dasharray="3 3.5" />
+            <!-- Top Arc & Arrow -->
+            <g filter="url(#headerGlow)">
+              <path d="M 14 32 A 18 18 0 0 1 45 16" stroke="url(#headerTopArrowGrad)" stroke-width="4.5" stroke-linecap="round" />
+              <polygon points="43,9 54,18 41,24" fill="#22d3ee" />
+            </g>
+            <!-- Bottom Arc & Arrow -->
+            <g filter="url(#headerGlow)">
+              <path d="M 50 32 A 18 18 0 0 1 19 48" stroke="url(#headerBottomArrowGrad)" stroke-width="4.5" stroke-linecap="round" />
+              <polygon points="21,55 10,46 23,40" fill="#22d3ee" />
+            </g>
+            <!-- Inner Ring & Core -->
+            <circle cx="32" cy="32" r="9" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.35" />
+            <circle cx="32" cy="32" r="8" fill="url(#headerCoreGlow)" />
+            <circle cx="32" cy="32" r="3.5" fill="#ffffff" />
+          </svg>
+        </div>
+        <div>
+          <h1>XKeen Switcher</h1>
+          <p class="subtitle">Управление конфигурациями Xray / sing-box</p>
+        </div>
+      </div>
 
-  <!-- Drag & Drop Fullscreen Overlay -->
-  <div id="drag-drop-overlay" class="drag-drop-overlay">
-    <div class="drag-drop-content">
-      <i class="fa-solid fa-file-zipper drag-drop-icon"></i>
-      <h2>Перетащите ZIP архив сюда</h2>
-      <p>Архив с outbound.json и routing.json будет автоматически распознан</p>
-    </div>
+      <!-- SERVICE STATUS & CONTROLS -->
+      <div class="service-control-bar" id="service-control-bar">
+        <button class="service-status-badge status-loading" id="service-status-badge" onclick="onStatusBadgeClick()" title="Нажмите, чтобы посмотреть подробности / лог">
+          <span class="status-dot"></span>
+          <span class="status-text" id="service-status-text">Проверка...</span>
+        </button>
+
+        <div class="service-actions-group">
+          <button class="btn btn-service btn-restart" id="btn-service-restart" onclick="controlService('restart')" title="Перезапустить службу XKeen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l6.17-5.19"/></svg>
+            <span>Рестарт</span>
+          </button>
+
+          <button class="btn btn-service btn-start hidden" id="btn-service-start" onclick="controlService('start')" title="Запустить службу XKeen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Запуск</span>
+          </button>
+
+          <button class="btn btn-service btn-stop" id="btn-service-stop" onclick="controlService('stop')" title="Остановить службу XKeen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>
+            <span>Стоп</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN PROFILES LIST -->
+    <main class="content-area">
+      <div class="section-title-row">
+        <h2>Сохраненные профили (<span id="profiles-count">0</span>)</h2>
+      </div>
+
+      <div class="profiles-grid" id="profiles-grid">
+        <!-- Profile cards rendered via JS -->
+      </div>
+
+      <div class="empty-state hidden" id="empty-state">
+        <div class="empty-icon">📂</div>
+        <h3>У вас пока нет профилей</h3>
+        <p>Нажмите кнопку «Добавить профиль» и загрузите файлы <code>outbound.json</code> и <code>routing.json</code></p>
+        <button class="btn btn-primary" onclick="openAddModal()">Добавить первый профиль</button>
+      </div>
+    </main>
+
+    <!-- BOTTOM ACTIONS BAR -->
+    <footer class="bottom-bar glass-card">
+      <div class="bottom-actions">
+        <button id="btn-add-profile" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Добавить профиль
+        </button>
+        <button id="btn-settings" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Настройки
+        </button>
+      </div>
+      <div class="app-version-badge" title="Версия XKeen Switcher">
+        <span>v0.9.1</span>
+      </div>
+    </footer>
   </div>
 
-  <!-- Top Navbar -->
-  <header class="navbar">
-    <div class="nav-container">
-      <div class="brand">
-        <div class="brand-logo">
-          <i class="fa-solid fa-shuffle"></i>
-        </div>
-        <div class="brand-text">
-          <h1>XKeenSwitcher</h1>
-          <span class="version-tag">Keenetic & Entware</span>
-        </div>
-      </div>
-
-      <!-- Center status pill -->
-      <div class="service-status-pill" onclick="openServiceModal()" title="Нажмите для просмотра терминала службы">
-        <span id="service-status-dot" class="status-dot loading"></span>
-        <span id="service-status-text">Проверка службы...</span>
-        <i class="fa-solid fa-chevron-right arrow-icon"></i>
-      </div>
-
-      <div class="nav-actions">
-        <span id="active-profile-badge" class="badge badge-active" style="display: none;">
-          <i class="fa-solid fa-circle-check"></i> Загрузка...
-        </span>
-
-        <button class="btn btn-secondary btn-icon" onclick="openSettingsModal()" title="Настройки">
-          <i class="fa-solid fa-gear"></i>
-        </button>
-
-        <button class="btn btn-secondary btn-icon" onclick="restartService()" title="Перезапустить службу XKeen">
-          <i class="fa-solid fa-rotate"></i>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Main Content -->
-  <main class="main-container">
-    
-    <!-- Controls Header -->
-    <div class="dashboard-header">
-      <div class="search-bar">
-        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-        <input type="text" id="search-profiles" placeholder="Поиск профилей по названию или описанию...">
-      </div>
-
-      <div class="action-buttons">
-        <input type="file" id="archive-file-input" accept=".zip,.tar.gz,.tgz,.tar,.json" style="display: none;">
-        <button class="btn btn-secondary" onclick="triggerArchiveUpload()" title="Импорт ZIP/TAR архива">
-          <i class="fa-solid fa-file-import"></i> Импорт ZIP
-        </button>
-        <button class="btn btn-primary" onclick="openAddProfileModal()">
-          <i class="fa-solid fa-plus"></i> Добавить профиль
-        </button>
-      </div>
-    </div>
-
-    <!-- Profiles Grid -->
-    <div id="profiles-list" class="profiles-grid">
-      <!-- Loading skeleton placeholder -->
-      <div class="profile-card skeleton-card">
-        <div class="skeleton-line" style="width: 50%; height: 20px;"></div>
-        <div class="skeleton-line" style="width: 80%; height: 14px; margin-top: 10px;"></div>
-        <div class="skeleton-line" style="width: 40%; height: 14px; margin-top: 6px;"></div>
-      </div>
-      <div class="profile-card skeleton-card">
-        <div class="skeleton-line" style="width: 60%; height: 20px;"></div>
-        <div class="skeleton-line" style="width: 75%; height: 14px; margin-top: 10px;"></div>
-        <div class="skeleton-line" style="width: 35%; height: 14px; margin-top: 6px;"></div>
-      </div>
-    </div>
-  </main>
-
-  <!-- Profile Edit / Add Modal -->
-  <div id="profile-modal" class="modal-overlay">
-    <div class="modal modal-lg">
+  <!-- MODAL: ADD PROFILE -->
+  <div class="modal-overlay hidden" id="add-modal">
+    <div class="modal-card glass-card modal-large">
       <div class="modal-header">
-        <h3 id="profile-modal-title">Новый профиль</h3>
-        <button class="close-btn" onclick="closeModal('profile-modal')">&times;</button>
+        <h3>Добавление нового профиля XKeen</h3>
+        <button type="button" class="close-btn" onclick="closeModal('add-modal')">&times;</button>
       </div>
-      <form id="profile-form">
-        <input type="hidden" id="profile-id">
+      <form id="add-profile-form">
+        <div class="import-zip-box">
+          <label for="import-zip-file" class="btn btn-secondary btn-import-zip">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Импортировать из архива (.zip, .tar.gz)</span>
+          </label>
+          <input type="file" id="import-zip-file" accept=".zip,.tar,.gz,.tgz,.json" class="hidden">
+          <span class="import-zip-hint">Автоматически заполнит название, описание и JSON файлы из архива</span>
+        </div>
 
         <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="profile-name">Название профиля <span class="req">*</span></label>
+            <input type="text" id="profile-name" placeholder="Например: VLESS Germany REALITY" required>
+          </div>
+
           <div class="form-group flex-2">
-            <label for="profile-name">Название профиля <span class="required">*</span></label>
-            <input type="text" id="profile-name" placeholder="Например: VLESS Германия (Reality)" required>
-          </div>
-          <div class="form-group flex-3">
-            <label for="profile-desc">Описание или примечание</label>
-            <input type="text" id="profile-desc" placeholder="Например: Скорость 500 Мбит, сервер в Франкфурте">
+            <label for="profile-desc">Описание (опционально)</label>
+            <input type="text" id="profile-desc" placeholder="Краткая заметка для чего этот профиль...">
           </div>
         </div>
 
-        <!-- Tabs for Outbound & Routing Editors -->
-        <div class="editor-tabs">
-          <button type="button" class="editor-tab active" data-tab="outbound" onclick="switchEditorTab('outbound')">
-            <i class="fa-solid fa-arrow-right-from-bracket"></i> outbound.json
-          </button>
-          <button type="button" class="editor-tab" data-tab="routing" onclick="switchEditorTab('routing')">
-            <i class="fa-solid fa-route"></i> routing.json
-          </button>
-          <div class="editor-tab-actions">
-            <button type="button" class="btn btn-sm btn-outline" onclick="validateAndFormatJson(state.activeTab === 'outbound' ? 'profile-outbound-editor' : 'profile-routing-editor')">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Форматировать JSON
-            </button>
+        <!-- OUTBOUND JSON FILE / CONTENT -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="outbound-text">Файл <code>outbound.json</code> <span class="req">*</span></label>
+            <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="formatJsonField('outbound-text', 'outbound-json-status')">Форматировать JSON</button>
+              <span class="json-status" id="outbound-json-status"></span>
+            </div>
+          </div>
+          <div class="code-editor-container code-editor-sm">
+            <pre class="code-highlight-layer" aria-hidden="true"><code id="outbound-code"></code></pre>
+            <textarea id="outbound-text" class="code-editor-textarea" rows="8" placeholder="Вставьте содержимое outbound.json или перетащите файл..." required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+          
+          <div class="file-dropzone" id="outbound-dropzone">
+            <input type="file" id="outbound-file-input" accept=".json" class="file-input-hidden">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            <span>Загрузить <strong>outbound.json</strong> (нажмите для выбора или перетащите файл)</span>
           </div>
         </div>
 
-        <div class="editor-panes">
-          <!-- Outbound Pane -->
-          <div id="pane-outbound" class="editor-pane active">
-            <div class="editor-wrapper">
-              <textarea id="profile-outbound-editor" class="code-editor" placeholder="Вставьте JSON конфигурацию outbound..." spellcheck="false" required></textarea>
+        <!-- ROUTING JSON FILE / CONTENT -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="routing-text">Файл <code>routing.json</code> <span class="req">*</span></label>
+            <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="formatJsonField('routing-text', 'routing-json-status')">Форматировать JSON</button>
+              <span class="json-status" id="routing-json-status"></span>
             </div>
-            <small class="help-text">Конфигурация исходящих подключений Xray (прокси-сервер, Reality, протокол и порты).</small>
+          </div>
+          <div class="code-editor-container code-editor-sm">
+            <pre class="code-highlight-layer" aria-hidden="true"><code id="routing-code"></code></pre>
+            <textarea id="routing-text" class="code-editor-textarea" rows="8" placeholder="Вставьте содержимое routing.json или перетащите файл..." required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           </div>
 
-          <!-- Routing Pane -->
-          <div id="pane-routing" class="editor-pane">
-            <div class="editor-wrapper">
-              <textarea id="profile-routing-editor" class="code-editor" placeholder="Вставьте JSON конфигурацию routing..." spellcheck="false" required></textarea>
-            </div>
-            <small class="help-text">Правила маршрутизации (домены, IP, правила направления трафика через proxy или direct).</small>
+          <div class="file-dropzone" id="routing-dropzone">
+            <input type="file" id="routing-file-input" accept=".json" class="file-input-hidden">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            <span>Загрузить <strong>routing.json</strong> (нажмите для выбора или перетащите файл)</span>
           </div>
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closeModal('profile-modal')">Отмена</button>
-          <button type="submit" class="btn btn-primary">
-            <i class="fa-solid fa-floppy-disk"></i> Сохранить профиль
+          <button type="submit" class="btn btn-primary" id="btn-save-profile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Сохранить профиль
           </button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Отмена</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Service Status / Console Modal -->
-  <div id="service-modal" class="modal-overlay">
-    <div class="modal modal-md">
+  <!-- MODAL: VIEW & EDIT CONFIGURATION -->
+  <div class="modal-overlay hidden" id="view-modal">
+    <div class="modal-card glass-card modal-large">
       <div class="modal-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <h3>Статус службы XKeen</h3>
-          <span id="service-modal-badge" class="badge badge-active">Работает</span>
+        <div class="modal-header-info">
+          <h3 id="view-modal-title">Конфигурация профиля</h3>
+          <span id="view-modal-badge" class="card-badge badge-inactive"></span>
         </div>
-        <button class="close-btn" onclick="closeModal('service-modal')">&times;</button>
+        <button type="button" class="close-btn" onclick="closeModal('view-modal')">&times;</button>
       </div>
 
-      <div class="modal-body">
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
-          Последняя проверка: <span id="service-last-check" style="color: var(--text-color); font-weight: 500;">-</span>
-        </p>
+      <form id="view-profile-form">
+        <input type="hidden" id="view-profile-id">
 
-        <div class="terminal-container">
-          <div class="terminal-header">
-            <div class="terminal-dots">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-            </div>
-            <span class="terminal-title">xkeen -status</span>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="view-profile-name">Название профиля <span class="req">*</span></label>
+            <input type="text" id="view-profile-name" placeholder="Например: VLESS Germany REALITY" required>
           </div>
-          <pre id="service-terminal-output" class="terminal-body">Загрузка вывода команды...</pre>
-        </div>
-      </div>
 
-      <div class="modal-footer" style="justify-content: space-between;">
-        <div style="display: flex; gap: 8px;">
-          <button type="button" class="btn btn-danger btn-sm" onclick="stopService()">
-            <i class="fa-solid fa-stop"></i> Стоп
+          <div class="form-group flex-2">
+            <label for="view-profile-desc">Описание (опционально)</label>
+            <input type="text" id="view-profile-desc" placeholder="Краткая заметка для чего этот профиль...">
+          </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="tab-buttons">
+          <button type="button" class="tab-btn active" id="tab-outbound-btn" onclick="switchViewTab('outbound')">
+            <span>outbound.json</span>
+            <span class="tab-status-dot" id="tab-outbound-dot"></span>
           </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="startService()">
-            <i class="fa-solid fa-play"></i> Старт
+          <button type="button" class="tab-btn" id="tab-routing-btn" onclick="switchViewTab('routing')">
+            <span>routing.json</span>
+            <span class="tab-status-dot" id="tab-routing-dot"></span>
           </button>
         </div>
-        <div style="display: flex; gap: 8px;">
-          <button type="button" class="btn btn-primary btn-sm" onclick="restartService()">
-            <i class="fa-solid fa-rotate"></i> Перезапустить
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('service-modal')">Закрыть</button>
+
+        <!-- TAB CONTENT: OUTBOUND -->
+        <div class="tab-pane" id="pane-outbound">
+          <div class="form-group">
+            <div class="label-row">
+              <label for="view-outbound-text">Содержимое <code>outbound.json</code> <span class="req">*</span></label>
+              <div class="field-actions">
+                <button type="button" class="btn-text-action" onclick="formatJsonField('view-outbound-text', 'view-outbound-json-status', 'tab-outbound-dot')">Форматировать JSON</button>
+                <span class="json-status" id="view-outbound-json-status"></span>
+              </div>
+            </div>
+            <div class="code-editor-container">
+              <pre class="code-highlight-layer" aria-hidden="true"><code id="view-outbound-code"></code></pre>
+              <textarea id="view-outbound-text" class="code-editor-textarea" rows="12" placeholder="Содержимое outbound.json..." required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="file-dropzone" id="view-outbound-dropzone">
+              <input type="file" id="view-outbound-file-input" accept=".json" class="file-input-hidden">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              <span>Загрузить <strong>outbound.json</strong> (нажмите для выбора или перетащите файл)</span>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <!-- TAB CONTENT: ROUTING -->
+        <div class="tab-pane hidden" id="pane-routing">
+          <div class="form-group">
+            <div class="label-row">
+              <label for="view-routing-text">Содержимое <code>routing.json</code> <span class="req">*</span></label>
+              <div class="field-actions">
+                <button type="button" class="btn-text-action" onclick="formatJsonField('view-routing-text', 'view-routing-json-status', 'tab-routing-dot')">Форматировать JSON</button>
+                <span class="json-status" id="view-routing-json-status"></span>
+              </div>
+            </div>
+            <div class="code-editor-container">
+              <pre class="code-highlight-layer" aria-hidden="true"><code id="view-routing-code"></code></pre>
+              <textarea id="view-routing-text" class="code-editor-textarea" rows="12" placeholder="Содержимое routing.json..." required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="file-dropzone" id="view-routing-dropzone">
+              <input type="file" id="view-routing-file-input" accept=".json" class="file-input-hidden">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              <span>Загрузить <strong>routing.json</strong> (нажмите для выбора или перетащите файл)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-save-view-edit">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Сохранить
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('view-modal')">Отмена</button>
+        </div>
+      </form>
     </div>
   </div>
 
-  <!-- Settings Modal -->
-  <div id="settings-modal" class="modal-overlay">
-    <div class="modal modal-md">
+  <!-- MODAL: SETTINGS -->
+  <div class="modal-overlay hidden" id="settings-modal">
+    <div class="modal-card glass-card">
       <div class="modal-header">
         <h3>Настройки XKeen</h3>
         <button class="close-btn" onclick="closeModal('settings-modal')">&times;</button>
@@ -243,7 +336,7 @@
 
         <div class="form-row">
           <div class="form-group flex-1">
-            <label for="setting-start-cmd">Команда старта</label>
+            <label for="setting-start-cmd">Команда запуска</label>
             <input type="text" id="setting-start-cmd" placeholder="xkeen -start">
           </div>
           <div class="form-group flex-1">
@@ -258,22 +351,59 @@
         </div>
 
         <div class="form-group">
-          <label for="setting-port">Порт веб-панели XKeenSwitcher</label>
-          <input type="number" id="setting-port" placeholder="3000" min="1" max="65535" required>
-          <small class="help-text">При изменении порта сервис автоматически перезапустится на новом порту.</small>
+          <label for="setting-panel-port">Порт веб-панели XKeen Switcher</label>
+          <input type="number" id="setting-panel-port" min="1" max="65535" placeholder="3000" required>
+          <small class="help-text">Порт, на котором работает веб-интерфейс панели (по умолчанию: 3000).</small>
         </div>
 
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Отмена</button>
-          <button type="submit" class="btn btn-primary">
-            <i class="fa-solid fa-floppy-disk"></i> Сохранить настройки
-          </button>
+          <button type="submit" class="btn btn-primary">Сохранить настройки</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Scripts -->
-  <script src="app.js?v=2"></script>
+  <!-- MODAL: SERVICE ERROR / STATUS DETAILS -->
+  <div class="modal-overlay hidden" id="service-status-modal">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <h3 id="service-modal-title">Статус службы XKeen</h3>
+          <span id="service-modal-badge" class="service-status-badge status-loading">
+            <span class="status-dot"></span>
+            <span id="service-modal-badge-text">Проверка...</span>
+          </span>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('service-status-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="service-details-meta">
+          <p><strong>Команда:</strong> <code id="service-modal-cmd">xkeen -status</code></p>
+          <p id="service-modal-time-row"><strong>Время проверки:</strong> <span id="service-modal-time">-</span></p>
+        </div>
+
+        <div class="terminal-container">
+          <div class="terminal-header">
+            <span>Вывод терминала (stdout / stderr)</span>
+            <button type="button" class="btn-text-action" onclick="copyServiceLog()">Скопировать лог</button>
+          </div>
+          <pre class="terminal-output" id="service-modal-log">Лог пуст</pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="controlService('restart'); closeModal('service-status-modal')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l6.17-5.19"/></svg>
+          Перезапустить
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('service-status-modal')">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container"></div>
+
+  <script src="app.js?v=3"></script>
 </body>
 </html>
