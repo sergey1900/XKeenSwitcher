@@ -74,6 +74,11 @@ async function fetchData() {
     state.profiles = data.profiles || [];
     state.settings = { ...state.settings, ...(data.settings || {}) };
     
+    if (data.version) {
+      const verEl = document.getElementById('app-version-text');
+      if (verEl) verEl.textContent = 'v' + data.version.replace(/^v/, '');
+    }
+
     renderProfiles();
   } catch (err) {
     showToast(err.message, 'error');

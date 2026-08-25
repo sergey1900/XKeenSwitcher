@@ -12,6 +12,18 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
 }
 
+// Read application version from package.json
+let appVersion = '1.0.0';
+try {
+  const pkgPath = path.join(__dirname, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    if (pkg.version) appVersion = pkg.version;
+  }
+} catch (e) {
+  console.warn('Could not read package.json version:', e.message);
+}
+
 // In-memory service state & error cache
 let lastServiceStatus = {
   status: 'unknown', // 'running' | 'stopped' | 'error' | 'unknown'
@@ -657,7 +669,13 @@ const server = http.createServer(async (req, res) => {
 
   // GET /api/profiles
   if (urlParts === '/api/profiles' && req.method === 'GET') {
-    return sendJson(res, 200, loadData());
+    const data = loadData();
+    return sendJson(res, 200, { ...data, version: appVersion });
+  }
+
+  // GET /api/version
+  if (urlParts === '/api/version' && req.method === 'GET') {
+    return sendJson(res, 200, { version: appVersion });
   }
 
   // POST /api/profiles - Add profile
