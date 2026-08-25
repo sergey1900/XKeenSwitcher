@@ -147,6 +147,59 @@ function loadData() {
         }
       }
 
+      // Auto-create Default profile from existing files if no profiles exist
+      if (!Array.isArray(parsed.profiles) || parsed.profiles.length === 0) {
+        let outboundContent = '{\n  "outbounds": []\n}';
+        let routingContent = '{\n  "routing": {\n    "rules": []\n  }\n}';
+        let extractedAddress = '';
+
+        if (fs.existsSync(parsed.settings.outboundPath)) {
+          try {
+            outboundContent = fs.readFileSync(parsed.settings.outboundPath, 'utf8').trim();
+            try {
+              const clean = outboundContent.replace(/(\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)/g, '');
+              const p = JSON.parse(clean);
+              const list = Array.isArray(p.outbounds) ? p.outbounds : [p];
+              for (const ob of list) {
+                if (!ob || ob.tag === 'direct' || ob.tag === 'block') continue;
+                if (ob.settings && ob.settings.vnext && ob.settings.vnext[0] && ob.settings.vnext[0].address) {
+                  extractedAddress = ob.settings.vnext[0].address;
+                  break;
+                }
+                if (ob.settings && ob.settings.servers && ob.settings.servers[0] && ob.settings.servers[0].address) {
+                  extractedAddress = ob.settings.servers[0].address;
+                  break;
+                }
+              }
+            } catch(e) {}
+            if (!extractedAddress) {
+              const match = outboundContent.match(/"address"\s*:\s*"([^"]+)"/i);
+              if (match && match[1]) extractedAddress = match[1];
+            }
+          } catch(e) {}
+        }
+
+        if (fs.existsSync(parsed.settings.routingPath)) {
+          try {
+            routingContent = fs.readFileSync(parsed.settings.routingPath, 'utf8').trim();
+          } catch(e) {}
+        }
+
+        const defaultId = 'prof_default_' + Date.now();
+        const defaultProfile = {
+          id: defaultId,
+          name: 'Default',
+          description: extractedAddress ? extractedAddress : 'Текущая конфигурация роутера',
+          outboundContent: outboundContent,
+          routingContent: routingContent,
+          createdAt: new Date().toISOString()
+        };
+
+        parsed.profiles = [defaultProfile];
+        parsed.settings.activeProfileId = defaultId;
+        changed = true;
+      }
+
       if (changed) {
         saveData(parsed);
       }
