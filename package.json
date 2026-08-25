@@ -1,6 +1,6 @@
 {
   "name": "xkeen-switcher",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "Simple Web UI for switching XKeen outbound and routing configurations",
   "main": "server.js",
   "type": "commonjs",
