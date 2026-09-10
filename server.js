@@ -409,6 +409,15 @@ function extractOutboundMetadata(outboundContent) {
         } else if (ob.settings.servers && ob.settings.servers[0]) {
           serverAddress = ob.settings.servers[0].address || '';
           serverPort = ob.settings.servers[0].port || null;
+        } else if (ob.settings.peers && ob.settings.peers[0] && ob.settings.peers[0].endpoint) {
+          const ep = String(ob.settings.peers[0].endpoint).trim();
+          const lastColon = ep.lastIndexOf(':');
+          if (lastColon !== -1) {
+            serverAddress = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
+            serverPort = parseInt(ep.substring(lastColon + 1), 10) || null;
+          } else {
+            serverAddress = ep;
+          }
         }
       }
       if (ob.streamSettings) {
