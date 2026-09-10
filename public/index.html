@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XKeen Switcher 2.0</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta name="theme-color" content="#080c14">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2.3.0">
+</head>
+<body>
+  <div class="app-background"></div>
+
+  <div class="container">
+    <!-- HEADER -->
+    <header class="main-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="headerTopArrowGrad" x1="12" y1="12" x2="52" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#818cf8" />
+                <stop offset="100%" stop-color="#22d3ee" />
+              </linearGradient>
+              <linearGradient id="headerBottomArrowGrad" x1="52" y1="52" x2="12" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#06b6d4" />
+                <stop offset="100%" stop-color="#6366f1" />
+              </linearGradient>
+              <radialGradient id="headerCoreGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#ffffff" />
+                <stop offset="35%" stop-color="#38bdf8" stop-opacity="0.95" />
+                <stop offset="70%" stop-color="#06b6d4" stop-opacity="0.5" />
+                <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.5" />
+              </radialGradient>
+              <filter id="headerGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="1.8" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            </defs>
+            <circle cx="32" cy="32" r="27" stroke="#6366f1" stroke-width="1.8" stroke-opacity="0.4" stroke-dasharray="3 3.5" />
+            <g filter="url(#headerGlow)">
+              <path d="M 14 32 A 18 18 0 0 1 45 16" stroke="url(#headerTopArrowGrad)" stroke-width="4.5" stroke-linecap="round" />
+              <polygon points="43,9 54,18 41,24" fill="#22d3ee" />
+            </g>
+            <g filter="url(#headerGlow)">
+              <path d="M 50 32 A 18 18 0 0 1 19 48" stroke="url(#headerBottomArrowGrad)" stroke-width="4.5" stroke-linecap="round" />
+              <polygon points="21,55 10,46 23,40" fill="#22d3ee" />
+            </g>
+            <circle cx="32" cy="32" r="9" stroke="#38bdf8" stroke-width="1.2" stroke-opacity="0.35" />
+            <circle cx="32" cy="32" r="8" fill="url(#headerCoreGlow)" />
+            <circle cx="32" cy="32" r="3.5" fill="#ffffff" />
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title-row">
+            <h1>XKeen Switcher</h1>
+            <span class="version-tag">v2.0</span>
+          </div>
+          <p class="subtitle">Управление подключениями XKeen на роутерах Keenetic</p>
+        </div>
+      </div>
+
+      <!-- SERVICE STATUS & CONTROLS -->
+      <div class="service-control-bar" id="service-control-bar">
+        <button class="service-status-badge status-loading" id="service-status-badge" onclick="onStatusBadgeClick()" title="Подробности статуса / лог">
+          <span class="status-dot"></span>
+          <span class="status-text" id="service-status-text">Проверка...</span>
+        </button>
+
+        <button class="failover-badge hidden" id="failover-status-badge" onclick="openFailoverSettings()" title="Белые Списки (нажмите для настройки)">
+          <span class="failover-dot"></span>
+          <span id="failover-status-text">БС: Авто</span>
+        </button>
+
+        <div class="service-actions-group">
+          <button class="btn btn-service btn-restart" id="btn-service-restart" onclick="controlService('restart')" title="Перезапустить службу XKeen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l6.17-5.19"/></svg>
+            <span>Рестарт</span>
+          </button>
+
+          <button class="btn btn-service btn-start hidden" id="btn-service-start" onclick="controlService('start')" title="Запустить службу XKeen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Запуск</span>
+          </button>
+
+          <button class="btn btn-service btn-stop" id="btn-service-stop" onclick="controlService('stop')" title="Остановить службу XKeen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>
+            <span>Стоп</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- NAVIGATION TABS -->
+    <nav class="main-tabs glass-card">
+      <div class="tabs-group">
+        <button class="nav-tab-btn active" id="tab-btn-connections" onclick="switchMainTab('connections')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          <span>Подключения</span>
+          <span class="tab-badge" id="connections-count-badge">0</span>
+        </button>
+        <button class="nav-tab-btn" id="tab-btn-routings" onclick="switchMainTab('routings')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          <span>Маршрутизация</span>
+          <span class="tab-badge" id="routings-count-badge">0</span>
+        </button>
+      </div>
+
+      <div class="tab-extra-actions">
+        <button id="btn-top-settings" class="btn btn-secondary btn-sm" onclick="openSettingsModal()" title="Настройки путей, команд и резервной копии">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <span>Настройки</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- SECTION 1: CONNECTIONS -->
+    <main class="content-area" id="section-connections">
+      <div class="section-title-row section-title-actions-split">
+        <div class="section-actions-left">
+          <button class="btn btn-secondary" id="btn-ping-all" onclick="checkAllPing()" title="Проверить доступность всех подключений по очереди">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span id="btn-ping-all-text">Проверить все</span>
+          </button>
+          <button class="btn btn-primary" id="btn-add-connection" onclick="openAddConnectionModal()" title="Добавить подключение">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Добавить подключение</span>
+          </button>
+        </div>
+
+        <div class="section-sort-wrap" title="Сортировка списка подключений">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sort-icon"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+          <select id="connections-sort-select" class="sort-select" onchange="onSortChange(this.value)">
+            <option value="default">По умолчанию</option>
+            <option value="active">Сначала активное</option>
+            <option value="ping">По пингу (быстрые)</option>
+            <option value="name_asc">По имени (А → Я)</option>
+            <option value="name_desc">По имени (Я → А)</option>
+            <option value="newest">Сначала новые</option>
+            <option value="oldest">Сначала старые</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="connections-grid" id="connections-grid">
+        <!-- Rendered via JS -->
+      </div>
+
+      <div class="empty-state hidden" id="empty-connections-state">
+        <div class="empty-icon">🌐</div>
+        <h3>Нет сохраненных подключений</h3>
+        <p>Добавьте первое VLESS подключение для начала работы</p>
+        <button class="btn btn-primary" onclick="openAddConnectionModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Добавить подключение</span>
+        </button>
+      </div>
+    </main>
+
+    <!-- SECTION 2: ROUTINGS -->
+    <main class="content-area hidden" id="section-routings">
+      <div class="section-title-row section-title-actions-left">
+        <button class="btn btn-primary" id="btn-add-routing" onclick="openAddRoutingModal()" title="Добавить маршрутизацию">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Добавить маршрутизацию</span>
+        </button>
+      </div>
+
+      <div class="routings-grid" id="routings-grid">
+        <!-- Rendered via JS -->
+      </div>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bottom-bar glass-card footer-centered">
+      <div class="footer-content">
+        <div class="app-version-badge" id="app-version-badge" title="Версия приложения">
+          <span id="app-version-text">v2.0.1</span>
+        </div>
+        <div id="app-update-group" class="app-update-group hidden">
+          <a id="app-update-badge" class="app-update-badge" href="https://github.com/sergey1900/XKeenSwitcher/releases" target="_blank" rel="noopener noreferrer" title="Нажмите, чтобы открыть страницу релиза на GitHub">
+            <span class="update-pulse-dot"></span>
+            <span id="app-update-text">Доступна новая версия</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          </a>
+          <button type="button" class="btn-app-update" id="btn-app-update" onclick="openAppUpdateModal()" title="Обновить приложение до новой версии">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Обновить</span>
+          </button>
+        </div>
+        <a href="https://github.com/sergey1900/XKeenSwitcher" target="_blank" rel="noopener noreferrer" class="footer-github-link" title="Проект на GitHub">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </footer>
+  </div>
+
+  <!-- MODAL: ADD CONNECTION -->
+  <div class="modal-overlay hidden" id="modal-add-connection">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div>
+          <h3>Новое подключение</h3>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-add-connection')">&times;</button>
+      </div>
+
+      <form id="form-add-connection" onsubmit="onAddConnectionSubmit(event)">
+        <!-- URL INPUT BOX -->
+        <div class="form-group">
+          <label for="input-vless-url">Ссылка подключения (VLESS) <span class="req">*</span></label>
+          <div class="url-input-wrap">
+            <input type="text" id="input-vless-url" placeholder="vless://uuid@host:port?type=grpc&security=reality&pbk=...#Name" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="parseVlessUrlInput()">Распознать</button>
+          </div>
+          <small class="help-text">Поддерживаются ссылки <code>vless://</code> (Reality, gRPC, WebSocket, TLS и др.)</small>
+        </div>
+
+        <!-- EXTRACTED PARAMETERS PILLS -->
+        <div class="meta-params-preview hidden" id="add-meta-preview">
+          <div class="meta-pill"><span class="meta-label">Хост:</span> <strong id="preview-host">-</strong></div>
+          <div class="meta-pill"><span class="meta-label">Порт:</span> <strong id="preview-port">-</strong></div>
+          <div class="meta-pill"><span class="meta-label">Протокол:</span> <strong id="preview-proto">VLESS</strong></div>
+          <div class="meta-pill"><span class="meta-label">Безопасность:</span> <strong id="preview-sec">-</strong></div>
+          <div class="meta-pill" id="preview-sni-wrap"><span class="meta-label">SNI:</span> <strong id="preview-sni">-</strong></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="conn-name">Название подключения <span class="req">*</span></label>
+            <input type="text" id="conn-name" placeholder="Например: Мой сервер" required>
+          </div>
+
+          <div class="form-group flex-2">
+            <label for="conn-routing">Маршрутизация <span class="req">*</span></label>
+            <select id="conn-routing" class="custom-select" required>
+              <!-- Populated via JS -->
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="conn-desc">Комментарий (опционально)</label>
+          <input type="text" id="conn-desc" placeholder="Примечание...">
+        </div>
+
+        <!-- OUTBOUND JSON EDITOR -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="conn-outbound-json">Конфигурация <code>outbound.json</code> <span class="req">*</span></label>
+            <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="copyEditorContent('conn-outbound-json')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Скопировать в буфер
+              </button>
+              <button type="button" class="btn-text-action" onclick="formatEditorField('conn-outbound-json', 'conn-outbound-status')">Форматировать JSON</button>
+              <span class="json-status" id="conn-outbound-status"></span>
+            </div>
+          </div>
+          <div class="code-editor-container">
+            <pre class="code-highlight-layer" aria-hidden="true"><code id="conn-outbound-code"></code></pre>
+            <textarea id="conn-outbound-json" class="code-editor-textarea" rows="12" placeholder="Содержимое outbound.json..." required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-save-new-connection">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Сохранить подключение
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-connection')">Отмена</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT CONNECTION -->
+  <div class="modal-overlay hidden" id="modal-edit-connection">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div>
+          <h3>Редактирование подключения</h3>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-edit-connection')">&times;</button>
+      </div>
+
+      <form id="form-edit-connection" onsubmit="onEditConnectionSubmit(event)">
+        <input type="hidden" id="edit-conn-id">
+
+        <!-- EXTRACTED PARAMETERS PILLS -->
+        <div class="meta-params-preview" id="edit-meta-preview">
+          <div class="meta-pill"><span class="meta-label">Хост:</span> <strong id="edit-preview-host">-</strong></div>
+          <div class="meta-pill"><span class="meta-label">Порт:</span> <strong id="edit-preview-port">-</strong></div>
+          <div class="meta-pill"><span class="meta-label">Протокол:</span> <strong id="edit-preview-proto">VLESS</strong></div>
+          <div class="meta-pill"><span class="meta-label">Безопасность:</span> <strong id="edit-preview-sec">-</strong></div>
+          <div class="meta-pill" id="edit-preview-sni-wrap"><span class="meta-label">SNI:</span> <strong id="edit-preview-sni">-</strong></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="edit-conn-name">Название подключения <span class="req">*</span></label>
+            <input type="text" id="edit-conn-name" required>
+          </div>
+
+          <div class="form-group flex-2">
+            <label for="edit-conn-routing">Маршрутизация <span class="req">*</span></label>
+            <select id="edit-conn-routing" class="custom-select" required>
+              <!-- Populated via JS -->
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="edit-conn-desc">Комментарий</label>
+          <input type="text" id="edit-conn-desc" placeholder="Примечание...">
+        </div>
+
+        <!-- OUTBOUND JSON EDITOR -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="edit-conn-outbound-json">Содержимое <code>outbound.json</code> <span class="req">*</span></label>
+            <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="copyEditorContent('edit-conn-outbound-json')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Скопировать в буфер
+              </button>
+              <button type="button" class="btn-text-action" onclick="formatEditorField('edit-conn-outbound-json', 'edit-conn-outbound-status')">Форматировать JSON</button>
+              <span class="json-status" id="edit-conn-outbound-status"></span>
+            </div>
+          </div>
+          <div class="code-editor-container">
+            <pre class="code-highlight-layer" aria-hidden="true"><code id="edit-conn-outbound-code"></code></pre>
+            <textarea id="edit-conn-outbound-json" class="code-editor-textarea" rows="12" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-save-edit-connection">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Сохранить изменения
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-edit-connection')">Отмена</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD / EDIT ROUTING -->
+  <div class="modal-overlay hidden" id="modal-routing">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div>
+          <h3 id="modal-routing-title">Маршрутизация (Routing)</h3>
+          <span class="card-badge" id="modal-routing-badge"></span>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-routing')">&times;</button>
+      </div>
+
+      <form id="form-routing" onsubmit="onRoutingSubmit(event)">
+        <input type="hidden" id="routing-id">
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="routing-name">Название конфигурации <span class="req">*</span></label>
+            <input type="text" id="routing-name" placeholder="Например: Обход блокировок (Антизапрет)" required>
+          </div>
+
+          <div class="form-group flex-1">
+            <label for="routing-desc">Примечание</label>
+            <input type="text" id="routing-desc" placeholder="Краткое назначение этого набора правил...">
+          </div>
+        </div>
+
+        <!-- ROUTING JSON EDITOR -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="routing-content-json">Содержимое <code>routing.json</code> <span class="req">*</span></label>
+            <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="copyEditorContent('routing-content-json')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Скопировать в буфер
+              </button>
+              <button type="button" class="btn-text-action" id="btn-format-routing" onclick="formatEditorField('routing-content-json', 'routing-content-status')">Форматировать JSON</button>
+              <span class="json-status" id="routing-content-status"></span>
+            </div>
+          </div>
+          <div class="code-editor-container">
+            <pre class="code-highlight-layer" aria-hidden="true"><code id="routing-content-code"></code></pre>
+            <textarea id="routing-content-json" class="code-editor-textarea" rows="14" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-save-routing">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Сохранить маршрутизацию
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-routing')">Закрыть</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: QR CODE -->
+  <div class="modal-overlay hidden" id="modal-qr">
+    <div class="modal-card glass-card modal-qr-card">
+      <div class="modal-header">
+        <div>
+          <h3 id="modal-qr-title">QR-код подключения</h3>
+          <p class="modal-subtitle" id="modal-qr-subtitle">VLESS ссылка</p>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-qr')">&times;</button>
+      </div>
+      <div class="modal-qr-body">
+        <div class="qr-code-wrapper" id="modal-qr-wrapper">
+          <div id="modal-qr-svg"></div>
+        </div>
+        <div class="qr-url-box">
+          <input type="text" id="modal-qr-url" readonly spellcheck="false" onclick="this.select()">
+          <button type="button" class="btn btn-primary" id="btn-copy-qr-url" onclick="copyQrUrl()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            <span>Копировать в буфер</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONNECTION PROGRESS & RESULT -->
+  <div class="modal-overlay hidden" id="modal-conn-progress">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div>
+          <h3>Подключение к серверу</h3>
+          <p class="modal-subtitle" id="progress-conn-subtitle">Применение конфигурации и проверка связи...</p>
+        </div>
+        <button type="button" class="close-btn" id="btn-close-conn-progress" onclick="closeModal('modal-conn-progress')">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="conn-progress-target-card">
+          <div class="conn-progress-target-name" id="progress-conn-name">Подключение</div>
+          <div class="conn-progress-target-meta" id="progress-conn-meta">xr109.run.place:18633 • VLESS Reality</div>
+        </div>
+
+        <!-- STEP PROGRESS LIST -->
+        <div class="conn-progress-steps">
+          <div class="progress-step" id="step-write">
+            <div class="step-icon">1</div>
+            <div class="step-info">
+              <div class="step-title">Запись конфигураций</div>
+              <div class="step-desc">Обновление outbound.json и routing.json</div>
+            </div>
+            <div class="step-status" id="step-write-status"><span class="spin-icon">⏳</span></div>
+          </div>
+
+          <div class="progress-step" id="step-restart">
+            <div class="step-icon">2</div>
+            <div class="step-info">
+              <div class="step-title">Перезапуск службы XKeen</div>
+              <div class="step-desc">Выполнение xkeen -restart</div>
+            </div>
+            <div class="step-status" id="step-restart-status"><span class="step-dot-wait"></span></div>
+          </div>
+
+          <div class="progress-step" id="step-init">
+            <div class="step-icon">3</div>
+            <div class="step-info">
+              <div class="step-title">Инициализация туннеля</div>
+              <div class="step-desc">Ожидание запуска прокси-ядра</div>
+            </div>
+            <div class="step-status" id="step-init-status"><span class="step-dot-wait"></span></div>
+          </div>
+
+          <div class="progress-step" id="step-ping">
+            <div class="step-icon">4</div>
+            <div class="step-info">
+              <div class="step-title">Проверка доступности</div>
+              <div class="step-desc">Замер отклика сервера (пинг)</div>
+            </div>
+            <div class="step-status" id="step-ping-status"><span class="step-dot-wait"></span></div>
+          </div>
+        </div>
+
+        <!-- FINAL RESULT BANNER -->
+        <div class="progress-result-box hidden" id="progress-result-box">
+          <div class="result-header">
+            <span class="result-badge-icon" id="result-badge-icon">✓</span>
+            <div class="result-title-group">
+              <h4 id="result-title">Подключение успешно активно!</h4>
+              <p id="result-subtitle">Трафик направляется через выбранное подключение</p>
+            </div>
+          </div>
+          <div class="result-meta-grid" id="result-meta-grid">
+            <div class="result-meta-item">
+              <span class="meta-label">Пинг / Отклик:</span>
+              <strong id="result-ping-val">45 ms</strong>
+            </div>
+            <div class="result-meta-item">
+              <span class="meta-label">Роутинг:</span>
+              <strong id="result-routing-val">Всё через VPN</strong>
+            </div>
+            <div class="result-meta-item">
+              <span class="meta-label">Статус службы:</span>
+              <strong id="result-service-val">Работает</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" id="progress-modal-footer">
+        <button type="button" class="btn btn-secondary hidden" id="btn-progress-view-log" onclick="onStatusBadgeClick()">Открыть лог службы</button>
+        <button type="button" class="btn btn-primary" id="btn-progress-done" onclick="closeModal('modal-conn-progress')">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SETTINGS & BACKUP -->
+  <div class="modal-overlay hidden" id="settings-modal">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div>
+          <h3>Настройки</h3>
+          <p class="modal-subtitle">Параметры работы службы XKeen и резервное копирование</p>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('settings-modal')">&times;</button>
+      </div>
+
+      <!-- SETTINGS SUB-TABS -->
+      <div class="settings-nav-tabs">
+        <button type="button" class="settings-tab-btn active" id="tab-btn-settings-general" onclick="switchSettingsTab('general')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <span>Пути и команды</span>
+        </button>
+        <button type="button" class="settings-tab-btn" id="tab-btn-settings-autofailover" onclick="switchSettingsTab('autofailover')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          <span>Авто-переключение</span>
+        </button>
+        <button type="button" class="settings-tab-btn" id="tab-btn-settings-failover" onclick="switchSettingsTab('failover')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Белые Списки</span>
+        </button>
+        <button type="button" class="settings-tab-btn" id="tab-btn-settings-backup" onclick="switchSettingsTab('backup')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <span>Резервная копия</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: GENERAL (PATHS & COMMANDS) -->
+      <div id="settings-tab-content-general">
+        <form id="settings-form" onsubmit="onSettingsSubmit(event)">
+          <div class="form-group">
+            <label for="setting-outbound-path">Целевой путь для <code>outbound.json</code></label>
+            <input type="text" id="setting-outbound-path" placeholder="/opt/etc/xray/configs/05_outbounds.json" required>
+            <small class="help-text">Куда сохранять активное подключение на роутере.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-routing-path">Целевой путь для <code>routing.json</code></label>
+            <input type="text" id="setting-routing-path" placeholder="/opt/etc/xray/configs/05_routing.json" required>
+            <small class="help-text">Куда сохранять активные правила маршрутизации на роутере.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-restart-cmd">Команда перезапуска службы XKeen</label>
+            <input type="text" id="setting-restart-cmd" placeholder="xkeen -restart">
+            <small class="help-text">Выполняется при активации подключения, смене роутинга и проверке доступности.</small>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="setting-start-cmd">Команда запуска</label>
+              <input type="text" id="setting-start-cmd" placeholder="xkeen -start">
+            </div>
+            <div class="form-group flex-1">
+              <label for="setting-stop-cmd">Команда остановки</label>
+              <input type="text" id="setting-stop-cmd" placeholder="xkeen -stop">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-status-cmd">Команда проверки статуса</label>
+            <input type="text" id="setting-status-cmd" placeholder="xkeen -status">
+          </div>
+
+          <div class="form-group">
+            <label for="setting-panel-port">Порт веб-панели XKeen Switcher</label>
+            <input type="number" id="setting-panel-port" min="1" max="65535" placeholder="3000" required>
+            <small class="help-text">Порт веб-интерфейса панели (по умолчанию: 3000).</small>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Отмена</button>
+            <button type="submit" class="btn btn-primary">Сохранить настройки</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- TAB 2: BACKUP & RESTORE -->
+      <div id="settings-tab-content-backup" class="hidden">
+        <div class="backup-sections-grid">
+          <!-- EXPORT BACKUP -->
+          <div class="backup-card">
+            <div class="backup-card-icon">📦</div>
+            <h4>Создать резервную копию</h4>
+            <p>Выгружает полный архив настроек, подключений и всех конфигураций маршрутизации в один ZIP-файл.</p>
+            <button type="button" class="btn btn-primary" onclick="downloadBackupZip()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              <span>Скачать резервную копию (.zip)</span>
+            </button>
+          </div>
+
+          <!-- RESTORE BACKUP -->
+          <div class="backup-card">
+            <div class="backup-card-icon">📥</div>
+            <h4>Восстановить из копии</h4>
+            <p>Загрузите ранее созданный ZIP-архив резервной копии или файл конфигурации JSON.</p>
+            
+            <div class="backup-dropzone" id="backup-dropzone" onclick="document.getElementById('backup-file-input').click()">
+              <input type="file" id="backup-file-input" accept=".zip,.json" class="hidden" onchange="onBackupFileSelected(event)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              <span id="backup-dropzone-text">Нажмите для выбора <strong>.zip</strong> или перетащите файл</span>
+            </div>
+
+            <button type="button" class="btn btn-secondary hidden" id="btn-execute-restore" onclick="executeBackupRestore()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Применить восстановление</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Закрыть</button>
+        </div>
+      </div>
+
+      <!-- TAB: AUTO-FAILOVER (АВТОРЕЗЕРВ ПОДКЛЮЧЕНИЙ) -->
+      <div id="settings-tab-content-autofailover" class="hidden">
+        <form id="autofailover-form" onsubmit="onAutoFailoverFormSubmit(event)">
+          <!-- TOGGLE -->
+          <div class="failover-toggle-card glass-card">
+            <div class="failover-toggle-info">
+              <label class="failover-toggle-title">Автоматический резерв подключений</label>
+              <p class="failover-toggle-desc">При сбое текущего сервера роутер быстро протестирует подключения из пула и переключится на лучшее. При восстановлении исходного сервера — вернется обратно.</p>
+            </div>
+            <label class="custom-switch">
+              <input type="checkbox" id="af-enabled" onchange="onAutoFailoverToggleClick()">
+              <span class="custom-slider"></span>
+            </label>
+          </div>
+
+          <!-- STATUS & METRICS -->
+          <div class="failover-status-card glass-card" id="af-status-panel">
+            <div class="fo-status-row">
+              <span class="fo-status-label">Текущий статус:</span>
+              <span class="fo-state-badge" id="af-state-badge">Ожидание...</span>
+            </div>
+            <div class="fo-status-row">
+              <span class="fo-status-label">Журнал автоматики:</span>
+              <span class="fo-status-log" id="af-status-log">Нет событий</span>
+            </div>
+            <div class="fo-metrics-grid">
+              <div class="fo-metric-item">
+                <span class="fo-metric-label">Последняя проверка</span>
+                <strong id="af-last-check-text">-</strong>
+              </div>
+              <div class="fo-metric-item">
+                <span class="fo-metric-label">Счетчик сбоев</span>
+                <strong id="af-fails-text">0</strong>
+              </div>
+              <div class="fo-metric-item">
+                <span class="fo-metric-label">Счетчик возврата</span>
+                <strong id="af-successes-text">0</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- AUTORESERVE HISTORY / LOG CARD -->
+          <div class="failover-history-card glass-card">
+            <div class="fo-history-header">
+              <div class="fo-history-title-wrap">
+                <span class="fo-history-title">Журнал переключений</span>
+                <span class="fo-history-counter" id="af-history-count">0</span>
+              </div>
+              <div class="fo-history-actions">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="loadAutoFailoverHistoryUI()" title="Обновить список событий">
+                  <span class="fo-refresh-icon">↻</span> Обновить
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary btn-danger-hover" onclick="clearAutoFailoverHistoryUI()" title="Очистить журнал">
+                  🗑️ Очистить
+                </button>
+              </div>
+            </div>
+            <div class="fo-history-list" id="af-history-list">
+              <div class="fo-history-empty">Загрузка журнала...</div>
+            </div>
+          </div>
+
+          <!-- STRATEGY & PRIMARY SELECTION -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="af-strategy">Стратегия выбора резерва</label>
+              <select id="af-strategy" class="form-control">
+                <option value="lowest_ping">⚡ Самый быстрый по пингу (рекомендуется)</option>
+                <option value="priority_order">📋 По порядку списка (сверху вниз)</option>
+              </select>
+              <small class="help-text">Как выбирать сервер из пула при отказе основного.</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="af-primary-mode">Основное подключение</label>
+              <select id="af-primary-mode" class="form-control" onchange="onAutoFailoverPrimaryModeChange()">
+                <option value="manual_active">🎯 Текущее активное (запоминать ручной выбор)</option>
+                <option value="specific_id">📌 Фиксированное из списка</option>
+              </select>
+              <small class="help-text">Какое подключение считать основным для возврата.</small>
+            </div>
+          </div>
+
+          <!-- SPECIFIC PRIMARY SELECT (hidden by default) -->
+          <div class="form-group hidden" id="af-specific-primary-wrap">
+            <label for="af-specific-primary-conn">Выберите фиксированное основное подключение</label>
+            <select id="af-specific-primary-conn" class="form-control">
+              <!-- Populated via JS -->
+            </select>
+          </div>
+
+          <!-- BACKUP POOL CHECKBOXES -->
+          <div class="form-group">
+            <div class="label-row pool-header-label-row">
+              <label style="margin:0;">Пул резервных подключений <span class="req">*</span></label>
+              <div class="field-actions" style="display:flex; gap:8px;">
+                <button type="button" class="btn-text-action" onclick="toggleAllPool(true)">Выбрать все</button>
+                <span style="opacity:0.3;">|</span>
+                <button type="button" class="btn-text-action" onclick="toggleAllPool(false)">Снять все</button>
+              </div>
+            </div>
+            <p class="help-text" style="margin-bottom:8px;">Отметьте подключения, на которые разрешено переключаться. Снимите галочки со специальных БС-профилей или лимитных серверов.</p>
+            <div class="pool-connections-list" id="af-pool-container">
+              <!-- Populated via JS -->
+            </div>
+          </div>
+
+          <!-- AUTO RETURN TOGGLE -->
+          <div class="failover-toggle-card glass-card" style="margin-top:12px;">
+            <div class="failover-toggle-info">
+              <label class="failover-toggle-title" style="font-size:0.92rem;">Автовозврат на основное подключение (Fallback)</label>
+              <p class="failover-toggle-desc">Когда основной сервер восстановится, роутер автоматически переключится обратно на него.</p>
+            </div>
+            <label class="custom-switch">
+              <input type="checkbox" id="af-auto-return" checked>
+              <span class="custom-slider"></span>
+            </label>
+          </div>
+
+          <!-- ADVANCED ACCORDION -->
+          <details class="failover-advanced-details">
+            <summary>Расширенные параметры проверок и порогов</summary>
+            <div class="failover-advanced-body">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="af-interval">Интервал проверки (сек)</label>
+                  <input type="number" id="af-interval" min="10" max="300" value="20" placeholder="20">
+                  <small class="help-text">Частота проверок активного соединения (мин. 10 сек).</small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="af-fail-threshold">Порог сбоя (ошибок подряд)</label>
+                  <input type="number" id="af-fail-threshold" min="1" max="10" value="3" placeholder="3">
+                  <small class="help-text">Число сбоев подряд до переключения на резерв.</small>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="af-recovery-threshold">Порог возврата (успехов подряд)</label>
+                  <input type="number" id="af-recovery-threshold" min="1" max="10" value="3" placeholder="3">
+                  <small class="help-text">Число успешных откликов подряд для возврата на основной.</small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="af-canary-url">URL проверки внешнего интернета (Canary)</label>
+                  <input type="url" id="af-canary-url" value="http://cp.cloudflare.com/generate_204" placeholder="http://cp.cloudflare.com/generate_204">
+                  <small class="help-text">Быстрый HTTP 204 ресурс для проверки доступности канала.</small>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Отмена</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-autofailover">Сохранить настройки резерва</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- TAB 3: FAILOVER (БЕЛЫЕ СПИСКИ) -->
+      <div id="settings-tab-content-failover" class="hidden">
+        <form id="failover-form" onsubmit="onFailoverFormSubmit(event)">
+          <!-- TOGGLE -->
+          <div class="failover-toggle-card glass-card">
+            <div class="failover-toggle-info">
+              <label class="failover-toggle-title">Автоматический Failover при Белых Списках</label>
+              <p class="failover-toggle-desc">При блокировке основного VLESS роутер автоматически переключит исходящий трафик на БС-профиль с его специальным роутингом, а при снятии блокировки — вернется обратно на основной VLESS.</p>
+            </div>
+            <label class="custom-switch">
+              <input type="checkbox" id="fo-enabled" onchange="onFailoverToggleClick()">
+              <span class="custom-slider"></span>
+            </label>
+          </div>
+
+          <!-- STATUS & METRICS -->
+          <div class="failover-status-card glass-card" id="fo-status-panel">
+            <div class="fo-status-row">
+              <span class="fo-status-label">Текущий статус:</span>
+              <span class="fo-state-badge" id="fo-state-badge">Ожидание...</span>
+            </div>
+            <div class="fo-status-row">
+              <span class="fo-status-label">Журнал автоматики:</span>
+              <span class="fo-status-log" id="fo-status-log">Нет событий</span>
+            </div>
+            <div class="fo-metrics-grid">
+              <div class="fo-metric-item">
+                <span class="fo-metric-label">Последняя проверка</span>
+                <strong id="fo-last-check-text">-</strong>
+              </div>
+              <div class="fo-metric-item">
+                <span class="fo-metric-label">Счетчик сбоев</span>
+                <strong id="fo-fails-text">0</strong>
+              </div>
+              <div class="fo-metric-item">
+                <span class="fo-metric-label">Счетчик восстановления</span>
+                <strong id="fo-successes-text">0</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- FAILOVER HISTORY / LOG CARD -->
+          <div class="failover-history-card glass-card">
+            <div class="fo-history-header">
+              <div class="fo-history-title-wrap">
+                <span class="fo-history-title">Журнал переключений</span>
+                <span class="fo-history-counter" id="fo-history-count">0</span>
+              </div>
+              <div class="fo-history-actions">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="loadFailoverHistoryUI()" title="Обновить список событий">
+                  <span class="fo-refresh-icon">↻</span> Обновить
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary btn-danger-hover" onclick="clearFailoverHistoryUI()" title="Очистить журнал">
+                  🗑️ Очистить
+                </button>
+              </div>
+            </div>
+            <div class="fo-history-list" id="fo-history-list">
+              <div class="fo-history-empty">Загрузка журнала...</div>
+            </div>
+          </div>
+
+          <!-- CONNECTIONS SELECTION -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="fo-primary-conn">Основное подключение (Обычный режим)</label>
+              <select id="fo-primary-conn" class="form-control" onchange="onFailoverConnSelectChange()" required>
+                <!-- Populated via JS -->
+              </select>
+              <small class="help-text">Ваш стандартный быстрый VLESS-профиль со стандартным роутингом.</small>
+            </div>
+            <div class="form-group flex-1">
+              <label for="fo-backup-conn">Резервное подключение (Для Белых Списков)</label>
+              <select id="fo-backup-conn" class="form-control" onchange="onFailoverConnSelectChange()" required>
+                <!-- Populated via JS -->
+              </select>
+              <small class="help-text">Профиль для обхода БС с привязанным к нему специальным БС-роутингом.</small>
+            </div>
+          </div>
+
+          <!-- ADVANCED SETTINGS ACCORDION -->
+          <details class="failover-advanced-details">
+            <summary>Расширенные параметры проверок и порогов</summary>
+            <div class="failover-advanced-body">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="fo-interval">Интервал проверки (сек)</label>
+                  <input type="number" id="fo-interval" min="10" max="300" value="25" placeholder="25">
+                  <small class="help-text">Частота контрольных запросов (мин. 10 сек).</small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="fo-fail-threshold">Порог сбоя (ошибок подряд)</label>
+                  <input type="number" id="fo-fail-threshold" min="1" max="10" value="3" placeholder="3">
+                  <small class="help-text">Число сбоев подряд для перехода на БС.</small>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="fo-recovery-threshold">Порог возврата (успехов подряд)</label>
+                  <input type="number" id="fo-recovery-threshold" min="1" max="10" value="3" placeholder="3">
+                  <small class="help-text">Число успешных откликов подряд для возврата.</small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="fo-ru-host">Хост проверки связи с Рунетом (IP)</label>
+                  <input type="text" id="fo-ru-host" value="77.88.8.8" placeholder="77.88.8.8">
+                  <small class="help-text">Проверяет, что домашний интернет провайдера вообще работает.</small>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="fo-canary-url">URL проверки внешнего интернета (Canary)</label>
+                  <input type="url" id="fo-canary-url" value="http://cp.cloudflare.com/generate_204" placeholder="http://cp.cloudflare.com/generate_204">
+                  <small class="help-text">Зарубежный ресурс (HTTP 204), блокируемый при БС.</small>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Отмена</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-failover">Сохранить настройки БС</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SERVICE ERROR / STATUS DETAILS -->
+  <div class="modal-overlay hidden" id="service-status-modal">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <h3 id="service-modal-title">Статус службы XKeen</h3>
+          <span id="service-modal-badge" class="service-status-badge status-loading">
+            <span class="status-dot"></span>
+            <span id="service-modal-badge-text">Проверка...</span>
+          </span>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('service-status-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="service-details-meta">
+          <p><strong>Команда:</strong> <code id="service-modal-cmd">xkeen -status</code></p>
+          <p id="service-modal-time-row"><strong>Время проверки:</strong> <span id="service-modal-time">-</span></p>
+        </div>
+
+        <div class="terminal-container">
+          <div class="terminal-header">
+            <span>Вывод терминала (stdout / stderr)</span>
+            <button type="button" class="btn-text-action" onclick="copyServiceLog()">Скопировать лог</button>
+          </div>
+          <pre class="terminal-output" id="service-modal-log">Лог пуст</pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="controlService('restart'); closeModal('service-status-modal')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l6.17-5.19"/></svg>
+          Перезапустить
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('service-status-modal')">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: APP UPDATE -->
+  <div class="modal-overlay hidden" id="modal-app-update">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div>
+          <h3>Обновление XKeenSwitcher</h3>
+          <p class="modal-subtitle">Обновление с <strong id="update-modal-cur-ver">v2.0.0</strong> до <strong id="update-modal-target-ver">v2.0.1</strong></p>
+        </div>
+        <button type="button" class="close-btn" id="btn-close-app-update" onclick="closeAppUpdateModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Safety Alert -->
+        <div class="update-safety-alert" id="update-safety-alert">
+          <div class="update-alert-icon">🛡️</div>
+          <div class="update-alert-content">
+            <strong>Безопасное обновление</strong>
+            <p>Ваши профили, роутинги и настройки (<code>data/profiles.json</code>) будут автоматически сохранены в резервную копию перед установкой новой версии.</p>
+          </div>
+        </div>
+
+        <!-- Release Notes Preview if available -->
+        <div class="update-release-notes hidden" id="update-release-notes">
+          <div class="update-release-title">Что нового в релизе:</div>
+          <div class="update-release-body" id="update-release-body"></div>
+        </div>
+
+        <!-- Update Steps Progress -->
+        <div class="conn-progress-steps update-steps-list" id="update-steps-container">
+          <div class="progress-step" id="up-step-backup">
+            <div class="step-icon">1</div>
+            <div class="step-info">
+              <div class="step-title">Резервное копирование данных</div>
+              <div class="step-desc">Сохранение profiles.json и настроек</div>
+            </div>
+            <div class="step-status" id="up-step-backup-status">⏳</div>
+          </div>
+
+          <div class="progress-step" id="up-step-download">
+            <div class="step-icon">2</div>
+            <div class="step-info">
+              <div class="step-title">Загрузка релиза с GitHub</div>
+              <div class="step-desc" id="up-step-download-desc">Скачивание архива с исходным кодом</div>
+            </div>
+            <div class="step-status" id="up-step-download-status">⏳</div>
+          </div>
+
+          <div class="progress-step" id="up-step-extract">
+            <div class="step-icon">3</div>
+            <div class="step-info">
+              <div class="step-title">Установка файлов приложения</div>
+              <div class="step-desc">Распаковка и замена файлов</div>
+            </div>
+            <div class="step-status" id="up-step-extract-status">⏳</div>
+          </div>
+
+          <div class="progress-step" id="up-step-restart">
+            <div class="step-icon">4</div>
+            <div class="step-info">
+              <div class="step-title">Перезапуск сервера</div>
+              <div class="step-desc" id="up-step-restart-desc">Ожидание запуска новой версии службы...</div>
+            </div>
+            <div class="step-status" id="up-step-restart-status">⏳</div>
+          </div>
+        </div>
+
+        <!-- Error Container -->
+        <div class="update-error-box hidden" id="update-error-box">
+          <div class="update-error-title">Ошибка при обновлении</div>
+          <div class="update-error-msg" id="update-error-msg"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer" id="update-modal-footer">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-update" onclick="closeAppUpdateModal()">Отмена</button>
+        <button type="button" class="btn btn-primary btn-update-confirm" id="btn-confirm-update" onclick="startAppUpdate()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Начать обновление
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container"></div>
+
+  <script src="qrcode.min.js"></script>
+  <script src="app.js?v=2.3.0"></script>
+</body>
+</html>

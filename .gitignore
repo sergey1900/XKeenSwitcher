@@ -1,0 +1,20 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Dependencies (if any)
+node_modules/
+package-lock.json
+
+# Local profiles / user data
+data/*.json
+!data/.gitkeep
+
+# Logs and backups
+*.log
+*.zip
