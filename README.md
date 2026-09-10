@@ -2,6 +2,10 @@
 
 Современная веб-панель для управления подключениями outbound и модульной маршрутизацией (routing) для **XKeen (Xray / sing-box)** на роутерах с установленной средой **Entware** (Keenetic, OpenWrt и др.).
 
+<p align="center">
+  <img src="screenshot.png" alt="Интерфейс XKeenSwitcher v2.0.1" width="100%" />
+</p>
+
 ---
 
 ## ✨ Возможности
