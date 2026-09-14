@@ -2235,7 +2235,7 @@ function highlightJson(jsonStr) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  return escaped.replace(
+  const highlighted = escaped.replace(
     /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?|\/\/[^\n]*|\/\*[\s\S]*?\*\/|[{}\[\],:])/g,
     (match) => {
       if (match.startsWith('//') || match.startsWith('/*')) {
@@ -2259,6 +2259,8 @@ function highlightJson(jsonStr) {
       return `<span class="code-number">${match}</span>`;
     }
   );
+
+  return jsonStr.endsWith('\n') ? highlighted + '\n' : highlighted;
 }
 
 function stripComments(str) {
