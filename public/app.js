@@ -183,6 +183,30 @@ function getSortedConnections(connections, activeId) {
   return list;
 }
 
+function formatNetworkName(net) {
+  if (!net) return 'TCP';
+  const n = String(net).trim().toLowerCase();
+  switch (n) {
+    case 'tcp': return 'TCP';
+    case 'grpc': return 'gRPC';
+    case 'ws':
+    case 'websocket': return 'WebSocket';
+    case 'xhttp':
+    case 'xttp': return 'XHTTP';
+    case 'splithttp': return 'SplitHTTP';
+    case 'h2':
+    case 'http': return 'HTTP/2';
+    case 'mkcp':
+    case 'kcp': return 'mKCP';
+    case 'quic': return 'QUIC';
+    case 'domainsocket':
+    case 'ds': return 'DomainSocket';
+    case 'wireguard': return 'WireGuard';
+    case 'udp': return 'UDP';
+    default: return n.toUpperCase();
+  }
+}
+
 // Render Connections Grid
 function renderConnections() {
   if (!connectionsGrid) return;
@@ -227,6 +251,22 @@ function renderConnections() {
       secBadgeHtml = `<span class="conn-badge badge-sec">None</span>`;
     }
 
+    // Network / Transport
+    let connNetwork = conn.network;
+    if (!connNetwork && conn.outboundContent) {
+      try {
+        const clean = stripComments(conn.outboundContent);
+        const parsed = JSON.parse(clean);
+        const oList = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        const ob = oList.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
+        if (ob && ob.streamSettings && ob.streamSettings.network) {
+          connNetwork = ob.streamSettings.network;
+        }
+      } catch (e) {}
+    }
+    const netFormatted = formatNetworkName(connNetwork || (conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
+    const netBadgeHtml = `<span class="conn-badge badge-net" title="Транспорт: ${escapeHtml(netFormatted)}">${escapeHtml(netFormatted)}</span>`;
+
     // Ping status display
     let pingHtml = '';
     if (isChecking) {
@@ -265,6 +305,7 @@ function renderConnections() {
           <div class="conn-badges-row">
             <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
             <span class="conn-badge badge-proto" title="Протокол">${escapeHtml((conn.protocol || 'vless').toUpperCase())}</span>
+            ${netBadgeHtml}
             ${secBadgeHtml}
           </div>
 
@@ -530,6 +571,8 @@ function parseVlessUrlInput(showNotice = true) {
     document.getElementById('preview-host').textContent = address;
     document.getElementById('preview-port').textContent = port;
     document.getElementById('preview-proto').textContent = 'VLESS';
+    const previewNetEl = document.getElementById('preview-net');
+    if (previewNetEl) previewNetEl.textContent = formatNetworkName(type);
     document.getElementById('preview-sec').textContent = security === 'reality' ? 'Reality' : security;
     const sniWrap = document.getElementById('preview-sni-wrap');
     if (sni) {
@@ -605,6 +648,22 @@ function openEditConnectionModal(id) {
   document.getElementById('edit-preview-host').textContent = conn.serverAddress || '-';
   document.getElementById('edit-preview-port').textContent = conn.serverPort || '-';
   document.getElementById('edit-preview-proto').textContent = (conn.protocol || 'VLESS').toUpperCase();
+  const editNetEl = document.getElementById('edit-preview-net');
+  if (editNetEl) {
+    let editNet = conn.network;
+    if (!editNet && conn.outboundContent) {
+      try {
+        const clean = stripComments(conn.outboundContent);
+        const parsed = JSON.parse(clean);
+        const oList = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        const ob = oList.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
+        if (ob && ob.streamSettings && ob.streamSettings.network) {
+          editNet = ob.streamSettings.network;
+        }
+      } catch (e) {}
+    }
+    editNetEl.textContent = formatNetworkName(editNet || (conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
+  }
   document.getElementById('edit-preview-sec').textContent = conn.security || 'none';
   const sniWrap = document.getElementById('edit-preview-sni-wrap');
   if (conn.sni) {

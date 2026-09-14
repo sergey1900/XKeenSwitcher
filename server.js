@@ -381,6 +381,7 @@ function parseVlessUrl(urlStr) {
     serverAddress: address,
     serverPort: port,
     protocol: 'vless',
+    network: type,
     security: security,
     sni: sni,
     outboundJson: JSON.stringify(outboundJsonObj, null, 4)
@@ -392,6 +393,7 @@ function extractOutboundMetadata(outboundContent) {
   let serverAddress = '';
   let serverPort = null;
   let protocol = 'vless';
+  let network = 'tcp';
   let security = 'none';
   let sni = '';
 
@@ -421,18 +423,21 @@ function extractOutboundMetadata(outboundContent) {
         }
       }
       if (ob.streamSettings) {
+        if (ob.streamSettings.network) network = ob.streamSettings.network;
         if (ob.streamSettings.security) security = ob.streamSettings.security;
         if (ob.streamSettings.realitySettings && ob.streamSettings.realitySettings.serverName) {
           sni = ob.streamSettings.realitySettings.serverName;
         } else if (ob.streamSettings.tlsSettings && ob.streamSettings.tlsSettings.serverName) {
           sni = ob.streamSettings.tlsSettings.serverName;
         }
+      } else if (protocol === 'wireguard') {
+        network = 'udp';
       }
       if (serverAddress) break;
     }
   } catch (e) {}
 
-  return { serverAddress, serverPort, protocol, security, sni };
+  return { serverAddress, serverPort, protocol, network, security, sni };
 }
 
 // Helper: Measure TCP handshake latency (ping in ms) to host:port
@@ -1014,6 +1019,7 @@ function loadData() {
             serverAddress: c.serverAddress || meta.serverAddress || '',
             serverPort: c.serverPort || meta.serverPort || null,
             protocol: c.protocol || meta.protocol || 'vless',
+            network: c.network || meta.network || 'tcp',
             security: c.security || meta.security || 'none',
             sni: c.sni || meta.sni || '',
             countryCode: c.countryCode || null,
@@ -1044,6 +1050,7 @@ function loadData() {
                 serverAddress: meta.serverAddress,
                 serverPort: meta.serverPort,
                 protocol: meta.protocol || 'vless',
+                network: meta.network || 'tcp',
                 security: meta.security || 'reality',
                 sni: meta.sni || '',
                 createdAt: new Date().toISOString()
@@ -2100,6 +2107,7 @@ const server = http.createServer(async (req, res) => {
         serverAddress: meta.serverAddress,
         serverPort: meta.serverPort,
         protocol: meta.protocol,
+        network: meta.network,
         security: meta.security,
         sni: meta.sni,
         countryCode: countryCode,
@@ -2155,6 +2163,7 @@ const server = http.createServer(async (req, res) => {
       conn.serverAddress = meta.serverAddress;
       conn.serverPort = meta.serverPort;
       conn.protocol = meta.protocol;
+      conn.network = meta.network;
       conn.security = meta.security;
       conn.sni = meta.sni;
       conn.updatedAt = new Date().toISOString();
@@ -2770,6 +2779,7 @@ const server = http.createServer(async (req, res) => {
           serverAddress: c.serverAddress || meta.serverAddress || '',
           serverPort: c.serverPort || meta.serverPort || null,
           protocol: c.protocol || meta.protocol || 'vless',
+          network: c.network || meta.network || 'tcp',
           security: c.security || meta.security || 'none',
           sni: c.sni || meta.sni || '',
           lastPing: null,
