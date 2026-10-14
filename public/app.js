@@ -16,6 +16,7 @@ let currentSort = localStorage.getItem('xkeen_connections_sort') || 'default';
 let pingingConnectionIds = new Set();
 let pingingGroupIds = new Set();
 let updatingSubscriptionIds = new Set();
+let isPingingFavorites = false;
 let isPingingAll = false;
 let servicePollingTimer = null;
 let lastServiceLog = '';
@@ -472,12 +473,26 @@ function renderConnections() {
   // 1. Favorites section at top (if any)
   if (favorites.length > 0) {
     const favAvailable = favorites.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
+    const isFavPinging = isPingingFavorites || (isPingingAll && favorites.some(c => pingingConnectionIds.has(c.id)));
     html += `
       <div class="favorites-container">
         <div class="section-group-divider favorites-divider">
-          <span class="star-icon">⭐</span>
-          <span>Избранные подключения</span>
-          <span class="group-count" title="Доступно: ${favAvailable} из ${favorites.length} подключений"><span class="count-available ${favAvailable > 0 ? 'has-online' : 'no-online'}">● ${favAvailable}</span> / <span class="count-total">${favorites.length}</span></span>
+          <div class="favorites-header-left">
+            <span class="star-icon">⭐</span>
+            <span>Избранные подключения</span>
+            <span class="group-count" title="Доступно: ${favAvailable} из ${favorites.length} подключений"><span class="count-available ${favAvailable > 0 ? 'has-online' : 'no-online'}">● ${favAvailable}</span> / <span class="count-total">${favorites.length}</span></span>
+          </div>
+          <div class="favorites-actions" onclick="event.stopPropagation()">
+            ${isFavPinging ? `
+              <button class="btn-group-action btn-group-ping is-loading" disabled title="Выполняется проверка избранных подключений...">
+                <span class="group-spinner-circle"></span>
+              </button>
+            ` : `
+              <button class="btn-group-action btn-group-ping" id="btn-ping-favorites" onclick="pingFavoritesConnections(event)" title="Проверить доступность всех избранных подключений">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </button>
+            `}
+          </div>
         </div>
         <div class="connections-subgrid">
           ${favorites.map(c => renderConnectionCardHtml(c, activeId, true)).join('')}
@@ -2257,6 +2272,64 @@ async function moveGroup(groupId, direction, event) {
   } catch (err) {
     showToast(err.message, 'error');
     await loadData();
+  }
+// Ping all favorite connections
+async function pingFavoritesConnections(event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (isPingingFavorites) return;
+
+  const favList = (appData.connections || []).filter(c => c.isFavorite);
+  if (favList.length === 0) {
+    showToast('В избранном нет подключений для проверки', 'info');
+    return;
+  }
+
+  isPingingFavorites = true;
+  renderConnections();
+  showToast(`Проверка избранных подключений (${favList.length})...`, 'info');
+
+  try {
+    for (const conn of favList) {
+      pingingConnectionIds.add(conn.id);
+      renderConnections();
+      try {
+        const res = await fetch(`/api/connections/${conn.id}/ping`, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          conn.lastPing = data.ping;
+          conn.lastPingStatus = data.status;
+          conn.lastPingError = data.error || null;
+          conn.lastPingType = data.checkType || 'tcp';
+          conn.lastPingCheckedAt = data.checkedAt || new Date().toISOString();
+          if (data.countryCode) conn.countryCode = data.countryCode;
+          if (data.countryName) conn.countryName = data.countryName;
+        } else {
+          let errText = '';
+          try { const d = await res.json(); errText = d.error || ''; } catch (e) {}
+          conn.lastPing = null;
+          conn.lastPingStatus = 'unreachable';
+          conn.lastPingError = errText;
+          conn.lastPingCheckedAt = new Date().toISOString();
+        }
+      } catch (e) {
+        conn.lastPing = null;
+        conn.lastPingStatus = 'unreachable';
+        conn.lastPingError = e.message || 'Ошибка сети';
+        conn.lastPingCheckedAt = new Date().toISOString();
+      } finally {
+        pingingConnectionIds.delete(conn.id);
+        renderConnections();
+      }
+    }
+    showToast('Проверка избранных подключений завершена', 'success');
+  } catch (err) {
+    showToast(`Ошибка проверки избранного: ${err.message}`, 'error');
+  } finally {
+    isPingingFavorites = false;
+    renderConnections();
   }
 }
 
