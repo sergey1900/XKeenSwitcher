@@ -1053,34 +1053,41 @@ async function parseProxyUrlInput(showNotice = true) {
   try {
     let result = null;
 
-    if (rawUrl.startsWith('vpn://') || (rawUrl.includes('[Interface]') && (rawUrl.includes('Jc') || rawUrl.includes('jc') || rawUrl.includes('H1') || rawUrl.includes('h1')))) {
-      if (showNotice) showToast('Распознавание ссылки Amnezia VPN...', 'info');
+    // 1. Try server-side parser first for maximum compatibility across all protocols
+    try {
       const res = await fetch('/api/connections/parse-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: rawUrl })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка разбора ссылки Amnezia');
-      result = data;
-      currentAddAmneziaConfig = data.amneziaConfig || null;
-    } else if (rawUrl.includes('[Interface]') || rawUrl.includes('[Peer]')) {
-      result = parseWireguardConfigClient(rawUrl);
-    } else if (rawUrl.startsWith('vless://')) {
-      result = parseVlessClient(rawUrl);
-    } else if (rawUrl.startsWith('vmess://')) {
-      result = parseVmessClient(rawUrl);
-    } else if (rawUrl.startsWith('trojan://')) {
-      result = parseTrojanClient(rawUrl);
-    } else if (rawUrl.startsWith('ss://')) {
-      result = parseShadowsocksClient(rawUrl);
-    } else if (rawUrl.startsWith('wireguard://') || rawUrl.startsWith('awg://')) {
-      result = parseWireguardUrlClient(rawUrl);
-    } else if (rawUrl.startsWith('hysteria2://') || rawUrl.startsWith('hy2://')) {
-      result = parseHysteria2Client(rawUrl);
-    } else {
-      if (showNotice) showToast('Неизвестный протокол. Вставьте vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg:// или конфиг [Interface]', 'warning');
-      return;
+      if (res.ok) {
+        result = await res.json();
+        currentAddAmneziaConfig = result.amneziaConfig || null;
+      }
+    } catch (apiErr) {}
+
+    // 2. Client-side fallback if server is unreachable or returned error
+    if (!result) {
+      if (rawUrl.startsWith('vpn://') || (rawUrl.includes('[Interface]') && (rawUrl.includes('Jc') || rawUrl.includes('jc') || rawUrl.includes('H1') || rawUrl.includes('h1')))) {
+        throw new Error('Ссылки Amnezia требуют связи с сервером');
+      } else if (rawUrl.includes('[Interface]') || rawUrl.includes('[Peer]')) {
+        result = parseWireguardConfigClient(rawUrl);
+      } else if (rawUrl.startsWith('vless://')) {
+        result = parseVlessClient(rawUrl);
+      } else if (rawUrl.startsWith('vmess://')) {
+        result = parseVmessClient(rawUrl);
+      } else if (rawUrl.startsWith('trojan://')) {
+        result = parseTrojanClient(rawUrl);
+      } else if (rawUrl.startsWith('ss://')) {
+        result = parseShadowsocksClient(rawUrl);
+      } else if (rawUrl.startsWith('wireguard://') || rawUrl.startsWith('awg://')) {
+        result = parseWireguardUrlClient(rawUrl);
+      } else if (rawUrl.startsWith('hysteria2://') || rawUrl.startsWith('hy2://')) {
+        result = parseHysteria2Client(rawUrl);
+      } else {
+        if (showNotice) showToast('Неизвестный протокол. Вставьте vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg:// или конфиг [Interface]', 'warning');
+        return;
+      }
     }
 
     if (!result) return;
@@ -1344,22 +1351,71 @@ function parseVmessClient(rawUrl) {
 
 // Trojan Client Parser
 function parseTrojanClient(rawUrl) {
-  const u = new URL(rawUrl);
-  const password = decodeURIComponent(u.username);
-  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
-  const port = parseInt(u.port, 10);
-  if (!password || !address || !port) throw new Error('Некорректная ссылка Trojan');
+  let str = (rawUrl || '').trim();
+  if (str.startsWith('trojan://')) str = str.substring(9);
 
-  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
-  let name = '';
-  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
-  if (!name) name = `Trojan - ${address}:${port}`;
+  let rawName = '';
+  if (str.includes('#')) {
+    const parts = str.split('#');
+    str = parts[0];
+    try { rawName = decodeURIComponent(parts.slice(1).join('#')).trim(); } catch (e) { rawName = parts.slice(1).join('#').trim(); }
+  }
 
-  const sp = u.searchParams;
+  // Handle base64 encoded trojan body if present
+  if (!str.includes('@') && !str.includes('?')) {
+    try {
+      const decoded = atob(str);
+      if (decoded.includes('@')) {
+        str = decoded;
+      }
+    } catch (e) {}
+  }
+
+  let searchStr = '';
+  if (str.includes('?')) {
+    const qParts = str.split('?');
+    str = qParts[0];
+    searchStr = qParts.slice(1).join('?');
+  }
+
+  const atIdx = str.lastIndexOf('@');
+  if (atIdx === -1) {
+    throw new Error('Некорректная ссылка Trojan: отсутствует разделитель @');
+  }
+
+  const userInfo = str.substring(0, atIdx);
+  const hostPort = str.substring(atIdx + 1);
+
+  let password = userInfo;
+  if (userInfo.includes(':')) {
+    const colonIdx = userInfo.indexOf(':');
+    password = userInfo.substring(colonIdx + 1);
+  }
+  try { password = decodeURIComponent(password); } catch (e) {}
+
+  let address = hostPort;
+  let port = 443;
+  const lastColon = hostPort.lastIndexOf(':');
+  if (lastColon !== -1) {
+    address = hostPort.substring(0, lastColon).replace(/^\[|\]$/g, '');
+    port = parseInt(hostPort.substring(lastColon + 1), 10) || 443;
+  } else {
+    address = hostPort.replace(/^\[|\]$/g, '');
+  }
+
+  if (!password || !address || !port) {
+    throw new Error('Некорректная ссылка Trojan: не удалось извлечь пароль или адрес сервера');
+  }
+
+  let name = rawName || `Trojan - ${address}:${port}`;
+
+  const sp = new URLSearchParams(searchStr);
   const type = (sp.get('type') || 'tcp').toLowerCase();
   const security = (sp.get('security') || 'tls').toLowerCase();
   const sni = sp.get('sni') || sp.get('peer') || address;
   const fp = sp.get('fp') || 'chrome';
+  const flow = sp.get('flow') || '';
+  const alpnStr = sp.get('alpn') || '';
 
   const streamSettings = {
     network: type,
@@ -1377,8 +1433,12 @@ function parseTrojanClient(rawUrl) {
   } else if (security === 'tls') {
     streamSettings.tlsSettings = {
       serverName: sni,
-      fingerprint: fp
+      fingerprint: fp,
+      allowInsecure: (sp.get('allowInsecure') === '1' || sp.get('allowInsecure') === 'true' || sp.get('insecure') === '1')
     };
+    if (alpnStr) {
+      streamSettings.tlsSettings.alpn = alpnStr.split(',').map(s => s.trim()).filter(Boolean);
+    }
   }
 
   if (type === 'ws') {
@@ -1392,20 +1452,23 @@ function parseTrojanClient(rawUrl) {
     };
   }
 
+  const serverObj = {
+    address: address,
+    port: port,
+    password: password,
+    level: 0
+  };
+  if (flow) {
+    serverObj.flow = flow;
+  }
+
   const outboundJsonObj = {
     outbounds: [
       {
         tag: 'trojan',
         protocol: 'trojan',
         settings: {
-          servers: [
-            {
-              address: address,
-              port: port,
-              password: password,
-              level: 0
-            }
-          ]
+          servers: [serverObj]
         },
         streamSettings: streamSettings
       },
@@ -1749,6 +1812,19 @@ async function onAddConnectionSubmit(e) {
 
   if (!name || !outboundContent) {
     showToast('Укажите название и содержимое outbound.json', 'warning');
+    return;
+  }
+
+  let parsedOutbounds = [];
+  try {
+    const cleanOutbound = stripComments(outboundContent);
+    const parsedObj = JSON.parse(cleanOutbound);
+    parsedOutbounds = Array.isArray(parsedObj.outbounds) ? parsedObj.outbounds : [parsedObj];
+  } catch (e) {}
+
+  const realOutbound = parsedOutbounds.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
+  if (!realOutbound || parsedOutbounds.length === 0) {
+    showToast('Конфигурация outbound.json пуста или не содержит серверов прокси. Вставьте корректную ссылку подключения в поле выше.', 'warning');
     return;
   }
 

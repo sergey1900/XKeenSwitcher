@@ -600,24 +600,71 @@ function parseVmessUrl(cleanStr) {
 
 // Parse Trojan URL to Outbound JSON and metadata
 function parseTrojanUrl(cleanStr) {
-  const u = new URL(cleanStr);
-  const password = decodeURIComponent(u.username);
-  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
-  const port = parseInt(u.port, 10);
+  let str = cleanStr.trim();
+  if (str.startsWith('trojan://')) str = str.substring(9);
+
+  let rawName = '';
+  if (str.includes('#')) {
+    const parts = str.split('#');
+    str = parts[0];
+    try { rawName = decodeURIComponent(parts.slice(1).join('#')).trim(); } catch (e) { rawName = parts.slice(1).join('#').trim(); }
+  }
+
+  // Handle base64 encoded trojan body if present
+  if (!str.includes('@') && !str.includes('?')) {
+    try {
+      const decoded = Buffer.from(str, 'base64').toString('utf8');
+      if (decoded.includes('@')) {
+        str = decoded;
+      }
+    } catch (e) {}
+  }
+
+  let searchStr = '';
+  if (str.includes('?')) {
+    const qParts = str.split('?');
+    str = qParts[0];
+    searchStr = qParts.slice(1).join('?');
+  }
+
+  const atIdx = str.lastIndexOf('@');
+  if (atIdx === -1) {
+    throw new Error('Некорректная ссылка Trojan: отсутствует разделитель @');
+  }
+
+  const userInfo = str.substring(0, atIdx);
+  const hostPort = str.substring(atIdx + 1);
+
+  let password = userInfo;
+  if (userInfo.includes(':')) {
+    const colonIdx = userInfo.indexOf(':');
+    password = userInfo.substring(colonIdx + 1);
+  }
+  try { password = decodeURIComponent(password); } catch (e) {}
+
+  let address = hostPort;
+  let port = 443;
+  const lastColon = hostPort.lastIndexOf(':');
+  if (lastColon !== -1) {
+    address = hostPort.substring(0, lastColon).replace(/^\[|\]$/g, '');
+    port = parseInt(hostPort.substring(lastColon + 1), 10) || 443;
+  } else {
+    address = hostPort.replace(/^\[|\]$/g, '');
+  }
+
   if (!password || !address || !port) {
     throw new Error('Некорректная ссылка Trojan: отсутствуют обязательные параметры (пароль, адрес, порт)');
   }
 
-  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
-  let name = '';
-  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
-  if (!name) name = `Trojan - ${address}:${port}`;
+  let name = rawName || `Trojan - ${address}:${port}`;
 
-  const sp = u.searchParams;
+  const sp = new URLSearchParams(searchStr);
   const type = (sp.get('type') || 'tcp').toLowerCase();
   const security = (sp.get('security') || 'tls').toLowerCase();
   const sni = sp.get('sni') || sp.get('peer') || address;
   const fp = sp.get('fp') || 'chrome';
+  const flow = sp.get('flow') || '';
+  const alpnStr = sp.get('alpn') || '';
 
   const streamSettings = {
     network: type,
@@ -635,10 +682,11 @@ function parseTrojanUrl(cleanStr) {
   } else if (security === 'tls') {
     streamSettings.tlsSettings = {
       serverName: sni,
-      fingerprint: fp
+      fingerprint: fp,
+      allowInsecure: (sp.get('allowInsecure') === '1' || sp.get('allowInsecure') === 'true' || sp.get('insecure') === '1')
     };
-    if (sp.get('alpn')) {
-      streamSettings.tlsSettings.alpn = sp.get('alpn').split(',').map(s => s.trim());
+    if (alpnStr) {
+      streamSettings.tlsSettings.alpn = alpnStr.split(',').map(s => s.trim()).filter(Boolean);
     }
   }
 
@@ -656,20 +704,23 @@ function parseTrojanUrl(cleanStr) {
     };
   }
 
+  const serverObj = {
+    address: address,
+    port: port,
+    password: password,
+    level: 0
+  };
+  if (flow) {
+    serverObj.flow = flow;
+  }
+
   const outboundJsonObj = {
     outbounds: [
       {
         tag: 'trojan',
         protocol: 'trojan',
         settings: {
-          servers: [
-            {
-              address: address,
-              port: port,
-              password: password,
-              level: 0
-            }
-          ]
+          servers: [serverObj]
         },
         streamSettings: streamSettings
       },
@@ -3529,9 +3580,14 @@ const server = http.createServer(async (req, res) => {
       const effectiveAmneziaConfig = body.amneziaConfig || (parsedFromUrl ? parsedFromUrl.amneziaConfig : null) || null;
       const isAwg = meta.protocol === 'amneziawg' || (parsedFromUrl && parsedFromUrl.protocol === 'amneziawg') || Boolean(effectiveAmneziaConfig);
 
+      const resolvedHost = (parsedFromUrl && parsedFromUrl.serverAddress) || meta.serverAddress;
+      if (!resolvedHost && !effectiveAmneziaConfig) {
+        return sendJson(res, 400, { error: 'Конфигурация outbound.json не содержит серверов прокси. Вставьте корректную ссылку подключения.' });
+      }
+
       let countryCode = null;
       let countryName = null;
-      const hostToGeo = (parsedFromUrl && parsedFromUrl.serverAddress) || meta.serverAddress;
+      const hostToGeo = resolvedHost;
       if (hostToGeo) {
         try {
           const geo = await resolveGeoIp(hostToGeo);
