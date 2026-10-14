@@ -469,12 +469,13 @@ function renderConnections() {
 
   // 1. Favorites section at top (if any)
   if (favorites.length > 0) {
+    const favAvailable = favorites.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
     html += `
       <div class="favorites-container">
         <div class="section-group-divider favorites-divider">
           <span class="star-icon">⭐</span>
           <span>Избранные подключения</span>
-          <span class="group-count">${favorites.length}</span>
+          <span class="group-count" title="Доступно: ${favAvailable} из ${favorites.length} подключений"><span class="count-available ${favAvailable > 0 ? 'has-online' : 'no-online'}">● ${favAvailable}</span> / <span class="count-total">${favorites.length}</span></span>
         </div>
         <div class="connections-subgrid">
           ${favorites.map(c => renderConnectionCardHtml(c, activeId, true)).join('')}
@@ -487,6 +488,8 @@ function renderConnections() {
   html += `<div class="groups-container">`;
   groups.forEach((g, gIdx) => {
     const groupConns = list.filter(c => (c.groupId || 'group_default') === g.id);
+    const totalCount = groupConns.length;
+    const availableCount = groupConns.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
     const isCollapsed = collapsedGroupIds.has(g.id);
     const isSub = Boolean(g.isSubscription);
 
@@ -527,7 +530,7 @@ function renderConnections() {
             <span class="group-name">${escapeHtml(g.name)}</span>
             ${groupTargetBadgeHtml}
             ${subInfoHtml}
-            <span class="group-count-badge">${groupConns.length}</span>
+            <span class="group-count-badge" title="Доступно: ${availableCount} из ${totalCount} подключений"><span class="count-available ${availableCount > 0 ? 'has-online' : 'no-online'}">● ${availableCount}</span> / <span class="count-total">${totalCount}</span></span>
           </div>
           <div class="group-actions" onclick="event.stopPropagation()">
             <!-- Group Move Up / Down -->
@@ -2275,10 +2278,22 @@ async function pingGroupConnections(groupId, event) {
           conn.lastPingCheckedAt = data.checkedAt || new Date().toISOString();
           if (data.countryCode) conn.countryCode = data.countryCode;
           if (data.countryName) conn.countryName = data.countryName;
+        } else {
+          let errText = '';
+          try { const d = await res.json(); errText = d.error || ''; } catch (e) {}
+          conn.lastPing = null;
+          conn.lastPingStatus = 'unreachable';
+          conn.lastPingError = errText;
+          conn.lastPingCheckedAt = new Date().toISOString();
         }
       } catch (e) {
+        conn.lastPing = null;
+        conn.lastPingStatus = 'unreachable';
+        conn.lastPingError = e.message || 'Ошибка сети';
+        conn.lastPingCheckedAt = new Date().toISOString();
       } finally {
         pingingConnectionIds.delete(conn.id);
+        renderConnections();
       }
     }
     showToast('Проверка группы завершена', 'success');

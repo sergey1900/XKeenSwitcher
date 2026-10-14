@@ -1819,7 +1819,37 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.group-count-badge .count-available,
+.section-group-divider .group-count .count-available {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.group-count-badge .count-available.has-online,
+.section-group-divider .group-count .count-available.has-online {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.group-count-badge .count-available.no-online,
+.section-group-divider .group-count .count-available.no-online {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.group-count-badge .count-total,
+.section-group-divider .group-count .count-total {
   color: var(--text-muted);
 }
 
@@ -2156,6 +2186,10 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   padding: 2px 8px;
   border-radius: 10px;
   color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
 }
 
 .section-group-divider.favorites-divider {
