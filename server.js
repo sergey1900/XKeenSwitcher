@@ -4960,6 +4960,13 @@ const server = http.createServer(async (req, res) => {
       }
       if (body.targetList) {
         group.targetList = (body.targetList === 'whitelist' || body.targetList === 'blacklist') ? body.targetList : 'mixed';
+        if (group.targetList !== 'mixed') {
+          data.connections.forEach(conn => {
+            if (conn.groupId === id) {
+              conn.targetList = group.targetList;
+            }
+          });
+        }
       }
       group.updatedAt = new Date().toISOString();
       saveData(data);

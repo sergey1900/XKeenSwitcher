@@ -1885,17 +1885,17 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .group-target-badge.cs {
-  background: #000000 !important;
-  color: #ffffff !important;
-  border: 1px solid #ffffff !important;
-  box-shadow: 0 0 3px rgba(255, 255, 255, 0.35);
+  background: #090d16 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  box-shadow: none !important;
 }
 
 .group-target-badge.bs {
-  background: #ffffff !important;
-  color: #000000 !important;
-  border: 1px solid #000000 !important;
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+  background: #cbd5e1 !important;
+  color: #0f172a !important;
+  border: 1px solid #94a3b8 !important;
+  box-shadow: none !important;
 }
 
 .group-target-badge.sm {
@@ -2267,24 +2267,24 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .badge-target-list {
   cursor: default;
   user-select: none;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   padding: 2px 7px;
   border-radius: 4px;
 }
 
 .badge-target-list.target-blacklist {
-  background: #000000 !important;
-  color: #ffffff !important;
-  border: 1px solid #ffffff !important;
-  box-shadow: 0 0 3px rgba(255, 255, 255, 0.35);
+  background: #090d16 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  box-shadow: none !important;
 }
 
 .badge-target-list.target-whitelist {
-  background: #ffffff !important;
-  color: #000000 !important;
-  border: 1px solid #000000 !important;
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+  background: #cbd5e1 !important;
+  color: #0f172a !important;
+  border: 1px solid #94a3b8 !important;
+  box-shadow: none !important;
 }
 
 /* ROUTING SELECTOR ROW */

@@ -292,16 +292,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
 
   const isFav = Boolean(conn.isFavorite);
 
-  // Target list inheritance: if parent group is explicitly blacklist or whitelist, inherit it. If mixed or in favorites, use individual targetList.
-  let effectiveTarget = conn.targetList || 'blacklist';
-  if (!isFavoriteSection && parentGroup) {
-    if (parentGroup.targetList === 'whitelist') {
-      effectiveTarget = 'whitelist';
-    } else if (parentGroup.targetList === 'blacklist') {
-      effectiveTarget = 'blacklist';
-    }
-  }
-  const isWhitelist = (effectiveTarget === 'whitelist');
+  const isWhitelist = (conn.targetList === 'whitelist');
   const targetBadgeHtml = `<span class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" title="Назначение: ${isWhitelist ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${isWhitelist ? 'БС' : 'ЧС'}</span>`;
 
   let protoClass = '';
