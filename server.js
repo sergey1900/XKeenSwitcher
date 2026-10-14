@@ -1183,66 +1183,150 @@ function parseAmneziaVpnUrl(cleanStr) {
   };
 }
 
-// Generate Mihomo config.yaml for AmneziaWG connections
-function generateMihomoConfig(conn, routing) {
-  let am = conn.amneziaConfig || {};
-  let host = conn.serverAddress || '';
-  let port = conn.serverPort || 51820;
-  let clientIp = (am.client_ip || '').split('/')[0];
-  let clientPrivKey = am.client_priv_key || '';
-  let serverPubKey = am.server_pub_key || '';
-  let psk = am.psk || '';
-  const connName = conn.name || 'AmneziaWG';
-
-  // Fallback: extract from conn.outboundContent if keys are missing
-  if ((!clientPrivKey || !serverPubKey || !clientIp) && conn.outboundContent) {
+// Helper: Safely decode URI component multiple times (for double-encoded fragment names)
+function safeDecodeUriMulti(str) {
+  let cur = String(str || '').trim();
+  for (let i = 0; i < 3; i++) {
     try {
-      const clean = stripJsonComments(conn.outboundContent);
-      const parsed = JSON.parse(clean);
-      const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
-      const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
-      if (ob && ob.settings) {
-        if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
-        if (!clientIp && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
-          clientIp = String(ob.settings.address[0]).split('/')[0];
+      const decoded = decodeURIComponent(cur);
+      if (decoded === cur) break;
+      cur = decoded;
+    } catch (e) {
+      break;
+    }
+  }
+  return cur;
+}
+
+// Generate Mihomo config.yaml for AmneziaWG and Hysteria 2 connections
+function generateMihomoConfig(conn, routing) {
+  const isHy2 = conn.protocol === 'hysteria2' || conn.protocol === 'hy2';
+  const connName = conn.name || (isHy2 ? 'Hysteria2' : 'AmneziaWG');
+  let host = conn.serverAddress || '';
+  let port = conn.serverPort || (isHy2 ? 443 : 51820);
+
+  let proxyYamlEntry = '';
+
+  if (isHy2) {
+    let hy2Password = '';
+    let hy2Sni = conn.sni || host;
+    let hy2Alpn = 'h3';
+    let hy2SkipCertVerify = false;
+
+    if (conn.outboundContent) {
+      try {
+        const clean = stripJsonComments(conn.outboundContent);
+        const parsed = JSON.parse(clean);
+        const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        const ob = list.find(o => o && (o.protocol === 'hysteria2' || o.tag === 'hysteria2' || o.protocol === 'hysteria'));
+        if (ob) {
+          if (ob.settings && ob.settings.servers && ob.settings.servers[0]) {
+            hy2Password = ob.settings.servers[0].password || '';
+          }
+          if (!hy2Password && ob.settings && ob.settings.auth) {
+            hy2Password = ob.settings.auth;
+          }
+          if (!hy2Password && ob.streamSettings && ob.streamSettings.hysteriaSettings) {
+            hy2Password = ob.streamSettings.hysteriaSettings.auth || ob.streamSettings.hysteriaSettings.password || '';
+          }
+          if (ob.settings && ob.settings.address) {
+            host = ob.settings.address;
+          }
+          if (ob.settings && ob.settings.port) {
+            port = ob.settings.port;
+          }
+          if (ob.streamSettings && ob.streamSettings.tlsSettings) {
+            const tls = ob.streamSettings.tlsSettings;
+            if (tls.serverName) hy2Sni = tls.serverName;
+            if (Array.isArray(tls.alpn) && tls.alpn[0]) hy2Alpn = tls.alpn[0];
+            if (tls.allowInsecure) hy2SkipCertVerify = true;
+          }
         }
-        if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
-          const peer = ob.settings.peers[0];
-          if (!serverPubKey && peer.publicKey) serverPubKey = peer.publicKey;
-          if (!psk && (peer.preSharedKey || peer.presharedKey)) psk = peer.preSharedKey || peer.presharedKey;
-          if ((!host || !port) && peer.endpoint) {
-            const ep = String(peer.endpoint).trim();
-            const lastColon = ep.lastIndexOf(':');
-            if (lastColon !== -1) {
-              if (!host) host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
-              if (!port) port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+      } catch (e) {}
+    }
+
+    proxyYamlEntry = `  - name: ${JSON.stringify(connName)}
+    type: hysteria2
+    server: ${host}
+    port: ${port}
+    password: ${JSON.stringify(hy2Password)}
+    sni: ${JSON.stringify(hy2Sni)}
+    alpn:
+      - ${hy2Alpn}
+    skip-cert-verify: ${hy2SkipCertVerify}`;
+  } else {
+    // WireGuard / AmneziaWG
+    let am = conn.amneziaConfig || {};
+    let clientIp = (am.client_ip || '').split('/')[0];
+    let clientPrivKey = am.client_priv_key || '';
+    let serverPubKey = am.server_pub_key || '';
+    let psk = am.psk || '';
+
+    // Fallback: extract from conn.outboundContent if keys are missing
+    if ((!clientPrivKey || !serverPubKey || !clientIp) && conn.outboundContent) {
+      try {
+        const clean = stripJsonComments(conn.outboundContent);
+        const parsed = JSON.parse(clean);
+        const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
+        if (ob && ob.settings) {
+          if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
+          if (!clientIp && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
+            clientIp = String(ob.settings.address[0]).split('/')[0];
+          }
+          if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
+            const peer = ob.settings.peers[0];
+            if (!serverPubKey && peer.publicKey) serverPubKey = peer.publicKey;
+            if (!psk && (peer.preSharedKey || peer.presharedKey)) psk = peer.preSharedKey || peer.presharedKey;
+            if ((!host || !port) && peer.endpoint) {
+              const ep = String(peer.endpoint).trim();
+              const lastColon = ep.lastIndexOf(':');
+              if (lastColon !== -1) {
+                if (!host) host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
+                if (!port) port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+              }
             }
           }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
+
+    if (!clientIp) clientIp = '10.8.1.2';
+
+    const awgOptionLines = [];
+    awgOptionLines.push(`      version: ${am.version || 2}`);
+    if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
+    if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
+    if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
+    if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
+    if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
+    if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
+    if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
+    if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
+    if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
+    if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
+    if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+    if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+    if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
+    if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
+    if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
+    if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
+
+    proxyYamlEntry = `  - name: ${JSON.stringify(connName)}
+    type: wireguard
+    server: ${host}
+    port: ${port}
+    ip: ${clientIp}
+    public-key: ${JSON.stringify(serverPubKey)}
+    private-key: ${JSON.stringify(clientPrivKey)}
+${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
+    remote-dns-resolve: true
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    amnezia-wg-option:
+${awgOptionLines.join('\n')}`;
   }
-
-  if (!clientIp) clientIp = '10.8.1.2';
-
-  const awgOptionLines = [];
-  awgOptionLines.push(`      version: ${am.version || 2}`);
-  if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
-  if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
-  if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
-  if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
-  if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
-  if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
-  if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
-  if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
-  if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
-  if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
-  if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
-  if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
-  if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
-  if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
-  if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
-  if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
 
   let rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
   const routingId = routing ? routing.id : '';
@@ -1269,20 +1353,7 @@ unified-delay: true
 tcp-concurrent: true
 
 proxies:
-  - name: ${JSON.stringify(connName)}
-    type: wireguard
-    server: ${host}
-    port: ${port}
-    ip: ${clientIp}
-    public-key: ${JSON.stringify(serverPubKey)}
-    private-key: ${JSON.stringify(clientPrivKey)}
-${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
-    remote-dns-resolve: true
-    dns:
-      - 1.1.1.1
-      - 1.0.0.1
-    amnezia-wg-option:
-${awgOptionLines.join('\n')}
+${proxyYamlEntry}
 
 proxy-groups:
   - name: PROXY
@@ -1300,7 +1371,8 @@ ${rulesYaml}
 // Parse Hysteria 2 URL (hysteria2://... or hy2://...)
 function parseHysteria2Url(cleanStr) {
   const u = new URL(cleanStr);
-  const password = decodeURIComponent(u.username);
+  let password = '';
+  try { password = safeDecodeUriMulti(u.username); } catch (e) { password = u.username || ''; }
   const address = (u.hostname || '').replace(/^\[|\]$/g, '');
   const port = parseInt(u.port, 10) || 443;
   if (!address || !port) {
@@ -1308,12 +1380,13 @@ function parseHysteria2Url(cleanStr) {
   }
 
   let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
-  let name = '';
-  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  let name = safeDecodeUriMulti(rawName);
   if (!name) name = `Hysteria2 - ${address}:${port}`;
 
   const sp = u.searchParams;
-  const sni = sp.get('sni') || address;
+  const sni = sp.get('sni') || sp.get('peer') || address;
+  const alpn = sp.get('alpn') || 'h3';
+  const insecure = sp.get('insecure') === '1' || sp.get('insecure') === 'true';
 
   const outboundJsonObj = {
     outbounds: [
@@ -1333,7 +1406,9 @@ function parseHysteria2Url(cleanStr) {
           network: 'udp',
           security: 'tls',
           tlsSettings: {
-            serverName: sni
+            serverName: sni,
+            allowInsecure: insecure,
+            alpn: alpn.split(',').map(s => s.trim()).filter(Boolean)
           }
         }
       },
@@ -1371,7 +1446,10 @@ function extractOutboundMetadata(outboundContent) {
       if (!ob || ob.tag === 'direct' || ob.tag === 'block') continue;
       if (ob.protocol) protocol = ob.protocol;
       if (ob.settings) {
-        if (ob.settings.vnext && ob.settings.vnext[0]) {
+        if (ob.settings.address) {
+          serverAddress = ob.settings.address;
+          serverPort = ob.settings.port || null;
+        } else if (ob.settings.vnext && ob.settings.vnext[0]) {
           serverAddress = ob.settings.vnext[0].address || '';
           serverPort = ob.settings.vnext[0].port || null;
         } else if (ob.settings.servers && ob.settings.servers[0]) {
@@ -1397,7 +1475,11 @@ function extractOutboundMetadata(outboundContent) {
           sni = ob.streamSettings.tlsSettings.serverName;
         }
       }
-      if (ob.tag === 'amneziawg' || ob.protocol === 'amneziawg') {
+      if (ob.protocol === 'hysteria' || ob.protocol === 'hysteria2' || ob.tag === 'hysteria2') {
+        protocol = 'hysteria2';
+        network = 'udp';
+        security = 'tls';
+      } else if (ob.tag === 'amneziawg' || ob.protocol === 'amneziawg') {
         protocol = 'amneziawg';
         network = 'udp';
         security = 'Amnezia';
@@ -1443,13 +1525,22 @@ async function fetchSubscriptionContent(urlStr) {
   let userInfo = null;
   let fetchSucceeded = false;
 
+  let deviceHwid = 'e7c234a5-6b89-4d12-9e34-5f67a8b9c0d1';
+  try {
+    const curData = loadData();
+    if (curData && curData.settings && curData.settings.deviceHwid) {
+      deviceHwid = curData.settings.deviceHwid;
+    }
+  } catch (e) {}
+
   // Try native fetch first
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);
     const res = await fetch(cleanUrl, {
       headers: {
-        'User-Agent': 'v2rayN/6.23 clash/1.0 v2ray/5.0'
+        'User-Agent': 'INCY/3.8.8 v2rayN/6.23 clash/1.0 v2ray/5.0',
+        'x-hwid': deviceHwid
       },
       redirect: 'follow',
       signal: controller.signal
@@ -1470,7 +1561,7 @@ async function fetchSubscriptionContent(urlStr) {
 
   if (!fetchSucceeded) {
     const curlEscaped = `'${cleanUrl.replace(/'/g, "'\\''")}'`;
-    const curlRes = await runShellCommand(`curl -sSL -k -A "v2rayN/6.23" -D - --max-time 15 ${curlEscaped}`, 18000);
+    const curlRes = await runShellCommand(`curl -sSL -k -A "INCY/3.8.8" -H "x-hwid: ${deviceHwid}" -D - --max-time 15 ${curlEscaped}`, 18000);
     if (!curlRes.success && !curlRes.stdout) {
       throw new Error('Не удалось загрузить подписку по указанному URL');
     }
@@ -1493,21 +1584,42 @@ async function fetchSubscriptionContent(urlStr) {
   }
 
   let textContent = rawBody.trim();
-  // Decode Base64 if needed
-  if (!textContent.includes('://')) {
+  let jsonConfigs = [];
+
+  // 1. Direct JSON array (like INCY / Remnawave)
+  if (textContent.startsWith('[') || textContent.startsWith('{')) {
     try {
-      const decoded = Buffer.from(textContent, 'base64').toString('utf8');
-      if (decoded.includes('://')) {
-        textContent = decoded;
+      const parsed = JSON.parse(textContent);
+      if (Array.isArray(parsed)) {
+        jsonConfigs = parsed.filter(item => item && (item.outbounds || item.settings));
+      } else if (parsed && parsed.outbounds) {
+        jsonConfigs = [parsed];
       }
     } catch (e) {}
   }
 
-  const lines = textContent.split(/\r?\n/)
+  // 2. Decode Base64 if needed
+  if (jsonConfigs.length === 0 && !textContent.includes('://')) {
+    try {
+      const decoded = Buffer.from(textContent, 'base64').toString('utf8');
+      if (decoded.includes('://')) {
+        textContent = decoded;
+      } else if (decoded.startsWith('[') || decoded.startsWith('{')) {
+        const parsed = JSON.parse(decoded);
+        if (Array.isArray(parsed)) {
+          jsonConfigs = parsed.filter(item => item && (item.outbounds || item.settings));
+        } else if (parsed && parsed.outbounds) {
+          jsonConfigs = [parsed];
+        }
+      }
+    } catch (e) {}
+  }
+
+  const lines = jsonConfigs.length > 0 ? [] : textContent.split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
 
-  return { lines, userInfo };
+  return { lines, jsonConfigs, userInfo };
 }
 
 // Helper: Measure TCP handshake latency (ping in ms) to host:port
@@ -1975,7 +2087,7 @@ rules:
 
     let child;
     try {
-      child = spawn(mihomoBin, ['-d', '/opt/etc/mihomo', '-f', testConfigFile], {
+      child = spawn(mihomoBin, ['-d', os.tmpdir(), '-f', testConfigFile], {
         stdio: ['ignore', 'ignore', 'ignore']
       });
     } catch (err) {
@@ -2008,7 +2120,6 @@ rules:
         }
       });
 
-      // 400ms for Mihomo initialization
       setTimeout(() => {
         if (settled) return;
         let canaryParsed;
@@ -2018,38 +2129,242 @@ rules:
           return finish({ ok: false, error: 'Некорректный Canary URL' });
         }
 
-        const t0 = Date.now();
-        const req = http.request(
-          {
-            host: '127.0.0.1',
-            port: testPort,
-            method: 'GET',
-            path: canaryUrl,
-            headers: { Host: canaryParsed.host },
-            timeout: timeout
-          },
-          (res) => {
-            const latency = Date.now() - t0;
-            res.resume();
-            if (res.statusCode >= 200 && res.statusCode < 400) {
-              finish({ ok: true, latency, statusCode: res.statusCode });
-            } else {
-              finish({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
+        const makeAttempt = (isRetry) => {
+          if (settled) return;
+          const t0 = Date.now();
+          const req = http.request(
+            {
+              host: '127.0.0.1',
+              port: testPort,
+              method: 'GET',
+              path: canaryUrl,
+              headers: { Host: canaryParsed.host },
+              timeout: timeout
+            },
+            (res) => {
+              const latency = Date.now() - t0;
+              res.resume();
+              if (res.statusCode >= 200 && res.statusCode < 400) {
+                finish({ ok: true, latency, statusCode: res.statusCode });
+              } else if (res.statusCode === 502 && !isRetry) {
+                setTimeout(() => makeAttempt(true), 600);
+              } else {
+                finish({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
+              }
             }
+          );
+
+          req.on('timeout', () => {
+            req.destroy();
+            finish({ ok: false, error: 'Таймаут сквозного ответа через туннель AWG' });
+          });
+
+          req.on('error', (err) => {
+            if (!isRetry) {
+              setTimeout(() => makeAttempt(true), 600);
+            } else {
+              finish({ ok: false, error: 'Сбой соединения через прокси AWG: ' + (err.message || 'ошибка сети') });
+            }
+          });
+
+          req.end();
+        };
+
+        makeAttempt(false);
+      }, 700);
+    });
+  });
+}
+
+// Helper: Real end-to-end tunnel test for Hysteria 2 via Mihomo
+async function testHysteria2WithRealTunnel(conn, options = {}) {
+  const mihomoBin = findMihomoPath();
+  if (!mihomoBin) {
+    return { ok: false, error: 'Бинарный файл mihomo не найден' };
+  }
+
+  const timeout = options.timeout || 4000;
+  const canaryUrl = options.canaryUrl || 'http://cp.cloudflare.com/generate_204';
+
+  const data = loadData();
+  const isActive = (data.settings && data.settings.activeConnectionId === conn.id);
+  const coreInfo = detectActiveProxyCore();
+
+  if (isActive && coreInfo.activeCore === 'mihomo') {
+    try {
+      const activeRes = await testHttpProxyDirect('127.0.0.1', 7890, canaryUrl, timeout);
+      if (activeRes.ok) return activeRes;
+    } catch (e) {}
+  }
+
+  return runWithProxyConcurrency(async () => {
+    let testPort;
+    try {
+      testPort = await getAvailableTestPort();
+    } catch (err) {
+      return { ok: false, error: 'Не удалось выделить порт: ' + err.message };
+    }
+
+    const testConfigFile = path.join(
+      os.tmpdir(),
+      `mihomo-health-hy2-${Date.now()}-${Math.floor(Math.random() * 100000)}.yaml`
+    );
+
+    let host = conn.serverAddress || '';
+    let port = conn.serverPort || 443;
+    let password = '';
+    let sni = conn.sni || host;
+    let alpn = 'h3';
+    let skipCertVerify = false;
+
+    if (conn.outboundContent) {
+      try {
+        const clean = stripJsonComments(conn.outboundContent);
+        const parsed = JSON.parse(clean);
+        const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        const ob = list.find(o => o && (o.protocol === 'hysteria2' || o.tag === 'hysteria2' || o.protocol === 'hysteria'));
+        if (ob) {
+          if (ob.settings && ob.settings.servers && ob.settings.servers[0]) {
+            password = ob.settings.servers[0].password || '';
           }
-        );
+          if (!password && ob.settings && ob.settings.auth) {
+            password = ob.settings.auth;
+          }
+          if (!password && ob.streamSettings && ob.streamSettings.hysteriaSettings) {
+            password = ob.streamSettings.hysteriaSettings.auth || ob.streamSettings.hysteriaSettings.password || '';
+          }
+          if (ob.settings && ob.settings.address) {
+            host = ob.settings.address;
+          }
+          if (ob.settings && ob.settings.port) {
+            port = ob.settings.port;
+          }
+          if (ob.streamSettings && ob.streamSettings.tlsSettings) {
+            const tls = ob.streamSettings.tlsSettings;
+            if (tls.serverName) sni = tls.serverName;
+            if (Array.isArray(tls.alpn) && tls.alpn[0]) alpn = tls.alpn[0];
+            if (tls.allowInsecure) skipCertVerify = true;
+          }
+        }
+      } catch (e) {}
+    }
 
-        req.on('timeout', () => {
-          req.destroy();
-          finish({ ok: false, error: 'Таймаут сквозного ответа через туннель AWG' });
-        });
+    const yaml = `port: ${testPort}
+mode: rule
+log-level: silent
+proxies:
+  - name: test-hy2
+    type: hysteria2
+    server: ${host}
+    port: ${port}
+    password: ${JSON.stringify(password)}
+    sni: ${JSON.stringify(sni)}
+    alpn:
+      - ${alpn}
+    skip-cert-verify: ${skipCertVerify}
+rules:
+  - MATCH,test-hy2
+`;
 
-        req.on('error', (err) => {
-          finish({ ok: false, error: 'Сбой соединения через прокси AWG: ' + (err.message || 'ошибка сети') });
-        });
+    try {
+      fs.writeFileSync(testConfigFile, yaml);
+    } catch (err) {
+      return { ok: false, error: 'Ошибка записи тестового конфига: ' + err.message };
+    }
 
-        req.end();
-      }, 400);
+    let child;
+    try {
+      child = spawn(mihomoBin, ['-d', os.tmpdir(), '-f', testConfigFile], {
+        stdio: ['ignore', 'ignore', 'ignore']
+      });
+    } catch (err) {
+      try { fs.unlinkSync(testConfigFile); } catch (e) {}
+      return { ok: false, error: 'Ошибка запуска Mihomo: ' + err.message };
+    }
+
+    const cleanup = () => {
+      try { child.kill('SIGKILL'); } catch (e) {}
+      try { fs.unlinkSync(testConfigFile); } catch (e) {}
+    };
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (res) => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(res);
+        }
+      };
+
+      child.on('error', (err) => {
+        finish({ ok: false, error: 'Сбой процесса Mihomo: ' + err.message });
+      });
+
+      child.on('exit', (code) => {
+        if (!settled && code !== 0 && code !== null) {
+          finish({ ok: false, error: `Mihomo завершился с кодом ошибки ${code}` });
+        }
+      });
+
+      setTimeout(() => {
+        if (settled) return;
+        let canaryParsed;
+        try {
+          canaryParsed = new URL(canaryUrl);
+        } catch (e) {
+          return finish({ ok: false, error: 'Некорректный Canary URL' });
+        }
+
+        const makeAttempt = (isRetry) => {
+          if (settled) return;
+          const t0 = Date.now();
+          const req = http.request(
+            {
+              host: '127.0.0.1',
+              port: testPort,
+              method: 'GET',
+              path: canaryUrl,
+              headers: { Host: canaryParsed.host },
+              timeout: timeout
+            },
+            (res) => {
+              const latency = Date.now() - t0;
+              res.resume();
+              if (res.statusCode >= 200 && res.statusCode < 400) {
+                finish({ ok: true, latency, statusCode: res.statusCode });
+              } else if (res.statusCode === 502 && !isRetry) {
+                setTimeout(() => makeAttempt(true), 600);
+              } else {
+                finish({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
+              }
+            }
+          );
+
+          req.on('timeout', () => {
+            req.destroy();
+            if (!password) {
+              finish({ ok: false, error: 'Таймаут (в ссылке не указан пароль перед @)' });
+            } else {
+              finish({ ok: false, error: 'Таймаут сквозного ответа через туннель Hysteria 2' });
+            }
+          });
+
+          req.on('error', (err) => {
+            if (!isRetry) {
+              setTimeout(() => makeAttempt(true), 600);
+            } else if (!password) {
+              finish({ ok: false, error: 'Ошибка авторизации Hysteria 2 (в ссылке не указан пароль перед @)' });
+            } else {
+              finish({ ok: false, error: 'Сбой соединения через прокси Hysteria 2: ' + (err.message || 'ошибка сети') });
+            }
+          });
+
+          req.end();
+        };
+
+        makeAttempt(false);
+      }, 700);
     });
   });
 }
@@ -2085,7 +2400,32 @@ async function measureConnectionHealth(conn, options = {}) {
   }
 
   const timeout = options.timeout || 3500;
+  const isHy2 = conn.protocol === 'hysteria2' || conn.protocol === 'hy2';
   const isUdp = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || Boolean(conn.amneziaConfig);
+
+  // Hysteria 2: Real proxy tunnel check via Mihomo (QUIC / UDP)
+  if (isHy2 && conn.serverAddress) {
+    const icmpRes = await measureIcmpLatency(conn.serverAddress, Math.min(timeout, 2000));
+    const realTunnelRes = await testHysteria2WithRealTunnel(conn, { timeout, canaryUrl: options.canaryUrl });
+    if (realTunnelRes.ok) {
+      return {
+        ok: true,
+        latency: realTunnelRes.latency,
+        tcpLatency: icmpRes.ok ? icmpRes.latency : null,
+        status: 'ok',
+        checkType: 'proxy'
+      };
+    } else {
+      return {
+        ok: false,
+        latency: null,
+        tcpLatency: icmpRes.ok ? icmpRes.latency : null,
+        status: 'unreachable',
+        checkType: 'proxy_failed',
+        error: realTunnelRes.error || 'Сквозной туннель Hysteria 2 не отвечает'
+      };
+    }
+  }
 
   // AmneziaWG / WireGuard: Real proxy tunnel check via Mihomo
   if (isUdp && conn.serverAddress) {
@@ -2803,7 +3143,7 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
   }
 
   const { outboundPath, routingPath, restartCommand } = data.settings;
-  const isAwg = conn.protocol === 'amneziawg' || Boolean(conn.amneziaConfig);
+  const isMihomoRequired = conn.protocol === 'amneziawg' || conn.protocol === 'hysteria2' || conn.protocol === 'hy2' || Boolean(conn.amneziaConfig);
   const coreInfo = detectActiveProxyCore();
   let coreSwitched = false;
   let targetCore = coreInfo.activeCore;
@@ -2812,8 +3152,8 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
   let restartStatus = { executed: false, output: '', error: '' };
 
   try {
-    if (isAwg) {
-      // 1. Generate & write Mihomo configuration for AmneziaWG
+    if (isMihomoRequired) {
+      // 1. Generate & write Mihomo configuration for AmneziaWG / Hysteria 2
       const mihomoYaml = generateMihomoConfig(conn, routing);
       const mihomoConfigPath = '/opt/etc/mihomo/config.yaml';
       try {
@@ -4612,7 +4952,7 @@ const server = http.createServer(async (req, res) => {
 
       const subName = (name && name.trim()) ? name.trim() : `Подписка ${data.groups.filter(g => g.isSubscription).length + 1}`;
 
-      const { lines, userInfo } = await fetchSubscriptionContent(url.trim());
+      const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(url.trim());
 
       const subGroup = {
         id: 'group_sub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -4631,41 +4971,74 @@ const server = http.createServer(async (req, res) => {
 
       let importedCount = 0;
       const errors = [];
+      const itemsToImport = [];
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        try {
-          const parsed = parseVlessUrl(line);
-          const meta = extractOutboundMetadata(parsed.outboundJson);
-
-          const newConn = {
-            id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
-            name: parsed.name,
-            description: '',
-            groupId: subGroup.id,
-            routingId: effectiveRoutingId,
-            outboundContent: parsed.outboundJson,
-            serverAddress: parsed.serverAddress || meta.serverAddress,
-            serverPort: parsed.serverPort || meta.serverPort,
-            protocol: parsed.protocol || meta.protocol,
-            network: parsed.network || meta.network,
-            security: parsed.security || meta.security,
-            sni: parsed.sni || meta.sni,
-            countryCode: null,
-            countryName: null,
-            isFavorite: false,
-            targetList: targetList,
-            lastPing: null,
-            lastPingStatus: null,
-            lastPingCheckedAt: null,
-            createdAt: new Date().toISOString()
-          };
-
-          data.connections.push(newConn);
-          importedCount++;
-        } catch (err) {
-          errors.push(`Строка ${i + 1}: ${err.message}`);
+      if (jsonConfigs && jsonConfigs.length > 0) {
+        for (let i = 0; i < jsonConfigs.length; i++) {
+          const cfg = jsonConfigs[i];
+          const remarks = cfg.remarks || `Узел ${i + 1}`;
+          const outboundJson = JSON.stringify(cfg, null, 4);
+          const meta = extractOutboundMetadata(outboundJson);
+          itemsToImport.push({
+            name: safeDecodeUriMulti(remarks),
+            outboundJson,
+            serverAddress: meta.serverAddress,
+            serverPort: meta.serverPort,
+            protocol: meta.protocol,
+            network: meta.network,
+            security: meta.security,
+            sni: meta.sni
+          });
         }
+      } else {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          try {
+            const parsed = parseVlessUrl(line);
+            const meta = extractOutboundMetadata(parsed.outboundJson);
+            itemsToImport.push({
+              name: parsed.name,
+              outboundJson: parsed.outboundJson,
+              serverAddress: parsed.serverAddress || meta.serverAddress,
+              serverPort: parsed.serverPort || meta.serverPort,
+              protocol: parsed.protocol || meta.protocol,
+              network: parsed.network || meta.network,
+              security: parsed.security || meta.security,
+              sni: parsed.sni || meta.sni
+            });
+          } catch (err) {
+            errors.push(`Строка ${i + 1}: ${err.message}`);
+          }
+        }
+      }
+
+      for (let i = 0; i < itemsToImport.length; i++) {
+        const item = itemsToImport[i];
+        const newConn = {
+          id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+          name: item.name,
+          description: '',
+          groupId: subGroup.id,
+          routingId: effectiveRoutingId,
+          outboundContent: item.outboundJson,
+          serverAddress: item.serverAddress,
+          serverPort: item.serverPort,
+          protocol: item.protocol,
+          network: item.network,
+          security: item.security,
+          sni: item.sni,
+          countryCode: null,
+          countryName: null,
+          isFavorite: false,
+          targetList: targetList,
+          lastPing: null,
+          lastPingStatus: null,
+          lastPingCheckedAt: null,
+          createdAt: new Date().toISOString()
+        };
+
+        data.connections.push(newConn);
+        importedCount++;
       }
 
       saveData(data);
@@ -4696,7 +5069,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'У подписки не указан URL' });
       }
 
-      const { lines, userInfo } = await fetchSubscriptionContent(group.subscriptionUrl);
+      const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(group.subscriptionUrl);
       if (userInfo) {
         group.userInfo = userInfo;
       }
@@ -4710,63 +5083,95 @@ const server = http.createServer(async (req, res) => {
       let addedCount = 0;
       let updatedCount = 0;
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        try {
-          const parsed = parseVlessUrl(line);
-          const meta = extractOutboundMetadata(parsed.outboundJson);
-          const host = parsed.serverAddress || meta.serverAddress;
-          const port = parsed.serverPort || meta.serverPort;
-
-          let found = existingConns.find(c =>
-            !matchedIds.has(c.id) &&
-            c.serverAddress === host &&
-            String(c.serverPort) === String(port) &&
-            (c.sni === (parsed.sni || meta.sni) || c.name === parsed.name)
-          );
-
-          if (found) {
-            matchedIds.add(found.id);
-            found.name = parsed.name;
-            found.outboundContent = parsed.outboundJson;
-            found.serverAddress = host;
-            found.serverPort = port;
-            found.protocol = parsed.protocol || meta.protocol;
-            found.network = parsed.network || meta.network;
-            found.security = parsed.security || meta.security;
-            found.sni = parsed.sni || meta.sni;
-            found.targetList = targetList;
-            found.updatedAt = new Date().toISOString();
-            updatedCount++;
-          } else {
-            const newConn = {
-              id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+      const itemsToImport = [];
+      if (jsonConfigs && jsonConfigs.length > 0) {
+        for (let i = 0; i < jsonConfigs.length; i++) {
+          const cfg = jsonConfigs[i];
+          const remarks = cfg.remarks || `Узел ${i + 1}`;
+          const outboundJson = JSON.stringify(cfg, null, 4);
+          const meta = extractOutboundMetadata(outboundJson);
+          itemsToImport.push({
+            name: safeDecodeUriMulti(remarks),
+            outboundJson,
+            serverAddress: meta.serverAddress,
+            serverPort: meta.serverPort,
+            protocol: meta.protocol,
+            network: meta.network,
+            security: meta.security,
+            sni: meta.sni
+          });
+        }
+      } else {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          try {
+            const parsed = parseVlessUrl(line);
+            const meta = extractOutboundMetadata(parsed.outboundJson);
+            itemsToImport.push({
               name: parsed.name,
-              description: '',
-              groupId: id,
-              routingId: effectiveRoutingId,
-              outboundContent: parsed.outboundJson,
-              serverAddress: host,
-              serverPort: port,
+              outboundJson: parsed.outboundJson,
+              serverAddress: parsed.serverAddress || meta.serverAddress,
+              serverPort: parsed.serverPort || meta.serverPort,
               protocol: parsed.protocol || meta.protocol,
               network: parsed.network || meta.network,
               security: parsed.security || meta.security,
-              sni: parsed.sni || meta.sni,
-              countryCode: null,
-              countryName: null,
-              isFavorite: false,
-              targetList: targetList,
-              lastPing: null,
-              lastPingStatus: null,
-              lastPingCheckedAt: null,
-              createdAt: new Date().toISOString()
-            };
-            data.connections.push(newConn);
-            matchedIds.add(newConn.id);
-            addedCount++;
-          }
-        } catch (err) {
-          // ignore single line parse error
+              sni: parsed.sni || meta.sni
+            });
+          } catch (e) {}
+        }
+      }
+
+      for (let i = 0; i < itemsToImport.length; i++) {
+        const item = itemsToImport[i];
+        const host = item.serverAddress;
+        const port = item.serverPort;
+
+        let found = existingConns.find(c =>
+          !matchedIds.has(c.id) &&
+          c.serverAddress === host &&
+          String(c.serverPort) === String(port) &&
+          (c.sni === item.sni || c.name === item.name)
+        );
+
+        if (found) {
+          matchedIds.add(found.id);
+          found.name = item.name;
+          found.outboundContent = item.outboundJson;
+          found.serverAddress = host;
+          found.serverPort = port;
+          found.protocol = item.protocol;
+          found.network = item.network;
+          found.security = item.security;
+          found.sni = item.sni;
+          found.targetList = targetList;
+          found.updatedAt = new Date().toISOString();
+          updatedCount++;
+        } else {
+          const newConn = {
+            id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+            name: item.name,
+            description: '',
+            groupId: id,
+            routingId: effectiveRoutingId,
+            outboundContent: item.outboundJson,
+            serverAddress: host,
+            serverPort: port,
+            protocol: item.protocol,
+            network: item.network,
+            security: item.security,
+            sni: item.sni,
+            countryCode: null,
+            countryName: null,
+            isFavorite: false,
+            targetList: targetList,
+            lastPing: null,
+            lastPingStatus: null,
+            lastPingCheckedAt: null,
+            createdAt: new Date().toISOString()
+          };
+          data.connections.push(newConn);
+          matchedIds.add(newConn.id);
+          addedCount++;
         }
       }
 

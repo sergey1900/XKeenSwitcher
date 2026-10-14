@@ -2166,6 +2166,14 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   letter-spacing: 0.5px;
 }
 
+.badge-proto.badge-proto-hy2 {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.25), rgba(168, 85, 247, 0.25));
+  color: #f472b6;
+  border: 1px solid rgba(244, 114, 182, 0.5);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
 .badge-net {
   background: rgba(249, 115, 22, 0.12);
   color: #fb923c;

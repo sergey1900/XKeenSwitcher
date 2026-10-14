@@ -215,6 +215,7 @@ function renderConnectionCardHtml(conn, activeId) {
   const isActive = (conn.id === activeId);
   const isChecking = pingingConnectionIds.has(conn.id) || isPingingAll;
   const isAwgConn = conn.protocol === 'amneziawg' || conn.protocol === 'awg' || Boolean(conn.amneziaConfig);
+  const isHy2Conn = conn.protocol === 'hysteria2' || conn.protocol === 'hy2';
 
   // Security & SNI
   let secBadgeHtml = '';
@@ -287,9 +288,19 @@ function renderConnectionCardHtml(conn, activeId) {
   const isWhitelist = (conn.targetList === 'whitelist');
   const targetBadgeHtml = `<span class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" title="Назначение: ${isWhitelist ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${isWhitelist ? 'БС' : 'ЧС'}</span>`;
 
-  const protoClass = isAwgConn ? 'badge-proto-awg' : '';
-  const protoText = isAwgConn ? 'AWG' : escapeHtml((conn.protocol || 'vless').toUpperCase());
-  const protoTitle = isAwgConn ? 'Протокол: AmneziaWG (ядро Mihomo)' : `Протокол: ${protoText}`;
+  let protoClass = '';
+  let protoText = escapeHtml((conn.protocol || 'vless').toUpperCase());
+  let protoTitle = `Протокол: ${protoText}`;
+
+  if (isAwgConn) {
+    protoClass = 'badge-proto-awg';
+    protoText = 'AWG';
+    protoTitle = 'Протокол: AmneziaWG (ядро Mihomo)';
+  } else if (isHy2Conn) {
+    protoClass = 'badge-proto-hy2';
+    protoText = 'HY2';
+    protoTitle = 'Протокол: Hysteria 2 (ядро Mihomo)';
+  }
 
   return `
     <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
@@ -1104,10 +1115,11 @@ async function parseProxyUrlInput(showNotice = true) {
     document.getElementById('preview-host').textContent = result.serverAddress || '-';
     document.getElementById('preview-port').textContent = result.serverPort || '-';
     const isAwg = result.protocol === 'amneziawg' || result.protocol === 'awg' || Boolean(result.amneziaConfig);
-    document.getElementById('preview-proto').textContent = isAwg ? 'AWG' : (result.protocol || 'VLESS').toUpperCase();
+    const isHy2 = result.protocol === 'hysteria2' || result.protocol === 'hy2';
+    document.getElementById('preview-proto').textContent = isAwg ? 'AWG' : (isHy2 ? 'HY2' : (result.protocol || 'VLESS').toUpperCase());
     const previewNetEl = document.getElementById('preview-net');
-    if (previewNetEl) previewNetEl.textContent = formatNetworkName(result.network || (isAwg ? 'udp' : 'tcp'));
-    document.getElementById('preview-sec').textContent = isAwg ? 'Amnezia' : (result.security === 'reality' ? 'Reality' : (result.security || 'None'));
+    if (previewNetEl) previewNetEl.textContent = formatNetworkName(result.network || (isAwg || isHy2 ? 'udp' : 'tcp'));
+    document.getElementById('preview-sec').textContent = isAwg ? 'Amnezia' : (isHy2 ? 'TLS (QUIC)' : (result.security === 'reality' ? 'Reality' : (result.security || 'None')));
     const sniWrap = document.getElementById('preview-sni-wrap');
     if (result.sni) {
       document.getElementById('preview-sni').textContent = result.sni;
@@ -1117,13 +1129,38 @@ async function parseProxyUrlInput(showNotice = true) {
     }
     document.getElementById('add-meta-preview').classList.remove('hidden');
 
-    const noticeText = isAwg
-      ? 'Ссылка Amnezia AWG успешно распознана! Для проксирования будет использовано ядро Mihomo.'
-      : `Ссылка ${result.protocol.toUpperCase()} успешно распознана!`;
-    if (showNotice) showToast(noticeText, 'success');
+    let noticeText = `Ссылка ${result.protocol.toUpperCase()} успешно распознана!`;
+    let toastType = 'success';
+    if (isAwg) {
+      noticeText = 'Ссылка Amnezia AWG успешно распознана! Для проксирования будет использовано ядро Mihomo.';
+    } else if (isHy2) {
+      if (result.hasPassword === false) {
+        noticeText = 'Hysteria 2 распознана, но в ссылке нет пароля (перед @). Сервер отклонит подключение.';
+        toastType = 'warning';
+      } else {
+        noticeText = 'Ссылка Hysteria 2 успешно распознана! Для проксирования будет использовано ядро Mihomo.';
+      }
+    }
+    if (showNotice) showToast(noticeText, toastType);
   } catch (err) {
     if (showNotice) showToast('Ошибка разбора ссылки: ' + err.message, 'error');
   }
+}
+
+// Multi-layer URI decoder (handles nested encoding like %25F0 -> %F0 -> emoji)
+function safeDecodeUriMulti(str) {
+  if (!str) return '';
+  let cur = String(str);
+  for (let i = 0; i < 4; i++) {
+    try {
+      const decoded = decodeURIComponent(cur);
+      if (decoded === cur) break;
+      cur = decoded;
+    } catch (e) {
+      break;
+    }
+  }
+  return cur;
 }
 
 // Backwards-compatible alias
@@ -1141,12 +1178,7 @@ function parseVlessClient(rawUrl) {
     throw new Error('Некорректная ссылка: нет UUID, адреса или порта');
   }
 
-  let name = '';
-  try {
-    name = decodeURIComponent(u.hash ? u.hash.replace(/^#/, '') : '').trim();
-  } catch (e) {
-    name = (u.hash ? u.hash.replace(/^#/, '') : '').trim();
-  }
+  let name = safeDecodeUriMulti(u.hash ? u.hash.replace(/^#/, '') : '').trim();
   if (!name) name = `VLESS - ${address}:${port}`;
 
   const sp = u.searchParams;
@@ -1358,7 +1390,7 @@ function parseTrojanClient(rawUrl) {
   if (str.includes('#')) {
     const parts = str.split('#');
     str = parts[0];
-    try { rawName = decodeURIComponent(parts.slice(1).join('#')).trim(); } catch (e) { rawName = parts.slice(1).join('#').trim(); }
+    try { rawName = safeDecodeUriMulti(parts.slice(1).join('#')).trim(); } catch (e) { rawName = parts.slice(1).join('#').trim(); }
   }
 
   // Handle base64 encoded trojan body if present
@@ -1498,8 +1530,7 @@ function parseShadowsocksClient(rawUrl) {
     urlWithoutHash = p[0];
     hashPart = p.slice(1).join('#');
   }
-  let name = '';
-  try { name = decodeURIComponent(hashPart).trim(); } catch (e) { name = hashPart.trim(); }
+  let name = safeDecodeUriMulti(hashPart).trim();
 
   const rest = urlWithoutHash.replace(/^ss:\/\//i, '').trim();
   let method = '';
@@ -1682,8 +1713,7 @@ function parseWireguardUrlClient(rawUrl) {
   }
 
   let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
-  let name = '';
-  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  let name = safeDecodeUriMulti(rawName).trim();
   const isAwg = rawUrl.startsWith('awg://') || Boolean(sp.get('jc') || sp.get('h1'));
   if (!name) name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
 
@@ -1726,18 +1756,20 @@ function parseWireguardUrlClient(rawUrl) {
 // Hysteria 2 Client Parser
 function parseHysteria2Client(rawUrl) {
   const u = new URL(rawUrl);
-  const password = decodeURIComponent(u.username);
+  let password = '';
+  try { password = safeDecodeUriMulti(u.username); } catch (e) { password = u.username || ''; }
   const address = (u.hostname || '').replace(/^\[|\]$/g, '');
   const port = parseInt(u.port, 10) || 443;
   if (!address || !port) throw new Error('Отсутствуют адрес или порт Hysteria2');
 
   let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
-  let name = '';
-  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  let name = safeDecodeUriMulti(rawName).trim();
   if (!name) name = `Hysteria2 - ${address}:${port}`;
 
   const sp = u.searchParams;
-  const sni = sp.get('sni') || address;
+  const sni = sp.get('sni') || sp.get('peer') || address;
+  const alpn = sp.get('alpn') || 'h3';
+  const hasPassword = Boolean(password && password.trim());
 
   const outboundJsonObj = {
     outbounds: [
@@ -1756,7 +1788,10 @@ function parseHysteria2Client(rawUrl) {
         streamSettings: {
           network: 'udp',
           security: 'tls',
-          tlsSettings: { serverName: sni }
+          tlsSettings: {
+            serverName: sni,
+            alpn: alpn.split(',').map(s => s.trim()).filter(Boolean)
+          }
         }
       },
       { tag: 'direct', protocol: 'freedom' },
@@ -1772,6 +1807,8 @@ function parseHysteria2Client(rawUrl) {
     network: 'udp',
     security: 'tls',
     sni: sni,
+    hasPassword,
+    desc: 'Hysteria 2 (нативно поддерживается в ядре Mihomo)',
     outboundJson: JSON.stringify(outboundJsonObj, null, 4)
   };
 }
