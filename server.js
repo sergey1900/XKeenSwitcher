@@ -428,6 +428,40 @@ function parseVlessUrlInternal(cleanStr) {
         Host: sp.get('host') || sni || ''
       }
     };
+  } else if (type === 'xhttp' || type === 'splithttp') {
+    let xhttpPath = '/';
+    try {
+      xhttpPath = decodeURIComponent(sp.get('path') || '/');
+    } catch (e) {
+      xhttpPath = sp.get('path') || '/';
+    }
+    const xhttpHost = sp.get('host') || sni || '';
+    const xhttpMode = sp.get('mode') || 'auto';
+    streamSettings.xhttpSettings = {
+      path: xhttpPath,
+      host: xhttpHost,
+      mode: xhttpMode
+    };
+    const extraRaw = sp.get('extra');
+    if (extraRaw && extraRaw !== 'null') {
+      try {
+        const extraParsed = typeof extraRaw === 'string' ? JSON.parse(decodeURIComponent(extraRaw)) : extraRaw;
+        if (extraParsed && typeof extraParsed === 'object') {
+          streamSettings.xhttpSettings.extra = extraParsed;
+        }
+      } catch (e) {}
+    }
+  } else if (type === 'http' || type === 'h2') {
+    let httpPath = '/';
+    try {
+      httpPath = decodeURIComponent(sp.get('path') || '/');
+    } catch (e) {
+      httpPath = sp.get('path') || '/';
+    }
+    streamSettings.httpSettings = {
+      path: httpPath,
+      host: sp.get('host') ? [sp.get('host')] : (sni ? [sni] : [])
+    };
   } else if (type === 'tcp') {
     const headerType = sp.get('headerType');
     if (headerType && headerType !== 'none') {
@@ -549,6 +583,20 @@ function parseVmessUrl(cleanStr) {
     streamSettings.grpcSettings = {
       serviceName: conf.path || conf.serviceName || '',
       multiMode: false
+    };
+  } else if (net === 'xhttp' || net === 'splithttp') {
+    streamSettings.xhttpSettings = {
+      path: conf.path || '/',
+      host: conf.host || sni || '',
+      mode: conf.mode || 'auto'
+    };
+    if (conf.extra && typeof conf.extra === 'object') {
+      streamSettings.xhttpSettings.extra = conf.extra;
+    }
+  } else if (net === 'http' || net === 'h2') {
+    streamSettings.httpSettings = {
+      path: conf.path || '/',
+      host: conf.host ? [conf.host] : (sni ? [sni] : [])
     };
   } else if (net === 'tcp' && type && type !== 'none') {
     streamSettings.tcpSettings = {
@@ -701,6 +749,40 @@ function parseTrojanUrl(cleanStr) {
     streamSettings.grpcSettings = {
       serviceName: sp.get('serviceName') || sp.get('service_name') || '',
       multiMode: false
+    };
+  } else if (type === 'xhttp' || type === 'splithttp') {
+    let xhttpPath = '/';
+    try {
+      xhttpPath = decodeURIComponent(sp.get('path') || '/');
+    } catch (e) {
+      xhttpPath = sp.get('path') || '/';
+    }
+    const xhttpHost = sp.get('host') || sni || '';
+    const xhttpMode = sp.get('mode') || 'auto';
+    streamSettings.xhttpSettings = {
+      path: xhttpPath,
+      host: xhttpHost,
+      mode: xhttpMode
+    };
+    const extraRaw = sp.get('extra');
+    if (extraRaw && extraRaw !== 'null') {
+      try {
+        const extraParsed = typeof extraRaw === 'string' ? JSON.parse(decodeURIComponent(extraRaw)) : extraRaw;
+        if (extraParsed && typeof extraParsed === 'object') {
+          streamSettings.xhttpSettings.extra = extraParsed;
+        }
+      } catch (e) {}
+    }
+  } else if (type === 'http' || type === 'h2') {
+    let httpPath = '/';
+    try {
+      httpPath = decodeURIComponent(sp.get('path') || '/');
+    } catch (e) {
+      httpPath = sp.get('path') || '/';
+    }
+    streamSettings.httpSettings = {
+      path: httpPath,
+      host: sp.get('host') ? [sp.get('host')] : (sni ? [sni] : [])
     };
   }
 
@@ -3794,6 +3876,155 @@ function parseJsonBody(req) {
   });
 }
 
+// Helper: Synchronize / refresh subscription by group ID
+async function syncSubscriptionById(id) {
+  const data = loadData();
+  const group = data.groups.find(g => g.id === id);
+  if (!group || !group.isSubscription) {
+    throw new Error('Подписка не найдена');
+  }
+
+  if (!group.subscriptionUrl) {
+    throw new Error('У подписки не указан URL');
+  }
+
+  const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(group.subscriptionUrl);
+  if (userInfo) {
+    group.userInfo = userInfo;
+  }
+  group.lastUpdated = new Date().toISOString();
+
+  const targetList = group.targetList || 'mixed';
+  const effectiveRoutingId = group.routingId || (targetList === 'whitelist' ? data.settings.defaultRoutingWhitelist : data.settings.defaultRoutingBlacklist);
+
+  const existingConns = data.connections.filter(c => c.groupId === id);
+  const matchedIds = new Set();
+  let addedCount = 0;
+  let updatedCount = 0;
+
+  const itemsToImport = [];
+  if (jsonConfigs && jsonConfigs.length > 0) {
+    for (let i = 0; i < jsonConfigs.length; i++) {
+      const cfg = jsonConfigs[i];
+      const remarks = cfg.remarks || `Узел ${i + 1}`;
+      const outboundJson = JSON.stringify(cfg, null, 4);
+      const meta = extractOutboundMetadata(outboundJson);
+      itemsToImport.push({
+        name: safeDecodeUriMulti(remarks),
+        outboundJson,
+        serverAddress: meta.serverAddress,
+        serverPort: meta.serverPort,
+        protocol: meta.protocol,
+        network: meta.network,
+        security: meta.security,
+        sni: meta.sni
+      });
+    }
+  } else {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      try {
+        const parsed = parseVlessUrl(line);
+        const meta = extractOutboundMetadata(parsed.outboundJson);
+        itemsToImport.push({
+          name: parsed.name,
+          outboundJson: parsed.outboundJson,
+          serverAddress: parsed.serverAddress || meta.serverAddress,
+          serverPort: parsed.serverPort || meta.serverPort,
+          protocol: parsed.protocol || meta.protocol,
+          network: parsed.network || meta.network,
+          security: parsed.security || meta.security,
+          sni: parsed.sni || meta.sni
+        });
+      } catch (e) {}
+    }
+  }
+
+  for (let i = 0; i < itemsToImport.length; i++) {
+    const item = itemsToImport[i];
+    const host = item.serverAddress;
+    const port = item.serverPort;
+
+    let found = existingConns.find(c =>
+      !matchedIds.has(c.id) &&
+      c.serverAddress === host &&
+      String(c.serverPort) === String(port) &&
+      (c.sni === item.sni || c.name === item.name)
+    );
+
+    if (found) {
+      matchedIds.add(found.id);
+      found.name = item.name;
+      found.outboundContent = item.outboundJson;
+      found.serverAddress = host;
+      found.serverPort = port;
+      found.protocol = item.protocol;
+      found.network = item.network;
+      found.security = item.security;
+      found.sni = item.sni;
+      if (targetList === 'whitelist' || targetList === 'blacklist') {
+        found.targetList = targetList;
+      }
+      found.updatedAt = new Date().toISOString();
+      updatedCount++;
+    } else {
+      const newConn = {
+        id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+        name: item.name,
+        description: '',
+        groupId: id,
+        routingId: effectiveRoutingId,
+        outboundContent: item.outboundJson,
+        serverAddress: host,
+        serverPort: port,
+        protocol: item.protocol,
+        network: item.network,
+        security: item.security,
+        sni: item.sni,
+        countryCode: null,
+        countryName: null,
+        isFavorite: false,
+        targetList: (targetList === 'whitelist' || targetList === 'blacklist') ? targetList : 'blacklist',
+        lastPing: null,
+        lastPingStatus: null,
+        lastPingCheckedAt: null,
+        createdAt: new Date().toISOString()
+      };
+      data.connections.push(newConn);
+      matchedIds.add(newConn.id);
+      addedCount++;
+    }
+  }
+
+  let removedCount = 0;
+  data.connections = data.connections.filter(c => {
+    if (c.groupId === id && !matchedIds.has(c.id)) {
+      if (c.id === data.settings.activeConnectionId) {
+        return true;
+      }
+      removedCount++;
+      return false;
+    }
+    return true;
+  });
+
+  const activeConn = data.connections.find(c => c.id === data.settings.activeConnectionId);
+  if (activeConn && activeConn.groupId === id) {
+    fs.writeFileSync(data.settings.outboundPath, activeConn.outboundContent, 'utf8');
+  }
+
+  saveData(data);
+  setTimeout(sweepGeoIpForConnections, 1000);
+
+  return {
+    group,
+    total: data.connections.filter(c => c.groupId === id).length,
+    added: addedCount,
+    updated: updatedCount,
+    removed: removedCount
+  };
+}
+
 // Initialize data and port
 const initialData = loadData();
 const PORT = process.env.PORT || (initialData.settings && initialData.settings.port) || 3000;
@@ -5180,155 +5411,20 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+
+
   // POST /api/subscriptions/:id/update - Refresh / sync subscription
   if (urlParts.startsWith('/api/subscriptions/') && urlParts.endsWith('/update') && req.method === 'POST') {
     const id = urlParts.replace('/api/subscriptions/', '').replace('/update', '');
     try {
-      const data = loadData();
-      const group = data.groups.find(g => g.id === id);
-      if (!group || !group.isSubscription) {
-        return sendJson(res, 404, { error: 'Подписка не найдена' });
-      }
-
-      if (!group.subscriptionUrl) {
-        return sendJson(res, 400, { error: 'У подписки не указан URL' });
-      }
-
-      const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(group.subscriptionUrl);
-      if (userInfo) {
-        group.userInfo = userInfo;
-      }
-      group.lastUpdated = new Date().toISOString();
-
-      const targetList = group.targetList || 'mixed';
-      const effectiveRoutingId = group.routingId || (targetList === 'whitelist' ? data.settings.defaultRoutingWhitelist : data.settings.defaultRoutingBlacklist);
-
-      const existingConns = data.connections.filter(c => c.groupId === id);
-      const matchedIds = new Set();
-      let addedCount = 0;
-      let updatedCount = 0;
-
-      const itemsToImport = [];
-      if (jsonConfigs && jsonConfigs.length > 0) {
-        for (let i = 0; i < jsonConfigs.length; i++) {
-          const cfg = jsonConfigs[i];
-          const remarks = cfg.remarks || `Узел ${i + 1}`;
-          const outboundJson = JSON.stringify(cfg, null, 4);
-          const meta = extractOutboundMetadata(outboundJson);
-          itemsToImport.push({
-            name: safeDecodeUriMulti(remarks),
-            outboundJson,
-            serverAddress: meta.serverAddress,
-            serverPort: meta.serverPort,
-            protocol: meta.protocol,
-            network: meta.network,
-            security: meta.security,
-            sni: meta.sni
-          });
-        }
-      } else {
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          try {
-            const parsed = parseVlessUrl(line);
-            const meta = extractOutboundMetadata(parsed.outboundJson);
-            itemsToImport.push({
-              name: parsed.name,
-              outboundJson: parsed.outboundJson,
-              serverAddress: parsed.serverAddress || meta.serverAddress,
-              serverPort: parsed.serverPort || meta.serverPort,
-              protocol: parsed.protocol || meta.protocol,
-              network: parsed.network || meta.network,
-              security: parsed.security || meta.security,
-              sni: parsed.sni || meta.sni
-            });
-          } catch (e) {}
-        }
-      }
-
-      for (let i = 0; i < itemsToImport.length; i++) {
-        const item = itemsToImport[i];
-        const host = item.serverAddress;
-        const port = item.serverPort;
-
-        let found = existingConns.find(c =>
-          !matchedIds.has(c.id) &&
-          c.serverAddress === host &&
-          String(c.serverPort) === String(port) &&
-          (c.sni === item.sni || c.name === item.name)
-        );
-
-        if (found) {
-          matchedIds.add(found.id);
-          found.name = item.name;
-          found.outboundContent = item.outboundJson;
-          found.serverAddress = host;
-          found.serverPort = port;
-          found.protocol = item.protocol;
-          found.network = item.network;
-          found.security = item.security;
-          found.sni = item.sni;
-          if (targetList === 'whitelist' || targetList === 'blacklist') {
-            found.targetList = targetList;
-          }
-          found.updatedAt = new Date().toISOString();
-          updatedCount++;
-        } else {
-          const newConn = {
-            id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
-            name: item.name,
-            description: '',
-            groupId: id,
-            routingId: effectiveRoutingId,
-            outboundContent: item.outboundJson,
-            serverAddress: host,
-            serverPort: port,
-            protocol: item.protocol,
-            network: item.network,
-            security: item.security,
-            sni: item.sni,
-            countryCode: null,
-            countryName: null,
-            isFavorite: false,
-            targetList: (targetList === 'whitelist' || targetList === 'blacklist') ? targetList : 'blacklist',
-            lastPing: null,
-            lastPingStatus: null,
-            lastPingCheckedAt: null,
-            createdAt: new Date().toISOString()
-          };
-          data.connections.push(newConn);
-          matchedIds.add(newConn.id);
-          addedCount++;
-        }
-      }
-
-      let removedCount = 0;
-      data.connections = data.connections.filter(c => {
-        if (c.groupId === id && !matchedIds.has(c.id)) {
-          if (c.id === data.settings.activeConnectionId) {
-            return true;
-          }
-          removedCount++;
-          return false;
-        }
-        return true;
-      });
-
-      const activeConn = data.connections.find(c => c.id === data.settings.activeConnectionId);
-      if (activeConn && activeConn.groupId === id) {
-        fs.writeFileSync(data.settings.outboundPath, activeConn.outboundContent, 'utf8');
-      }
-
-      saveData(data);
-      setTimeout(sweepGeoIpForConnections, 1000);
-
+      const resData = await syncSubscriptionById(id);
       return sendJson(res, 200, {
-        message: `Подписка "${group.name}" обновлена: +${addedCount} добавлено, ${updatedCount} обновлено, -${removedCount} удалено`,
-        group,
-        total: data.connections.filter(c => c.groupId === id).length,
-        added: addedCount,
-        updated: updatedCount,
-        removed: removedCount
+        message: `Подписка "${resData.group.name}" обновлена: +${resData.added} добавлено, ${resData.updated} обновлено, -${resData.removed} удалено`,
+        group: resData.group,
+        total: resData.total,
+        added: resData.added,
+        updated: resData.updated,
+        removed: resData.removed
       });
     } catch (err) {
       return sendJson(res, 400, { error: err.message || 'Ошибка обновления подписки' });
@@ -6130,6 +6226,34 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
+async function autoRepairOutdatedSubscriptions() {
+  try {
+    const data = loadData();
+    const subGroups = (data.groups || []).filter(g => g.isSubscription && g.subscriptionUrl);
+    for (const sub of subGroups) {
+      const conns = (data.connections || []).filter(c => c.groupId === sub.id);
+      const hasOutdatedXhttp = conns.some(c => {
+        if ((c.network === 'xhttp' || c.network === 'splithttp') && c.outboundContent) {
+          try {
+            const ob = JSON.parse(c.outboundContent);
+            const main = (ob.outbounds || [ob])[0];
+            return main && main.streamSettings && (main.streamSettings.network === 'xhttp' || main.streamSettings.network === 'splithttp') && !main.streamSettings.xhttpSettings;
+          } catch(e) { return false; }
+        }
+        return false;
+      });
+
+      if (hasOutdatedXhttp) {
+        console.log(`[AutoRepair] Обновление подписки "${sub.name}" для добавления xhttpSettings...`);
+        await syncSubscriptionById(sub.id);
+        console.log(`[AutoRepair] Подписка "${sub.name}" успешно обновлена.`);
+      }
+    }
+  } catch (err) {
+    console.error('[AutoRepair] Ошибка обновления подписок:', err.message);
+  }
+}
+
 const HOST = process.env.HOST || '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
@@ -6139,4 +6263,6 @@ server.listen(PORT, HOST, () => {
   startFailoverWatchdog();
   startAutoFailoverWatchdog();
   setTimeout(sweepGeoIpForConnections, 2000);
+  setTimeout(autoRepairOutdatedSubscriptions, 3000);
 });
+
