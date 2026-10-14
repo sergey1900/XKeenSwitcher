@@ -1098,10 +1098,52 @@ function insertOutboundTemplate(tplKey) {
 
 let currentAddAmneziaConfig = null;
 
+// Highlight detected protocol pill in add connection modal
+function highlightDetectedProtocol(protoKey) {
+  const container = document.getElementById('add-modal-proto-pills');
+  if (!container) return;
+  const pills = container.querySelectorAll('.proto-pill');
+
+  if (!protoKey) {
+    pills.forEach(pill => {
+      pill.classList.remove('selected', 'dimmed');
+    });
+    return;
+  }
+
+  const normalized = String(protoKey).toLowerCase();
+  let matchedProto = null;
+  if (normalized === 'vless') matchedProto = 'vless';
+  else if (normalized === 'vmess') matchedProto = 'vmess';
+  else if (normalized === 'trojan') matchedProto = 'trojan';
+  else if (normalized === 'shadowsocks' || normalized === 'ss') matchedProto = 'shadowsocks';
+  else if (normalized === 'amneziawg' || normalized === 'awg' || normalized === 'vpn') matchedProto = 'amneziawg';
+  else if (normalized === 'wireguard' || normalized === 'wg') matchedProto = 'wireguard';
+  else if (normalized === 'hysteria2' || normalized === 'hy2') matchedProto = 'hysteria2';
+
+  pills.forEach(pill => {
+    if (matchedProto && pill.getAttribute('data-proto') === matchedProto) {
+      pill.classList.add('selected');
+      pill.classList.remove('dimmed');
+    } else {
+      pill.classList.remove('selected');
+      if (matchedProto) {
+        pill.classList.add('dimmed');
+      } else {
+        pill.classList.remove('dimmed');
+      }
+    }
+  });
+}
+
 // Universal Client-side Proxy URL & Config Parser
 async function parseProxyUrlInput(showNotice = true) {
   const input = document.getElementById('input-vless-url');
-  if (!input || !input.value.trim()) return;
+  if (!input || !input.value.trim()) {
+    highlightDetectedProtocol(null);
+    document.getElementById('add-meta-preview')?.classList.add('hidden');
+    return;
+  }
 
   const rawUrl = input.value.trim();
   currentAddAmneziaConfig = null;
@@ -1141,12 +1183,16 @@ async function parseProxyUrlInput(showNotice = true) {
       } else if (rawUrl.startsWith('hysteria2://') || rawUrl.startsWith('hy2://')) {
         result = parseHysteria2Client(rawUrl);
       } else {
+        highlightDetectedProtocol(null);
         if (showNotice) showToast('Неизвестный протокол. Вставьте vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg:// или конфиг [Interface]', 'warning');
         return;
       }
     }
 
-    if (!result) return;
+    if (!result) {
+      highlightDetectedProtocol(null);
+      return;
+    }
 
     // Populate Fields
     const nameInput = document.getElementById('conn-name');
@@ -1173,6 +1219,9 @@ async function parseProxyUrlInput(showNotice = true) {
       sniWrap.classList.add('hidden');
     }
     document.getElementById('add-meta-preview').classList.remove('hidden');
+
+    // Highlight detected protocol pill in real-time
+    highlightDetectedProtocol(isAwg ? 'amneziawg' : (isHy2 ? 'hysteria2' : result.protocol));
 
     let noticeText = `Ссылка ${result.protocol.toUpperCase()} успешно распознана!`;
     let toastType = 'success';
@@ -1912,6 +1961,7 @@ function parseHysteria2Client(rawUrl) {
 function openAddConnectionModal(defaultGroupId = '') {
   document.getElementById('form-add-connection').reset();
   document.getElementById('add-meta-preview').classList.add('hidden');
+  highlightDetectedProtocol(null);
   currentAddAmneziaConfig = null;
   populateRoutingSelects();
   populateGroupSelects(defaultGroupId || 'group_default');
@@ -4457,6 +4507,7 @@ function tryParseAndApplyWireguardText(rawText) {
     if (previewNetEl) previewNetEl.textContent = 'UDP';
     document.getElementById('preview-sec').textContent = isAwg ? 'Amnezia' : 'WG';
     document.getElementById('add-meta-preview').classList.remove('hidden');
+    highlightDetectedProtocol(isAwg ? 'amneziawg' : 'wireguard');
 
     showToast('Конфигурация WireGuard успешно распознана и преобразована!', 'success');
     return true;

@@ -4130,25 +4130,74 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .proto-pill {
   font-size: 0.72rem;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text-muted);
   user-select: none;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.75;
 }
 
-.proto-pill.active {
-  background: rgba(99, 102, 241, 0.12);
-  border-color: rgba(99, 102, 241, 0.28);
-  color: #c7d2fe;
+.proto-pill.dimmed {
+  opacity: 0.35;
+  filter: grayscale(0.5);
 }
 
-.proto-pill-awg {
-  background: rgba(249, 115, 22, 0.12) !important;
-  border-color: rgba(249, 115, 22, 0.3) !important;
-  color: #fdba74 !important;
+.proto-pill.selected {
+  opacity: 1 !important;
+  font-weight: 700 !important;
+  transform: translateY(-1px) scale(1.05);
+}
+
+.proto-pill.selected.proto-vless {
+  background: rgba(99, 102, 241, 0.35) !important;
+  border-color: #818cf8 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.55);
+}
+
+.proto-pill.selected.proto-vmess {
+  background: rgba(59, 130, 246, 0.35) !important;
+  border-color: #60a5fa !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.55);
+}
+
+.proto-pill.selected.proto-trojan {
+  background: rgba(236, 72, 153, 0.35) !important;
+  border-color: #f472b6 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(244, 114, 182, 0.55);
+}
+
+.proto-pill.selected.proto-shadowsocks {
+  background: rgba(16, 185, 129, 0.35) !important;
+  border-color: #34d399 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.55);
+}
+
+.proto-pill.selected.proto-wireguard {
+  background: rgba(20, 184, 166, 0.35) !important;
+  border-color: #2dd4bf !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.55);
+}
+
+.proto-pill.selected.proto-amneziawg {
+  background: rgba(249, 115, 22, 0.4) !important;
+  border-color: #fb923c !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(251, 146, 60, 0.65);
+}
+
+.proto-pill.selected.proto-hysteria2 {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.4), rgba(168, 85, 247, 0.4)) !important;
+  border-color: #f472b6 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(244, 114, 182, 0.65);
 }
 
 /* PROTOCOL GUIDE PANEL */
