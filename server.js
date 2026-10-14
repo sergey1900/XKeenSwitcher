@@ -239,15 +239,72 @@ function parseJsonWithComments(str) {
   return JSON.parse(stripped);
 }
 
-// Parse VLESS URL to Outbound JSON and metadata
-function parseVlessUrl(urlStr) {
+// Safely decode Base64 string with URL-safe replacement and padding
+function decodeBase64Safe(str) {
+  if (!str || typeof str !== 'string') return '';
+  let clean = str.trim().replace(/-/g, '+').replace(/_/g, '/');
+  while (clean.length % 4 !== 0) {
+    clean += '=';
+  }
+  try {
+    return Buffer.from(clean, 'base64').toString('utf8');
+  } catch (e) {
+    return '';
+  }
+}
+
+// Universal Proxy URL & Config parser: supports VLESS, VMess, Trojan, Shadowsocks, WireGuard/AmneziaWG, Hysteria2
+function parseProxyUrl(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') {
-    throw new Error('Ссылка подключения не указана');
+    throw new Error('Ссылка подключения или конфигурация не указана');
   }
   const cleanStr = urlStr.trim();
-  if (!cleanStr.startsWith('vless://')) {
-    throw new Error('Поддерживаются ссылки формата vless://');
+
+  // 1. WireGuard / AmneziaWG Config format ([Interface] ... [Peer])
+  if (cleanStr.includes('[Interface]') || cleanStr.includes('[Peer]')) {
+    return parseWireguardConfig(cleanStr);
   }
+
+  // 2. VLESS
+  if (cleanStr.startsWith('vless://')) {
+    return parseVlessUrlInternal(cleanStr);
+  }
+
+  // 3. VMess
+  if (cleanStr.startsWith('vmess://')) {
+    return parseVmessUrl(cleanStr);
+  }
+
+  // 4. Trojan
+  if (cleanStr.startsWith('trojan://')) {
+    return parseTrojanUrl(cleanStr);
+  }
+
+  // 5. Shadowsocks
+  if (cleanStr.startsWith('ss://')) {
+    return parseShadowsocksUrl(cleanStr);
+  }
+
+  // 6. WireGuard / AmneziaWG URL
+  if (cleanStr.startsWith('wireguard://') || cleanStr.startsWith('awg://')) {
+    return parseWireguardUrl(cleanStr);
+  }
+
+  // 7. Hysteria 2
+  if (cleanStr.startsWith('hysteria2://') || cleanStr.startsWith('hy2://')) {
+    return parseHysteria2Url(cleanStr);
+  }
+
+  throw new Error('Неизвестный протокол. Поддерживаются: vless://, vmess://, trojan://, ss://, wireguard://, awg://, hysteria2:// или файл конфига [Interface]');
+}
+
+// Backwards-compatible alias
+function parseVlessUrl(urlStr) {
+  return parseProxyUrl(urlStr);
+}
+
+// Parse VLESS URL to Outbound JSON and metadata
+function parseVlessUrlInternal(cleanStr) {
 
   const u = new URL(cleanStr);
   const id = u.username;
@@ -383,6 +440,499 @@ function parseVlessUrl(urlStr) {
     protocol: 'vless',
     network: type,
     security: security,
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Parse VMess URL to Outbound JSON and metadata
+function parseVmessUrl(cleanStr) {
+  const rest = cleanStr.replace(/^vmess:\/\//i, '').trim();
+  let conf;
+  if (rest.startsWith('{')) {
+    conf = JSON.parse(rest);
+  } else {
+    const decoded = decodeBase64Safe(rest);
+    try {
+      conf = JSON.parse(decoded);
+    } catch (e) {
+      throw new Error('Некорректная ссылка VMess: ошибка декодирования JSON: ' + e.message);
+    }
+  }
+
+  const address = (conf.add || conf.host || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(conf.port, 10);
+  const id = conf.id || '';
+  if (!address || !port || !id) {
+    throw new Error('Некорректная ссылка VMess: отсутствуют обязательные параметры (id, add, port)');
+  }
+
+  const name = (conf.ps || '').trim() || `VMess - ${address}:${port}`;
+  const net = (conf.net || 'tcp').toLowerCase();
+  const type = (conf.type || 'none').toLowerCase();
+  const tls = (conf.tls || '').toLowerCase();
+  const security = tls === 'tls' ? 'tls' : 'none';
+  const aid = parseInt(conf.aid || 0, 10);
+  const scy = conf.scy || 'auto';
+  const sni = conf.sni || conf.host || address;
+
+  const streamSettings = {
+    network: net,
+    security: security
+  };
+
+  if (security === 'tls') {
+    streamSettings.tlsSettings = {
+      serverName: sni,
+      fingerprint: conf.fp || 'chrome'
+    };
+    if (conf.alpn) {
+      streamSettings.tlsSettings.alpn = String(conf.alpn).split(',').map(s => s.trim());
+    }
+  }
+
+  if (net === 'ws') {
+    streamSettings.wsSettings = {
+      path: conf.path || '/',
+      headers: {
+        Host: conf.host || sni
+      }
+    };
+  } else if (net === 'grpc') {
+    streamSettings.grpcSettings = {
+      serviceName: conf.path || conf.serviceName || '',
+      multiMode: false
+    };
+  } else if (net === 'tcp' && type && type !== 'none') {
+    streamSettings.tcpSettings = {
+      header: { type: type }
+    };
+  }
+
+  const tag = security === 'tls' ? 'vmess-tls' : 'vmess';
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: tag,
+        protocol: 'vmess',
+        settings: {
+          vnext: [
+            {
+              address: address,
+              port: port,
+              users: [
+                {
+                  id: id,
+                  alterId: aid,
+                  security: scy,
+                  level: 0
+                }
+              ]
+            }
+          ]
+        },
+        streamSettings: streamSettings
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'vmess',
+    network: net,
+    security: security,
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Parse Trojan URL to Outbound JSON and metadata
+function parseTrojanUrl(cleanStr) {
+  const u = new URL(cleanStr);
+  const password = decodeURIComponent(u.username);
+  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(u.port, 10);
+  if (!password || !address || !port) {
+    throw new Error('Некорректная ссылка Trojan: отсутствуют обязательные параметры (пароль, адрес, порт)');
+  }
+
+  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
+  let name = '';
+  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  if (!name) name = `Trojan - ${address}:${port}`;
+
+  const sp = u.searchParams;
+  const type = (sp.get('type') || 'tcp').toLowerCase();
+  const security = (sp.get('security') || 'tls').toLowerCase();
+  const sni = sp.get('sni') || sp.get('peer') || address;
+  const fp = sp.get('fp') || 'chrome';
+
+  const streamSettings = {
+    network: type,
+    security: security
+  };
+
+  if (security === 'reality') {
+    streamSettings.realitySettings = {
+      publicKey: sp.get('pbk') || '',
+      fingerprint: fp,
+      serverName: sni,
+      shortId: sp.get('sid') || '',
+      spiderX: sp.get('spx') || '/'
+    };
+  } else if (security === 'tls') {
+    streamSettings.tlsSettings = {
+      serverName: sni,
+      fingerprint: fp
+    };
+    if (sp.get('alpn')) {
+      streamSettings.tlsSettings.alpn = sp.get('alpn').split(',').map(s => s.trim());
+    }
+  }
+
+  if (type === 'ws') {
+    streamSettings.wsSettings = {
+      path: sp.get('path') || '/',
+      headers: {
+        Host: sp.get('host') || sni
+      }
+    };
+  } else if (type === 'grpc') {
+    streamSettings.grpcSettings = {
+      serviceName: sp.get('serviceName') || sp.get('service_name') || '',
+      multiMode: false
+    };
+  }
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: 'trojan',
+        protocol: 'trojan',
+        settings: {
+          servers: [
+            {
+              address: address,
+              port: port,
+              password: password,
+              level: 0
+            }
+          ]
+        },
+        streamSettings: streamSettings
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'trojan',
+    network: type,
+    security: security,
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Parse Shadowsocks URL to Outbound JSON and metadata
+function parseShadowsocksUrl(cleanStr) {
+  let hashPart = '';
+  let urlWithoutHash = cleanStr;
+  if (cleanStr.includes('#')) {
+    const p = cleanStr.split('#');
+    urlWithoutHash = p[0];
+    hashPart = p.slice(1).join('#');
+  }
+  let name = '';
+  try { name = decodeURIComponent(hashPart).trim(); } catch (e) { name = hashPart.trim(); }
+
+  const rest = urlWithoutHash.replace(/^ss:\/\//i, '').trim();
+  let method = '';
+  let password = '';
+  let address = '';
+  let port = null;
+
+  if (rest.includes('@')) {
+    const atIdx = rest.indexOf('@');
+    const userPart = rest.substring(0, atIdx);
+    const hostPortPart = rest.substring(atIdx + 1).split('/')[0].split('?')[0];
+
+    let userDecoded = userPart;
+    try {
+      const d = decodeBase64Safe(userPart);
+      if (d.includes(':')) userDecoded = d;
+    } catch (e) {}
+
+    const colIdx = userDecoded.indexOf(':');
+    if (colIdx !== -1) {
+      method = userDecoded.substring(0, colIdx);
+      password = userDecoded.substring(colIdx + 1);
+    }
+
+    const lastCol = hostPortPart.lastIndexOf(':');
+    if (lastCol !== -1) {
+      address = hostPortPart.substring(0, lastCol).replace(/^\[|\]$/g, '');
+      port = parseInt(hostPortPart.substring(lastCol + 1), 10);
+    }
+  } else {
+    // Entire string is base64
+    const decoded = decodeBase64Safe(rest.split('/')[0].split('?')[0]);
+    if (decoded.includes('@')) {
+      const atIdx = decoded.indexOf('@');
+      const userPart = decoded.substring(0, atIdx);
+      const hostPortPart = decoded.substring(atIdx + 1);
+      const colIdx = userPart.indexOf(':');
+      if (colIdx !== -1) {
+        method = userPart.substring(0, colIdx);
+        password = userPart.substring(colIdx + 1);
+      }
+      const lastCol = hostPortPart.lastIndexOf(':');
+      if (lastCol !== -1) {
+        address = hostPortPart.substring(0, lastCol).replace(/^\[|\]$/g, '');
+        port = parseInt(hostPortPart.substring(lastCol + 1), 10);
+      }
+    }
+  }
+
+  if (!address || !port || !method) {
+    throw new Error('Некорректная ссылка Shadowsocks: не удалось извлечь адрес, порт или метод шифрования');
+  }
+
+  if (!name) name = `Shadowsocks - ${address}:${port}`;
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: 'shadowsocks',
+        protocol: 'shadowsocks',
+        settings: {
+          servers: [
+            {
+              address: address,
+              port: port,
+              method: method,
+              password: password || '',
+              level: 0
+            }
+          ]
+        },
+        streamSettings: {
+          network: 'tcp'
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'shadowsocks',
+    network: 'tcp',
+    security: method,
+    sni: '',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Parse WireGuard / AmneziaWG INI config text
+function parseWireguardConfig(confText) {
+  const lines = confText.split(/\r?\n/).map(l => l.trim());
+  let currentSection = '';
+  const iface = {};
+  const peer = {};
+
+  for (const line of lines) {
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    if (line.startsWith('[') && line.endsWith(']')) {
+      currentSection = line.slice(1, -1).trim().toLowerCase();
+      continue;
+    }
+    const eqIdx = line.indexOf('=');
+    if (eqIdx !== -1) {
+      const k = line.substring(0, eqIdx).trim().toLowerCase();
+      const v = line.substring(eqIdx + 1).trim();
+      if (currentSection === 'interface') iface[k] = v;
+      else if (currentSection === 'peer') peer[k] = v;
+    }
+  }
+
+  const privateKey = iface.privatekey || '';
+  const address = iface.address || '10.0.0.2/32';
+  const publicKey = peer.publickey || '';
+  const endpoint = peer.endpoint || '';
+
+  if (!privateKey || !publicKey || !endpoint) {
+    throw new Error('Некорректный конфиг WireGuard: отсутствуют PrivateKey, PublicKey или Endpoint');
+  }
+
+  let endpointHost = '';
+  let endpointPort = 51820;
+  const lastCol = endpoint.lastIndexOf(':');
+  if (lastCol !== -1) {
+    endpointHost = endpoint.substring(0, lastCol).replace(/^\[|\]$/g, '');
+    endpointPort = parseInt(endpoint.substring(lastCol + 1), 10) || 51820;
+  } else {
+    endpointHost = endpoint.replace(/^\[|\]$/g, '');
+  }
+
+  const isAwg = Boolean(iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.h1);
+  const name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
+  const cleanAddress = address.split(',')[0].trim();
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: isAwg ? 'amneziawg' : 'wireguard',
+        protocol: 'wireguard',
+        settings: {
+          secretKey: privateKey,
+          address: [cleanAddress],
+          peers: [
+            {
+              publicKey: publicKey,
+              endpoint: `${endpointHost}:${endpointPort}`,
+              allowedIPs: ['0.0.0.0/0', '::/0']
+            }
+          ],
+          mtu: parseInt(iface.mtu, 10) || 1420
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: endpointHost,
+    serverPort: endpointPort,
+    protocol: isAwg ? 'amneziawg' : 'wireguard',
+    network: 'udp',
+    security: isAwg ? 'Amnezia' : 'WG',
+    sni: '',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Parse WireGuard URL (wireguard://... or awg://...)
+function parseWireguardUrl(cleanStr) {
+  const u = new URL(cleanStr);
+  const privateKey = decodeURIComponent(u.username);
+  const endpointHost = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const endpointPort = parseInt(u.port, 10) || 51820;
+  const sp = u.searchParams;
+  const publicKey = sp.get('publickey') || sp.get('pubkey') || '';
+  const address = sp.get('address') || sp.get('ip') || '10.0.0.2/32';
+
+  if (!privateKey || !publicKey || !endpointHost) {
+    throw new Error('Некорректная ссылка WireGuard: отсутствуют PrivateKey, PublicKey или хост');
+  }
+
+  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
+  let name = '';
+  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  const isAwg = cleanStr.startsWith('awg://') || Boolean(sp.get('jc') || sp.get('h1'));
+  if (!name) name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: isAwg ? 'amneziawg' : 'wireguard',
+        protocol: 'wireguard',
+        settings: {
+          secretKey: privateKey,
+          address: [address],
+          peers: [
+            {
+              publicKey: publicKey,
+              endpoint: `${endpointHost}:${endpointPort}`,
+              allowedIPs: ['0.0.0.0/0', '::/0']
+            }
+          ],
+          mtu: parseInt(sp.get('mtu'), 10) || 1420
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: endpointHost,
+    serverPort: endpointPort,
+    protocol: isAwg ? 'amneziawg' : 'wireguard',
+    network: 'udp',
+    security: isAwg ? 'Amnezia' : 'WG',
+    sni: '',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Parse Hysteria 2 URL (hysteria2://... or hy2://...)
+function parseHysteria2Url(cleanStr) {
+  const u = new URL(cleanStr);
+  const password = decodeURIComponent(u.username);
+  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(u.port, 10) || 443;
+  if (!address || !port) {
+    throw new Error('Некорректная ссылка Hysteria2: отсутствуют адрес или порт');
+  }
+
+  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
+  let name = '';
+  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  if (!name) name = `Hysteria2 - ${address}:${port}`;
+
+  const sp = u.searchParams;
+  const sni = sp.get('sni') || address;
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: 'hysteria2',
+        protocol: 'hysteria2',
+        settings: {
+          servers: [
+            {
+              address: address,
+              port: port,
+              password: password || ''
+            }
+          ]
+        },
+        streamSettings: {
+          network: 'udp',
+          security: 'tls',
+          tlsSettings: {
+            serverName: sni
+          }
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'hysteria2',
+    network: 'udp',
+    security: 'tls',
     sni: sni,
     outboundJson: JSON.stringify(outboundJsonObj, null, 4)
   };
@@ -3933,15 +4483,44 @@ const server = http.createServer(async (req, res) => {
 
   // --- SERVICE CONTROL ROUTES ---
 
+  // Helper: Detect active proxy core from S05xkeen and binaries
+  function detectActiveProxyCore() {
+    let activeCore = 'xray';
+    const initdPath = '/opt/etc/init.d/S05xkeen';
+    if (fs.existsSync(initdPath)) {
+      try {
+        const content = fs.readFileSync(initdPath, 'utf8');
+        if (/name_client="mihomo"/.test(content)) {
+          activeCore = 'mihomo';
+        } else if (/name_client="xray"/.test(content)) {
+          activeCore = 'xray';
+        }
+      } catch (e) {}
+    }
+    const hasXray = fs.existsSync('/opt/sbin/xray') || fs.existsSync('/opt/bin/xray');
+    const hasMihomo = fs.existsSync('/opt/sbin/mihomo') || fs.existsSync('/opt/bin/mihomo');
+    return {
+      activeCore,
+      hasXray,
+      hasMihomo
+    };
+  }
+
   // GET /api/service/status
   if (urlParts === '/api/service/status' && req.method === 'GET') {
     const data = loadData();
     const cmd = data.settings.statusCommand || 'xkeen -status';
     const result = await runShellCommand(cmd);
     const computedStatus = evaluateServiceStatus(result);
+    const coreInfo = detectActiveProxyCore();
 
     lastServiceStatus = {
       status: computedStatus,
+      core: coreInfo.activeCore,
+      coresAvailable: {
+        xray: coreInfo.hasXray,
+        mihomo: coreInfo.hasMihomo
+      },
       output: result.stdout || '',
       error: result.stderr || result.error || '',
       code: result.code,
@@ -3949,6 +4528,77 @@ const server = http.createServer(async (req, res) => {
       command: cmd
     };
     return sendJson(res, 200, lastServiceStatus);
+  }
+
+  // POST /api/service/switch-core - Switch between Xray and Mihomo
+  if (urlParts === '/api/service/switch-core' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const targetCore = (body.core || '').toLowerCase().trim();
+      if (targetCore !== 'xray' && targetCore !== 'mihomo') {
+        return sendJson(res, 400, { error: 'Недопустимое ядро. Допустимы: xray, mihomo' });
+      }
+
+      const coreInfo = detectActiveProxyCore();
+      if (targetCore === 'mihomo' && !coreInfo.hasMihomo) {
+        return sendJson(res, 400, { error: 'Ядро Mihomo не установлено на роутере' });
+      }
+      if (targetCore === 'xray' && !coreInfo.hasXray) {
+        return sendJson(res, 400, { error: 'Ядро Xray не установлено на роутере' });
+      }
+
+      const switchCmd = targetCore === 'mihomo' ? 'xkeen -mihomo' : 'xkeen -xray';
+      const switchRes = await runShellCommand(switchCmd);
+
+      // Restart service to apply core switch
+      await runShellCommand('xkeen -restart');
+      const statusRes = await runShellCommand('xkeen -status');
+      const computedStatus = evaluateServiceStatus(statusRes);
+      const updatedCoreInfo = detectActiveProxyCore();
+
+      lastServiceStatus = {
+        status: computedStatus,
+        core: updatedCoreInfo.activeCore,
+        coresAvailable: {
+          xray: updatedCoreInfo.hasXray,
+          mihomo: updatedCoreInfo.hasMihomo
+        },
+        output: statusRes.stdout || '',
+        error: statusRes.stderr || statusRes.error || '',
+        code: statusRes.code,
+        timestamp: new Date().toISOString(),
+        command: 'xkeen -status'
+      };
+
+      return sendJson(res, 200, {
+        message: `Ядро XKeen успешно переключено на ${targetCore === 'mihomo' ? 'Mihomo' : 'Xray'}`,
+        activeCore: updatedCoreInfo.activeCore,
+        status: computedStatus,
+        switchOutput: switchRes.stdout || '',
+        serviceOutput: statusRes.stdout || ''
+      });
+    } catch (err) {
+      return sendJson(res, 500, { error: 'Ошибка переключения ядра: ' + err.message });
+    }
+  }
+
+  // POST /api/service/test-config - Run xtest or mtest
+  if (urlParts === '/api/service/test-config' && req.method === 'POST') {
+    try {
+      const coreInfo = detectActiveProxyCore();
+      const testCmd = coreInfo.activeCore === 'mihomo' ? 'xkeen -mtest' : 'xkeen -xtest';
+      const result = await runShellCommand(testCmd);
+      const isOk = result.code === 0 && !result.error;
+      return sendJson(res, 200, {
+        ok: isOk,
+        core: coreInfo.activeCore,
+        command: testCmd,
+        output: result.stdout || '',
+        error: result.stderr || result.error || ''
+      });
+    } catch (err) {
+      return sendJson(res, 500, { error: 'Ошибка проверки конфигурации: ' + err.message });
+    }
   }
 
   // POST /api/service/restart

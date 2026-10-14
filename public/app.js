@@ -651,162 +651,1038 @@ function populateGroupSelects(selectedGroupId = null) {
 // ==============================================================================
 // VLESS URL PARSER (CLIENT-SIDE)
 // ==============================================================================
-function parseVlessUrlInput(showNotice = true) {
-  const input = document.getElementById('input-vless-url');
-  if (!input || !input.value.trim()) return;
-
-  const rawUrl = input.value.trim();
-  if (!rawUrl.startsWith('vless://')) {
-    if (showNotice) showToast('Ссылка должна начинаться с vless://', 'warning');
-    return;
+// Safely decode Base64 in browser supporting UTF-8 and URL-safe chars
+function decodeBase64SafeClient(str) {
+  if (!str || typeof str !== 'string') return '';
+  let clean = str.trim().replace(/-/g, '+').replace(/_/g, '/');
+  while (clean.length % 4 !== 0) {
+    clean += '=';
   }
-
   try {
-    const u = new URL(rawUrl);
-    const id = u.username;
-    const address = (u.hostname || '').replace(/^\[|\]$/g, '');
-    const port = parseInt(u.port, 10);
-    if (!id || !address || !port) {
-      if (showNotice) showToast('Некорректная ссылка: нет UUID, адреса или порта', 'warning');
-      return;
-    }
-
-    let name = '';
+    const binStr = window.atob(clean);
+    const bytes = Uint8Array.from(binStr, c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
     try {
-      name = decodeURIComponent(u.hash ? u.hash.replace(/^#/, '') : '').trim();
-    } catch (e) {
-      name = (u.hash ? u.hash.replace(/^#/, '') : '').trim();
+      return decodeURIComponent(escape(window.atob(clean)));
+    } catch (e2) {
+      return '';
     }
-    if (!name) name = `VLESS - ${address}:${port}`;
+  }
+}
 
-    const sp = u.searchParams;
-    const type = (sp.get('type') || 'tcp').toLowerCase();
-    const security = (sp.get('security') || 'none').toLowerCase();
-    const encryption = sp.get('encryption') || 'none';
-    const flow = sp.get('flow') || '';
-    const pbk = sp.get('pbk') || '';
-    const fp = sp.get('fp') || 'chrome';
-    const sni = sp.get('sni') || '';
-    const sid = sp.get('sid') || '';
-    let spx = '/';
-    try { spx = decodeURIComponent(sp.get('spx') || '/'); } catch(e) { spx = sp.get('spx') || '/'; }
-    const serviceName = sp.get('serviceName') || sp.get('service_name') || '';
+// Toggle Protocol Cheat Sheet
+function toggleProtocolGuide() {
+  const panel = document.getElementById('protocol-guide-panel');
+  if (panel) panel.classList.toggle('hidden');
+}
 
-    // Build streamSettings
-    const streamSettings = {
-      network: type,
-      security: security
-    };
+// Toggle JSON Templates dropdown menu
+function toggleTemplateMenu(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('dropdown-templates-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
 
-    if (security === 'reality') {
-      streamSettings.realitySettings = {
-        publicKey: pbk,
-        fingerprint: fp,
-        serverName: sni,
-        shortId: sid,
-        spiderX: spx
-      };
-    } else if (security === 'tls') {
-      streamSettings.tlsSettings = {
-        serverName: sni,
-        fingerprint: fp
-      };
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('dropdown-templates-menu');
+  if (menu && !menu.classList.contains('hidden')) {
+    if (!e.target.closest('.dropdown-templates-wrap')) {
+      menu.classList.add('hidden');
     }
+  }
+});
 
-    if (type === 'grpc') {
-      streamSettings.grpcSettings = {
-        serviceName: serviceName,
-        multiMode: false
-      };
-    } else if (type === 'ws') {
-      let wsPath = '/';
-      try { wsPath = decodeURIComponent(sp.get('path') || '/'); } catch(e) { wsPath = sp.get('path') || '/'; }
-      streamSettings.wsSettings = {
-        path: wsPath,
-        headers: {
-          Host: sp.get('host') || sni || ''
-        }
-      };
-    } else if (type === 'tcp') {
-      const headerType = sp.get('headerType');
-      if (headerType && headerType !== 'none') {
-        streamSettings.tcpSettings = {
-          header: {
-            type: headerType
-          }
-        };
-      }
-    }
-
-    const tag = security === 'reality' ? 'vless-reality' : (security !== 'none' ? `vless-${security}` : 'vless');
-
-    const outboundJsonObj = {
+// JSON Outbound Templates
+const OUTBOUND_TEMPLATES = {
+  'vless-reality-tcp': {
+    name: 'VLESS Reality (TCP)',
+    protocol: 'vless',
+    network: 'tcp',
+    security: 'reality',
+    outboundJson: {
       outbounds: [
         {
-          tag: tag,
+          tag: 'vless-reality',
           protocol: 'vless',
           settings: {
             vnext: [
               {
-                address: address,
-                port: port,
+                address: '1.2.3.4',
+                port: 443,
                 users: [
                   {
-                    id: id,
-                    flow: flow,
-                    encryption: encryption,
+                    id: '00000000-0000-0000-0000-000000000000',
+                    flow: 'xtls-rprx-vision',
+                    encryption: 'none',
                     level: 0
                   }
                 ]
               }
             ]
           },
-          streamSettings: streamSettings
-        },
-        {
-          tag: 'direct',
-          protocol: 'freedom'
-        },
-        {
-          tag: 'block',
-          protocol: 'blackhole',
-          settings: {
-            response: {
-              type: 'http'
+          streamSettings: {
+            network: 'tcp',
+            security: 'reality',
+            realitySettings: {
+              serverName: 'yahoo.com',
+              fingerprint: 'chrome',
+              publicKey: 'PASTE_PUBLIC_KEY_HERE',
+              shortId: 'PASTE_SHORT_ID_HERE',
+              spiderX: '/'
             }
           }
-        }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
       ]
-    };
-
-    // Populate Modal Fields (autofill connection name from #Name)
-    const nameInput = document.getElementById('conn-name');
-    if (nameInput && name) {
-      nameInput.value = name;
     }
-    document.getElementById('conn-desc').value = '';
-    setEditorContent('conn-outbound-json', JSON.stringify(outboundJsonObj, null, 4));
+  },
+  'vless-reality-grpc': {
+    name: 'VLESS Reality (gRPC)',
+    protocol: 'vless',
+    network: 'grpc',
+    security: 'reality',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'vless-reality-grpc',
+          protocol: 'vless',
+          settings: {
+            vnext: [
+              {
+                address: '1.2.3.4',
+                port: 443,
+                users: [
+                  {
+                    id: '00000000-0000-0000-0000-000000000000',
+                    encryption: 'none',
+                    level: 0
+                  }
+                ]
+              }
+            ]
+          },
+          streamSettings: {
+            network: 'grpc',
+            security: 'reality',
+            realitySettings: {
+              serverName: 'dl.google.com',
+              fingerprint: 'chrome',
+              publicKey: 'PASTE_PUBLIC_KEY_HERE',
+              shortId: 'PASTE_SHORT_ID_HERE',
+              spiderX: '/'
+            },
+            grpcSettings: {
+              serviceName: 'grpc-service',
+              multiMode: false
+            }
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  },
+  'vless-ws-tls': {
+    name: 'VLESS WebSocket (TLS)',
+    protocol: 'vless',
+    network: 'ws',
+    security: 'tls',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'vless-ws-tls',
+          protocol: 'vless',
+          settings: {
+            vnext: [
+              {
+                address: 'example.com',
+                port: 443,
+                users: [
+                  {
+                    id: '00000000-0000-0000-0000-000000000000',
+                    encryption: 'none',
+                    level: 0
+                  }
+                ]
+              }
+            ]
+          },
+          streamSettings: {
+            network: 'ws',
+            security: 'tls',
+            tlsSettings: {
+              serverName: 'example.com',
+              fingerprint: 'chrome'
+            },
+            wsSettings: {
+              path: '/vless-ws',
+              headers: {
+                Host: 'example.com'
+              }
+            }
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  },
+  'vmess-ws-tls': {
+    name: 'VMess WebSocket (TLS)',
+    protocol: 'vmess',
+    network: 'ws',
+    security: 'tls',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'vmess-ws-tls',
+          protocol: 'vmess',
+          settings: {
+            vnext: [
+              {
+                address: 'example.com',
+                port: 443,
+                users: [
+                  {
+                    id: '00000000-0000-0000-0000-000000000000',
+                    alterId: 0,
+                    security: 'auto',
+                    level: 0
+                  }
+                ]
+              }
+            ]
+          },
+          streamSettings: {
+            network: 'ws',
+            security: 'tls',
+            tlsSettings: {
+              serverName: 'example.com'
+            },
+            wsSettings: {
+              path: '/vmess-ws',
+              headers: {
+                Host: 'example.com'
+              }
+            }
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  },
+  'trojan-tls': {
+    name: 'Trojan (TLS)',
+    protocol: 'trojan',
+    network: 'tcp',
+    security: 'tls',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'trojan-tls',
+          protocol: 'trojan',
+          settings: {
+            servers: [
+              {
+                address: 'example.com',
+                port: 443,
+                password: 'YOUR_PASSWORD_HERE',
+                level: 0
+              }
+            ]
+          },
+          streamSettings: {
+            network: 'tcp',
+            security: 'tls',
+            tlsSettings: {
+              serverName: 'example.com',
+              fingerprint: 'chrome'
+            }
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  },
+  'shadowsocks': {
+    name: 'Shadowsocks (AEAD)',
+    protocol: 'shadowsocks',
+    network: 'tcp',
+    security: 'aes-256-gcm',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'shadowsocks',
+          protocol: 'shadowsocks',
+          settings: {
+            servers: [
+              {
+                address: '1.2.3.4',
+                port: 8388,
+                method: 'aes-256-gcm',
+                password: 'YOUR_PASSWORD_HERE',
+                level: 0
+              }
+            ]
+          },
+          streamSettings: {
+            network: 'tcp'
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  },
+  'wireguard': {
+    name: 'WireGuard',
+    protocol: 'wireguard',
+    network: 'udp',
+    security: 'WG',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'wireguard',
+          protocol: 'wireguard',
+          settings: {
+            secretKey: 'PRIVATE_KEY_HERE',
+            address: ['10.0.0.2/32'],
+            peers: [
+              {
+                publicKey: 'SERVER_PUBLIC_KEY_HERE',
+                endpoint: '1.2.3.4:51820',
+                allowedIPs: ['0.0.0.0/0', '::/0']
+              }
+            ],
+            mtu: 1420
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  },
+  'amneziawg': {
+    name: 'AmneziaWG (Mihomo)',
+    protocol: 'wireguard',
+    network: 'udp',
+    security: 'Amnezia',
+    outboundJson: {
+      outbounds: [
+        {
+          tag: 'amneziawg',
+          protocol: 'wireguard',
+          settings: {
+            secretKey: 'PRIVATE_KEY_HERE',
+            address: ['10.0.0.2/32'],
+            peers: [
+              {
+                publicKey: 'SERVER_PUBLIC_KEY_HERE',
+                endpoint: '1.2.3.4:51820',
+                allowedIPs: ['0.0.0.0/0', '::/0']
+              }
+            ],
+            mtu: 1420
+          }
+        },
+        { tag: 'direct', protocol: 'freedom' },
+        { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+      ]
+    }
+  }
+};
+
+function insertOutboundTemplate(tplKey) {
+  const tpl = OUTBOUND_TEMPLATES[tplKey];
+  if (!tpl) return;
+
+  const jsonStr = JSON.stringify(tpl.outboundJson, null, 4);
+  setEditorContent('conn-outbound-json', jsonStr);
+
+  const nameInput = document.getElementById('conn-name');
+  if (nameInput && (!nameInput.value || nameInput.value.startsWith('Шаблон'))) {
+    nameInput.value = `Шаблон ${tpl.name}`;
+  }
+
+  // Update preview pills
+  const hostEl = document.getElementById('preview-host');
+  const portEl = document.getElementById('preview-port');
+  const protoEl = document.getElementById('preview-proto');
+  const netEl = document.getElementById('preview-net');
+  const secEl = document.getElementById('preview-sec');
+  const sniWrap = document.getElementById('preview-sni-wrap');
+
+  if (hostEl) hostEl.textContent = '1.2.3.4';
+  if (portEl) portEl.textContent = '443';
+  if (protoEl) protoEl.textContent = tpl.protocol.toUpperCase();
+  if (netEl) netEl.textContent = formatNetworkName(tpl.network);
+  if (secEl) secEl.textContent = tpl.security;
+  if (sniWrap) sniWrap.classList.add('hidden');
+  document.getElementById('add-meta-preview').classList.remove('hidden');
+
+  const menu = document.getElementById('dropdown-templates-menu');
+  if (menu) menu.classList.add('hidden');
+
+  showToast(`Вставлен шаблон: ${tpl.name}. Заполните ваши IP, порт и ключи!`, 'info');
+}
+
+// Universal Client-side Proxy URL & Config Parser
+function parseProxyUrlInput(showNotice = true) {
+  const input = document.getElementById('input-vless-url');
+  if (!input || !input.value.trim()) return;
+
+  const rawUrl = input.value.trim();
+
+  try {
+    let result = null;
+
+    if (rawUrl.includes('[Interface]') || rawUrl.includes('[Peer]')) {
+      result = parseWireguardConfigClient(rawUrl);
+    } else if (rawUrl.startsWith('vless://')) {
+      result = parseVlessClient(rawUrl);
+    } else if (rawUrl.startsWith('vmess://')) {
+      result = parseVmessClient(rawUrl);
+    } else if (rawUrl.startsWith('trojan://')) {
+      result = parseTrojanClient(rawUrl);
+    } else if (rawUrl.startsWith('ss://')) {
+      result = parseShadowsocksClient(rawUrl);
+    } else if (rawUrl.startsWith('wireguard://') || rawUrl.startsWith('awg://')) {
+      result = parseWireguardUrlClient(rawUrl);
+    } else if (rawUrl.startsWith('hysteria2://') || rawUrl.startsWith('hy2://')) {
+      result = parseHysteria2Client(rawUrl);
+    } else {
+      if (showNotice) showToast('Неизвестный протокол. Вставьте vless://, vmess://, trojan://, ss://, wireguard:// или конфиг [Interface]', 'warning');
+      return;
+    }
+
+    if (!result) return;
+
+    // Populate Fields
+    const nameInput = document.getElementById('conn-name');
+    if (nameInput && result.name) {
+      nameInput.value = result.name;
+    }
+    document.getElementById('conn-desc').value = result.desc || '';
+    setEditorContent('conn-outbound-json', result.outboundJson);
 
     // Show Preview Pills
-    document.getElementById('preview-host').textContent = address;
-    document.getElementById('preview-port').textContent = port;
-    document.getElementById('preview-proto').textContent = 'VLESS';
+    document.getElementById('preview-host').textContent = result.serverAddress;
+    document.getElementById('preview-port').textContent = result.serverPort;
+    document.getElementById('preview-proto').textContent = (result.protocol || 'VLESS').toUpperCase();
     const previewNetEl = document.getElementById('preview-net');
-    if (previewNetEl) previewNetEl.textContent = formatNetworkName(type);
-    document.getElementById('preview-sec').textContent = security === 'reality' ? 'Reality' : security;
+    if (previewNetEl) previewNetEl.textContent = formatNetworkName(result.network || 'tcp');
+    document.getElementById('preview-sec').textContent = result.security === 'reality' ? 'Reality' : (result.security || 'None');
     const sniWrap = document.getElementById('preview-sni-wrap');
-    if (sni) {
-      document.getElementById('preview-sni').textContent = sni;
+    if (result.sni) {
+      document.getElementById('preview-sni').textContent = result.sni;
       sniWrap.classList.remove('hidden');
     } else {
       sniWrap.classList.add('hidden');
     }
     document.getElementById('add-meta-preview').classList.remove('hidden');
 
-    if (showNotice) showToast('Ссылка успешно распознана!', 'success');
+    if (showNotice) showToast(`Ссылка ${result.protocol.toUpperCase()} успешно распознана!`, 'success');
   } catch (err) {
     if (showNotice) showToast('Ошибка разбора ссылки: ' + err.message, 'error');
   }
+}
+
+// Backwards-compatible alias
+function parseVlessUrlInput(showNotice = true) {
+  return parseProxyUrlInput(showNotice);
+}
+
+// VLESS Client Parser
+function parseVlessClient(rawUrl) {
+  const u = new URL(rawUrl);
+  const id = u.username;
+  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(u.port, 10);
+  if (!id || !address || !port) {
+    throw new Error('Некорректная ссылка: нет UUID, адреса или порта');
+  }
+
+  let name = '';
+  try {
+    name = decodeURIComponent(u.hash ? u.hash.replace(/^#/, '') : '').trim();
+  } catch (e) {
+    name = (u.hash ? u.hash.replace(/^#/, '') : '').trim();
+  }
+  if (!name) name = `VLESS - ${address}:${port}`;
+
+  const sp = u.searchParams;
+  const type = (sp.get('type') || 'tcp').toLowerCase();
+  const security = (sp.get('security') || 'none').toLowerCase();
+  const encryption = sp.get('encryption') || 'none';
+  const flow = sp.get('flow') || '';
+  const pbk = sp.get('pbk') || '';
+  const fp = sp.get('fp') || 'chrome';
+  const sni = sp.get('sni') || '';
+  const sid = sp.get('sid') || '';
+  let spx = '/';
+  try { spx = decodeURIComponent(sp.get('spx') || '/'); } catch(e) { spx = sp.get('spx') || '/'; }
+  const serviceName = sp.get('serviceName') || sp.get('service_name') || '';
+
+  const streamSettings = {
+    network: type,
+    security: security
+  };
+
+  if (security === 'reality') {
+    streamSettings.realitySettings = {
+      publicKey: pbk,
+      fingerprint: fp,
+      serverName: sni,
+      shortId: sid,
+      spiderX: spx
+    };
+  } else if (security === 'tls') {
+    streamSettings.tlsSettings = {
+      serverName: sni,
+      fingerprint: fp
+    };
+  }
+
+  if (type === 'grpc') {
+    streamSettings.grpcSettings = {
+      serviceName: serviceName,
+      multiMode: false
+    };
+  } else if (type === 'ws') {
+    let wsPath = '/';
+    try { wsPath = decodeURIComponent(sp.get('path') || '/'); } catch(e) { wsPath = sp.get('path') || '/'; }
+    streamSettings.wsSettings = {
+      path: wsPath,
+      headers: {
+        Host: sp.get('host') || sni || ''
+      }
+    };
+  } else if (type === 'tcp') {
+    const headerType = sp.get('headerType');
+    if (headerType && headerType !== 'none') {
+      streamSettings.tcpSettings = {
+        header: {
+          type: headerType
+        }
+      };
+    }
+  }
+
+  const tag = security === 'reality' ? 'vless-reality' : (security !== 'none' ? `vless-${security}` : 'vless');
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: tag,
+        protocol: 'vless',
+        settings: {
+          vnext: [
+            {
+              address: address,
+              port: port,
+              users: [
+                {
+                  id: id,
+                  flow: flow,
+                  encryption: encryption,
+                  level: 0
+                }
+              ]
+            }
+          ]
+        },
+        streamSettings: streamSettings
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'vless',
+    network: type,
+    security: security,
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// VMess Client Parser
+function parseVmessClient(rawUrl) {
+  const rest = rawUrl.replace(/^vmess:\/\//i, '').trim();
+  let conf;
+  if (rest.startsWith('{')) {
+    conf = JSON.parse(rest);
+  } else {
+    const decoded = decodeBase64SafeClient(rest);
+    try {
+      conf = JSON.parse(decoded);
+    } catch (e) {
+      throw new Error('Ошибка декодирования VMess: ' + e.message);
+    }
+  }
+
+  const address = (conf.add || conf.host || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(conf.port, 10);
+  const id = conf.id || '';
+  if (!address || !port || !id) throw new Error('В ссылке VMess нет адреса, порта или UUID');
+
+  const name = (conf.ps || '').trim() || `VMess - ${address}:${port}`;
+  const net = (conf.net || 'tcp').toLowerCase();
+  const type = (conf.type || 'none').toLowerCase();
+  const tls = (conf.tls || '').toLowerCase();
+  const security = tls === 'tls' ? 'tls' : 'none';
+  const aid = parseInt(conf.aid || 0, 10);
+  const scy = conf.scy || 'auto';
+  const sni = conf.sni || conf.host || address;
+
+  const streamSettings = {
+    network: net,
+    security: security
+  };
+
+  if (security === 'tls') {
+    streamSettings.tlsSettings = {
+      serverName: sni,
+      fingerprint: conf.fp || 'chrome'
+    };
+    if (conf.alpn) {
+      streamSettings.tlsSettings.alpn = String(conf.alpn).split(',').map(s => s.trim());
+    }
+  }
+
+  if (net === 'ws') {
+    streamSettings.wsSettings = {
+      path: conf.path || '/',
+      headers: { Host: conf.host || sni }
+    };
+  } else if (net === 'grpc') {
+    streamSettings.grpcSettings = {
+      serviceName: conf.path || conf.serviceName || '',
+      multiMode: false
+    };
+  } else if (net === 'tcp' && type && type !== 'none') {
+    streamSettings.tcpSettings = {
+      header: { type: type }
+    };
+  }
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: security === 'tls' ? 'vmess-tls' : 'vmess',
+        protocol: 'vmess',
+        settings: {
+          vnext: [
+            {
+              address: address,
+              port: port,
+              users: [
+                {
+                  id: id,
+                  alterId: aid,
+                  security: scy,
+                  level: 0
+                }
+              ]
+            }
+          ]
+        },
+        streamSettings: streamSettings
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'vmess',
+    network: net,
+    security: security,
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Trojan Client Parser
+function parseTrojanClient(rawUrl) {
+  const u = new URL(rawUrl);
+  const password = decodeURIComponent(u.username);
+  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(u.port, 10);
+  if (!password || !address || !port) throw new Error('Некорректная ссылка Trojan');
+
+  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
+  let name = '';
+  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  if (!name) name = `Trojan - ${address}:${port}`;
+
+  const sp = u.searchParams;
+  const type = (sp.get('type') || 'tcp').toLowerCase();
+  const security = (sp.get('security') || 'tls').toLowerCase();
+  const sni = sp.get('sni') || sp.get('peer') || address;
+  const fp = sp.get('fp') || 'chrome';
+
+  const streamSettings = {
+    network: type,
+    security: security
+  };
+
+  if (security === 'reality') {
+    streamSettings.realitySettings = {
+      publicKey: sp.get('pbk') || '',
+      fingerprint: fp,
+      serverName: sni,
+      shortId: sp.get('sid') || '',
+      spiderX: sp.get('spx') || '/'
+    };
+  } else if (security === 'tls') {
+    streamSettings.tlsSettings = {
+      serverName: sni,
+      fingerprint: fp
+    };
+  }
+
+  if (type === 'ws') {
+    streamSettings.wsSettings = {
+      path: sp.get('path') || '/',
+      headers: { Host: sp.get('host') || sni }
+    };
+  } else if (type === 'grpc') {
+    streamSettings.grpcSettings = {
+      serviceName: sp.get('serviceName') || sp.get('service_name') || ''
+    };
+  }
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: 'trojan',
+        protocol: 'trojan',
+        settings: {
+          servers: [
+            {
+              address: address,
+              port: port,
+              password: password,
+              level: 0
+            }
+          ]
+        },
+        streamSettings: streamSettings
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'trojan',
+    network: type,
+    security: security,
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Shadowsocks Client Parser
+function parseShadowsocksClient(rawUrl) {
+  let hashPart = '';
+  let urlWithoutHash = rawUrl;
+  if (rawUrl.includes('#')) {
+    const p = rawUrl.split('#');
+    urlWithoutHash = p[0];
+    hashPart = p.slice(1).join('#');
+  }
+  let name = '';
+  try { name = decodeURIComponent(hashPart).trim(); } catch (e) { name = hashPart.trim(); }
+
+  const rest = urlWithoutHash.replace(/^ss:\/\//i, '').trim();
+  let method = '';
+  let password = '';
+  let address = '';
+  let port = null;
+
+  if (rest.includes('@')) {
+    const atIdx = rest.indexOf('@');
+    const userPart = rest.substring(0, atIdx);
+    const hostPortPart = rest.substring(atIdx + 1).split('/')[0].split('?')[0];
+
+    let userDecoded = userPart;
+    try {
+      const d = decodeBase64SafeClient(userPart);
+      if (d.includes(':')) userDecoded = d;
+    } catch (e) {}
+
+    const colIdx = userDecoded.indexOf(':');
+    if (colIdx !== -1) {
+      method = userDecoded.substring(0, colIdx);
+      password = userDecoded.substring(colIdx + 1);
+    }
+
+    const lastCol = hostPortPart.lastIndexOf(':');
+    if (lastCol !== -1) {
+      address = hostPortPart.substring(0, lastCol).replace(/^\[|\]$/g, '');
+      port = parseInt(hostPortPart.substring(lastCol + 1), 10);
+    }
+  } else {
+    const decoded = decodeBase64SafeClient(rest.split('/')[0].split('?')[0]);
+    if (decoded.includes('@')) {
+      const atIdx = decoded.indexOf('@');
+      const userPart = decoded.substring(0, atIdx);
+      const hostPortPart = decoded.substring(atIdx + 1);
+      const colIdx = userPart.indexOf(':');
+      if (colIdx !== -1) {
+        method = userPart.substring(0, colIdx);
+        password = userPart.substring(colIdx + 1);
+      }
+      const lastCol = hostPortPart.lastIndexOf(':');
+      if (lastCol !== -1) {
+        address = hostPortPart.substring(0, lastCol).replace(/^\[|\]$/g, '');
+        port = parseInt(hostPortPart.substring(lastCol + 1), 10);
+      }
+    }
+  }
+
+  if (!address || !port || !method) throw new Error('Не удалось извлечь адрес, порт или шифр Shadowsocks');
+  if (!name) name = `Shadowsocks - ${address}:${port}`;
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: 'shadowsocks',
+        protocol: 'shadowsocks',
+        settings: {
+          servers: [
+            {
+              address: address,
+              port: port,
+              method: method,
+              password: password || '',
+              level: 0
+            }
+          ]
+        },
+        streamSettings: { network: 'tcp' }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'shadowsocks',
+    network: 'tcp',
+    security: method,
+    sni: '',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// WireGuard / AmneziaWG Config Text Parser
+function parseWireguardConfigClient(confText) {
+  const lines = confText.split(/\r?\n/).map(l => l.trim());
+  let currentSection = '';
+  const iface = {};
+  const peer = {};
+
+  for (const line of lines) {
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    if (line.startsWith('[') && line.endsWith(']')) {
+      currentSection = line.slice(1, -1).trim().toLowerCase();
+      continue;
+    }
+    const eqIdx = line.indexOf('=');
+    if (eqIdx !== -1) {
+      const k = line.substring(0, eqIdx).trim().toLowerCase();
+      const v = line.substring(eqIdx + 1).trim();
+      if (currentSection === 'interface') iface[k] = v;
+      else if (currentSection === 'peer') peer[k] = v;
+    }
+  }
+
+  const privateKey = iface.privatekey || '';
+  const address = iface.address || '10.0.0.2/32';
+  const publicKey = peer.publickey || '';
+  const endpoint = peer.endpoint || '';
+
+  if (!privateKey || !publicKey || !endpoint) {
+    throw new Error('Отсутствуют PrivateKey, PublicKey или Endpoint');
+  }
+
+  let endpointHost = '';
+  let endpointPort = 51820;
+  const lastCol = endpoint.lastIndexOf(':');
+  if (lastCol !== -1) {
+    endpointHost = endpoint.substring(0, lastCol).replace(/^\[|\]$/g, '');
+    endpointPort = parseInt(endpoint.substring(lastCol + 1), 10) || 51820;
+  } else {
+    endpointHost = endpoint.replace(/^\[|\]$/g, '');
+  }
+
+  const isAwg = Boolean(iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.h1);
+  const name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
+  const cleanAddress = address.split(',')[0].trim();
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: isAwg ? 'amneziawg' : 'wireguard',
+        protocol: 'wireguard',
+        settings: {
+          secretKey: privateKey,
+          address: [cleanAddress],
+          peers: [
+            {
+              publicKey: publicKey,
+              endpoint: `${endpointHost}:${endpointPort}`,
+              allowedIPs: ['0.0.0.0/0', '::/0']
+            }
+          ],
+          mtu: parseInt(iface.mtu, 10) || 1420
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: endpointHost,
+    serverPort: endpointPort,
+    protocol: isAwg ? 'amneziawg' : 'wireguard',
+    network: 'udp',
+    security: isAwg ? 'Amnezia' : 'WG',
+    sni: '',
+    desc: isAwg ? 'AmneziaWG (нативно поддерживается в ядре Mihomo)' : 'WireGuard VPN',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// WireGuard / AWG URL Parser
+function parseWireguardUrlClient(rawUrl) {
+  const u = new URL(rawUrl);
+  const privateKey = decodeURIComponent(u.username);
+  const endpointHost = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const endpointPort = parseInt(u.port, 10) || 51820;
+  const sp = u.searchParams;
+  const publicKey = sp.get('publickey') || sp.get('pubkey') || '';
+  const address = sp.get('address') || sp.get('ip') || '10.0.0.2/32';
+
+  if (!privateKey || !publicKey || !endpointHost) {
+    throw new Error('Отсутствуют PrivateKey, PublicKey или хост');
+  }
+
+  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
+  let name = '';
+  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  const isAwg = rawUrl.startsWith('awg://') || Boolean(sp.get('jc') || sp.get('h1'));
+  if (!name) name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: isAwg ? 'amneziawg' : 'wireguard',
+        protocol: 'wireguard',
+        settings: {
+          secretKey: privateKey,
+          address: [address],
+          peers: [
+            {
+              publicKey: publicKey,
+              endpoint: `${endpointHost}:${endpointPort}`,
+              allowedIPs: ['0.0.0.0/0', '::/0']
+            }
+          ],
+          mtu: parseInt(sp.get('mtu'), 10) || 1420
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: endpointHost,
+    serverPort: endpointPort,
+    protocol: isAwg ? 'amneziawg' : 'wireguard',
+    network: 'udp',
+    security: isAwg ? 'Amnezia' : 'WG',
+    sni: '',
+    desc: isAwg ? 'AmneziaWG (нативно поддерживается в ядре Mihomo)' : 'WireGuard VPN',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
+}
+
+// Hysteria 2 Client Parser
+function parseHysteria2Client(rawUrl) {
+  const u = new URL(rawUrl);
+  const password = decodeURIComponent(u.username);
+  const address = (u.hostname || '').replace(/^\[|\]$/g, '');
+  const port = parseInt(u.port, 10) || 443;
+  if (!address || !port) throw new Error('Отсутствуют адрес или порт Hysteria2');
+
+  let rawName = u.hash ? u.hash.replace(/^#/, '') : '';
+  let name = '';
+  try { name = decodeURIComponent(rawName).trim(); } catch (e) { name = rawName.trim(); }
+  if (!name) name = `Hysteria2 - ${address}:${port}`;
+
+  const sp = u.searchParams;
+  const sni = sp.get('sni') || address;
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: 'hysteria2',
+        protocol: 'hysteria2',
+        settings: {
+          servers: [
+            {
+              address: address,
+              port: port,
+              password: password || ''
+            }
+          ]
+        },
+        streamSettings: {
+          network: 'udp',
+          security: 'tls',
+          tlsSettings: { serverName: sni }
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name,
+    serverAddress: address,
+    serverPort: port,
+    protocol: 'hysteria2',
+    network: 'udp',
+    security: 'tls',
+    sni: sni,
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+  };
 }
 
 // ==============================================================================
@@ -1581,9 +2457,9 @@ async function deleteConnection(id, name) {
 // QR CODE MODAL & VLESS URL GENERATOR
 // ==============================================================================
 
-// Reconstruct VLESS link from connection object or outbound JSON
+// Reconstruct link (VLESS, VMess, Trojan, Shadowsocks, WireGuard) from connection object or outbound JSON
 function getConnectionVlessUrl(conn) {
-  if (conn.url && conn.url.startsWith('vless://')) {
+  if (conn.url && conn.url.includes('://')) {
     return conn.url;
   }
   if (!conn.outboundContent) return '';
@@ -1591,55 +2467,115 @@ function getConnectionVlessUrl(conn) {
     const clean = stripComments(conn.outboundContent);
     const parsed = JSON.parse(clean);
     const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
-    const ob = list.find(o => o && o.protocol === 'vless' && o.settings && o.settings.vnext && o.settings.vnext[0]);
+    const ob = list.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
     if (!ob) return '';
 
-    const vnext = ob.settings.vnext[0];
-    const address = vnext.address;
-    const port = vnext.port;
-    const user = (vnext.users && vnext.users[0]) ? vnext.users[0] : {};
-    const uuid = user.id || '';
-    if (!uuid || !address || !port) return '';
+    const proto = (ob.protocol || conn.protocol || 'vless').toLowerCase();
 
-    const ss = ob.streamSettings || {};
-    const type = ss.network || 'tcp';
-    const security = ss.security || 'none';
-    const flow = user.flow || '';
-    const encryption = user.encryption || 'none';
+    // 1. VLESS
+    if (proto === 'vless' && ob.settings && ob.settings.vnext && ob.settings.vnext[0]) {
+      const vnext = ob.settings.vnext[0];
+      const address = vnext.address;
+      const port = vnext.port;
+      const user = (vnext.users && vnext.users[0]) ? vnext.users[0] : {};
+      const uuid = user.id || '';
+      if (!uuid || !address || !port) return '';
 
-    const params = new URLSearchParams();
-    params.set('type', type);
-    params.set('security', security);
-    if (flow) params.set('flow', flow);
-    if (encryption && encryption !== 'none') params.set('encryption', encryption);
+      const ss = ob.streamSettings || {};
+      const type = ss.network || 'tcp';
+      const security = ss.security || 'none';
+      const flow = user.flow || '';
+      const encryption = user.encryption || 'none';
 
-    if (security === 'reality' && ss.realitySettings) {
-      const rs = ss.realitySettings;
-      if (rs.publicKey) params.set('pbk', rs.publicKey);
-      if (rs.fingerprint) params.set('fp', rs.fingerprint);
-      if (rs.serverName) params.set('sni', rs.serverName);
-      if (rs.shortId) params.set('sid', rs.shortId);
-      if (rs.spiderX) params.set('spx', rs.spiderX);
-    } else if (security === 'tls' && ss.tlsSettings) {
-      const ts = ss.tlsSettings;
-      if (ts.serverName) params.set('sni', ts.serverName);
-      if (ts.fingerprint) params.set('fp', ts.fingerprint);
-      if (ts.alpn && Array.isArray(ts.alpn)) params.set('alpn', ts.alpn.join(','));
+      const params = new URLSearchParams();
+      params.set('type', type);
+      params.set('security', security);
+      if (flow) params.set('flow', flow);
+      if (encryption && encryption !== 'none') params.set('encryption', encryption);
+
+      if (security === 'reality' && ss.realitySettings) {
+        const rs = ss.realitySettings;
+        if (rs.publicKey) params.set('pbk', rs.publicKey);
+        if (rs.fingerprint) params.set('fp', rs.fingerprint);
+        if (rs.serverName) params.set('sni', rs.serverName);
+        if (rs.shortId) params.set('sid', rs.shortId);
+        if (rs.spiderX) params.set('spx', rs.spiderX);
+      } else if (security === 'tls' && ss.tlsSettings) {
+        const ts = ss.tlsSettings;
+        if (ts.serverName) params.set('sni', ts.serverName);
+        if (ts.fingerprint) params.set('fp', ts.fingerprint);
+        if (ts.alpn && Array.isArray(ts.alpn)) params.set('alpn', ts.alpn.join(','));
+      }
+
+      if (type === 'ws' && ss.wsSettings) {
+        if (ss.wsSettings.path) params.set('path', ss.wsSettings.path);
+        if (ss.wsSettings.headers && ss.wsSettings.headers.Host) params.set('host', ss.wsSettings.headers.Host);
+      } else if (type === 'grpc' && ss.grpcSettings) {
+        if (ss.grpcSettings.serviceName) params.set('serviceName', ss.grpcSettings.serviceName);
+      } else if (type === 'tcp' && ss.tcpSettings && ss.tcpSettings.header && ss.tcpSettings.header.type) {
+        params.set('headerType', ss.tcpSettings.header.type);
+      }
+
+      const hashName = encodeURIComponent(conn.name || 'VLESS');
+      return `vless://${uuid}@${address}:${port}?${params.toString()}#${hashName}`;
     }
 
-    if (type === 'ws' && ss.wsSettings) {
-      if (ss.wsSettings.path) params.set('path', ss.wsSettings.path);
-      if (ss.wsSettings.headers && ss.wsSettings.headers.Host) params.set('host', ss.wsSettings.headers.Host);
-    } else if (type === 'grpc' && ss.grpcSettings) {
-      if (ss.grpcSettings.serviceName) params.set('serviceName', ss.grpcSettings.serviceName);
-    } else if (type === 'tcp' && ss.tcpSettings && ss.tcpSettings.header && ss.tcpSettings.header.type) {
-      params.set('headerType', ss.tcpSettings.header.type);
+    // 2. Trojan
+    if (proto === 'trojan' && ob.settings && ob.settings.servers && ob.settings.servers[0]) {
+      const srv = ob.settings.servers[0];
+      const address = srv.address;
+      const port = srv.port;
+      const password = encodeURIComponent(srv.password || '');
+      const ss = ob.streamSettings || {};
+      const type = ss.network || 'tcp';
+      const security = ss.security || 'tls';
+      const params = new URLSearchParams();
+      params.set('type', type);
+      params.set('security', security);
+      if (ss.tlsSettings && ss.tlsSettings.serverName) params.set('sni', ss.tlsSettings.serverName);
+      const hashName = encodeURIComponent(conn.name || 'Trojan');
+      return `trojan://${password}@${address}:${port}?${params.toString()}#${hashName}`;
     }
 
-    const hashName = encodeURIComponent(conn.name || 'VLESS');
-    return `vless://${uuid}@${address}:${port}?${params.toString()}#${hashName}`;
+    // 3. Shadowsocks
+    if (proto === 'shadowsocks' && ob.settings && ob.settings.servers && ob.settings.servers[0]) {
+      const srv = ob.settings.servers[0];
+      const address = srv.address;
+      const port = srv.port;
+      const method = srv.method || 'aes-256-gcm';
+      const password = srv.password || '';
+      const userBase64 = window.btoa(`${method}:${password}`);
+      const hashName = encodeURIComponent(conn.name || 'Shadowsocks');
+      return `ss://${userBase64}@${address}:${port}#${hashName}`;
+    }
+
+    // 4. VMess
+    if (proto === 'vmess' && ob.settings && ob.settings.vnext && ob.settings.vnext[0]) {
+      const vnext = ob.settings.vnext[0];
+      const user = (vnext.users && vnext.users[0]) ? vnext.users[0] : {};
+      const ss = ob.streamSettings || {};
+      const vmessConf = {
+        v: '2',
+        ps: conn.name || 'VMess',
+        add: vnext.address,
+        port: vnext.port,
+        id: user.id || '',
+        aid: user.alterId || 0,
+        scy: user.security || 'auto',
+        net: ss.network || 'tcp',
+        type: 'none',
+        host: (ss.wsSettings && ss.wsSettings.headers) ? ss.wsSettings.headers.Host : '',
+        path: (ss.wsSettings && ss.wsSettings.path) ? ss.wsSettings.path : '',
+        tls: ss.security === 'tls' ? 'tls' : '',
+        sni: (ss.tlsSettings && ss.tlsSettings.serverName) ? ss.tlsSettings.serverName : ''
+      };
+      const b64 = window.btoa(unescape(encodeURIComponent(JSON.stringify(vmessConf))));
+      return `vmess://${b64}`;
+    }
+
+    return '';
   } catch (e) {
-    console.error('Error generating VLESS URL:', e);
+    console.error('Error generating proxy URL:', e);
     return '';
   }
 }
@@ -1651,7 +2587,7 @@ function openQrModal(id) {
 
   const url = getConnectionVlessUrl(conn);
   if (!url) {
-    showToast('Не удалось сформировать ссылку VLESS для этого подключения', 'warning');
+    showToast('Не удалось сформировать ссылку для этого подключения', 'warning');
     return;
   }
 
@@ -2003,6 +2939,93 @@ function updateServiceStatusUI(data) {
     serviceStatusBadge.classList.add('status-loading');
     serviceStatusText.textContent = 'Неизвестно';
   }
+
+  // Update Core status badge
+  const coreStatusText = document.getElementById('core-status-text');
+  const coreStatusBadge = document.getElementById('core-status-badge');
+  if (coreStatusText && data.core) {
+    const isMihomo = (data.core === 'mihomo');
+    coreStatusText.textContent = isMihomo ? 'Ядро: Mihomo' : 'Ядро: Xray';
+    if (coreStatusBadge) {
+      coreStatusBadge.classList.toggle('core-mihomo', isMihomo);
+      coreStatusBadge.classList.toggle('core-xray', !isMihomo);
+    }
+  }
+
+  updateCoreTabUI(data);
+}
+
+function updateCoreTabUI(data) {
+  if (!data || !data.core) return;
+  const isMihomo = (data.core === 'mihomo');
+  const activeTitle = document.getElementById('core-active-title');
+  if (activeTitle) {
+    activeTitle.textContent = isMihomo ? 'Mihomo Meta (Запущено)' : 'Xray Core (Запущено)';
+  }
+
+  const cardXray = document.getElementById('card-core-xray');
+  const cardMihomo = document.getElementById('card-core-mihomo');
+  if (cardXray) cardXray.classList.toggle('active-core-card', !isMihomo);
+  if (cardMihomo) cardMihomo.classList.toggle('active-core-card', isMihomo);
+
+  const btnSwitchXray = document.getElementById('btn-switch-to-xray');
+  const btnSwitchMihomo = document.getElementById('btn-switch-to-mihomo');
+  if (btnSwitchXray) {
+    btnSwitchXray.disabled = !isMihomo;
+    btnSwitchXray.textContent = !isMihomo ? 'Текущее ядро' : 'Активировать Xray';
+  }
+  if (btnSwitchMihomo) {
+    btnSwitchMihomo.disabled = isMihomo;
+    btnSwitchMihomo.textContent = isMihomo ? 'Текущее ядро' : 'Активировать Mihomo';
+  }
+}
+
+async function switchProxyCoreUI(targetCore) {
+  const coreLabel = (targetCore === 'mihomo' ? 'Mihomo Meta' : 'Xray Core');
+  const confirmed = confirm(`Переключить ядро проксирования XKeen на ${coreLabel}?\nСлужба XKeen будет перезапущена с новым ядром.`);
+  if (!confirmed) return;
+
+  showToast(`Переключение ядра на ${coreLabel}...`, 'info');
+  try {
+    const res = await fetch('/api/service/switch-core', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ core: targetCore })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Ошибка смены ядра');
+
+    showToast(result.message || 'Ядро успешно переключено', 'success');
+    await pollServiceStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function testProxyCoreConfigUI(coreName) {
+  const terminal = document.getElementById('core-test-terminal');
+  const logEl = document.getElementById('core-test-log');
+  const titleEl = document.getElementById('core-test-title');
+  if (terminal) terminal.classList.remove('hidden');
+  if (logEl) logEl.textContent = 'Выполняется проверка конфигурации...';
+  if (titleEl) titleEl.textContent = `Проверка конфигурации ${coreName === 'mihomo' ? 'Mihomo (xkeen -mtest)' : 'Xray (xkeen -xtest)'}...`;
+
+  try {
+    const res = await fetch('/api/service/test-config', { method: 'POST' });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Ошибка выполнения теста');
+
+    const output = (result.output || '') + (result.error ? '\n' + result.error : '');
+    if (logEl) logEl.textContent = output.trim() || 'Команда завершилась без вывода';
+    if (result.ok) {
+      showToast(`Конфигурация ${result.core.toUpperCase()} корректна!`, 'success');
+    } else {
+      showToast(`Обнаружены ошибки в конфигурации ${result.core.toUpperCase()}`, 'warning');
+    }
+  } catch (err) {
+    if (logEl) logEl.textContent = 'Ошибка: ' + err.message;
+    showToast(err.message, 'error');
+  }
 }
 
 function startServicePolling() {
@@ -2162,26 +3185,31 @@ function bufferToBase64(buffer) {
 // ==============================================================================
 function switchSettingsTab(tab) {
   const isGeneral = (tab === 'general');
+  const isCore = (tab === 'core');
   const isAutoFailover = (tab === 'autofailover');
   const isFailover = (tab === 'failover');
   const isBackup = (tab === 'backup');
 
   const btnGeneral = document.getElementById('tab-btn-settings-general');
+  const btnCore = document.getElementById('tab-btn-settings-core');
   const btnAutoFailover = document.getElementById('tab-btn-settings-autofailover');
   const btnBackup = document.getElementById('tab-btn-settings-backup');
   const btnFailover = document.getElementById('tab-btn-settings-failover');
 
   const contentGeneral = document.getElementById('settings-tab-content-general');
+  const contentCore = document.getElementById('settings-tab-content-core');
   const contentAutoFailover = document.getElementById('settings-tab-content-autofailover');
   const contentBackup = document.getElementById('settings-tab-content-backup');
   const contentFailover = document.getElementById('settings-tab-content-failover');
 
   if (btnGeneral) btnGeneral.classList.toggle('active', isGeneral);
+  if (btnCore) btnCore.classList.toggle('active', isCore);
   if (btnAutoFailover) btnAutoFailover.classList.toggle('active', isAutoFailover);
   if (btnBackup) btnBackup.classList.toggle('active', isBackup);
   if (btnFailover) btnFailover.classList.toggle('active', isFailover);
 
   if (contentGeneral) contentGeneral.classList.toggle('hidden', !isGeneral);
+  if (contentCore) contentCore.classList.toggle('hidden', !isCore);
   if (contentAutoFailover) contentAutoFailover.classList.toggle('hidden', !isAutoFailover);
   if (contentBackup) contentBackup.classList.toggle('hidden', !isBackup);
   if (contentFailover) contentFailover.classList.toggle('hidden', !isFailover);
@@ -2203,6 +3231,11 @@ function switchSettingsTab(tab) {
     if (dropzoneText) dropzoneText.innerHTML = 'Нажмите для выбора <strong>.zip</strong> или <strong>.json</strong> или перетащите файл';
     if (btnExecute) btnExecute.classList.add('hidden');
   }
+}
+
+function openCoreSettingsTab() {
+  openSettingsModal();
+  switchSettingsTab('core');
 }
 
 function openBackupModal() {

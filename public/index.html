@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.5.0">
+  <link rel="stylesheet" href="style.css?v=2.6.0">
 </head>
 <body>
   <div class="app-background"></div>
@@ -68,6 +68,11 @@
         <button class="service-status-badge status-loading" id="service-status-badge" onclick="onStatusBadgeClick()" title="Подробности статуса / лог">
           <span class="status-dot"></span>
           <span class="status-text" id="service-status-text">Проверка...</span>
+        </button>
+
+        <button class="core-status-badge" id="core-status-badge" onclick="openCoreSettingsTab()" title="Текущее ядро проксирования XKeen (нажмите для смены Xray / Mihomo)">
+          <span class="core-icon">⚡</span>
+          <span id="core-status-text">Ядро: Xray</span>
         </button>
 
         <button class="failover-badge hidden" id="failover-status-badge" onclick="openFailoverSettings()" title="Белые Списки (нажмите для настройки)">
@@ -222,11 +227,50 @@
       </div>
 
       <form id="form-add-connection" onsubmit="onAddConnectionSubmit(event)">
-        <!-- URL INPUT BOX -->
+        <!-- URL / CONFIG INPUT BOX -->
         <div class="form-group">
-          <label for="input-vless-url">Ссылка подключения (VLESS) <span class="req">*</span></label>
-          <input type="text" id="input-vless-url" placeholder="vless://uuid@host:port?type=grpc&security=reality&pbk=...#Name" autocomplete="off" spellcheck="false">
-          <small class="help-text">Поддерживаются ссылки <code>vless://</code> (Reality, gRPC, WebSocket, TLS и др.)</small>
+          <div class="label-row">
+            <label for="input-vless-url">Ссылка на подключение или конфиг <span class="req">*</span></label>
+            <button type="button" class="btn-text-action" onclick="toggleProtocolGuide()" id="btn-toggle-protocol-guide">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>Справка по протоколам</span>
+            </button>
+          </div>
+          <input type="text" id="input-vless-url" placeholder="Вставьте ссылку (vless://, vmess://, trojan://, ss://, wireguard://)..." autocomplete="off" spellcheck="false">
+          
+          <div class="supported-protocols-row">
+            <span class="proto-pill active" title="VLESS Reality, gRPC, WebSocket, TCP, TLS">VLESS</span>
+            <span class="proto-pill active" title="VMess WebSocket, TCP, gRPC, TLS">VMess</span>
+            <span class="proto-pill active" title="Trojan TLS, Reality, WebSocket, gRPC">Trojan</span>
+            <span class="proto-pill active" title="Shadowsocks 2022 / AEAD ciphers">Shadowsocks</span>
+            <span class="proto-pill active" title="WireGuard VPN tunnel">WireGuard</span>
+            <span class="proto-pill active proto-pill-awg" title="AmneziaWG (нативно поддерживается в ядре Mihomo)">AmneziaWG</span>
+            <span class="proto-pill active" title="Hysteria 2 UDP tunnel">Hysteria2</span>
+          </div>
+
+          <!-- COLLAPSIBLE PROTOCOL EXAMPLES -->
+          <div class="protocol-guide-panel hidden" id="protocol-guide-panel">
+            <div class="proto-guide-item">
+              <span class="proto-guide-name">VLESS Reality:</span>
+              <code>vless://uuid@host:port?security=reality&pbk=KEY&sni=yahoo.com#Name</code>
+            </div>
+            <div class="proto-guide-item">
+              <span class="proto-guide-name">VMess:</span>
+              <code>vmess://eyJhZGQiOiIxLjIuMy40IiwicG9ydCI6NDQzLCJpZCI6Ii4uLiJ9</code>
+            </div>
+            <div class="proto-guide-item">
+              <span class="proto-guide-name">Trojan:</span>
+              <code>trojan://password@host:port?security=tls&sni=example.com#Name</code>
+            </div>
+            <div class="proto-guide-item">
+              <span class="proto-guide-name">Shadowsocks:</span>
+              <code>ss://base64(method:password)@host:port#Name</code>
+            </div>
+            <div class="proto-guide-item">
+              <span class="proto-guide-name">WireGuard / AWG:</span>
+              <code>wireguard://privateKey@host:port?publickey=...&address=10.0.0.2#Name</code> или вставьте блок <code>[Interface]</code> в редактор ниже.
+            </div>
+          </div>
         </div>
 
         <!-- EXTRACTED PARAMETERS PILLS -->
@@ -284,6 +328,22 @@
           <div class="label-row">
             <label for="conn-outbound-json">Конфигурация <code>outbound.json</code> <span class="req">*</span></label>
             <div class="field-actions">
+              <div class="dropdown-templates-wrap">
+                <button type="button" class="btn-text-action" onclick="toggleTemplateMenu(event)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <span>Шаблоны JSON ▾</span>
+                </button>
+                <div class="dropdown-templates-menu hidden" id="dropdown-templates-menu">
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('vless-reality-tcp')">⚡ VLESS Reality (TCP)</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('vless-reality-grpc')">⚡ VLESS Reality (gRPC)</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('vless-ws-tls')">🌐 VLESS WebSocket (TLS)</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('vmess-ws-tls')">📦 VMess WebSocket (TLS)</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('trojan-tls')">🛡️ Trojan (TLS)</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('shadowsocks')">🔒 Shadowsocks (AEAD)</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('wireguard')">🛡️ WireGuard</div>
+                  <div class="dropdown-item" onclick="insertOutboundTemplate('amneziawg')">🔥 AmneziaWG (Mihomo)</div>
+                </div>
+              </div>
               <button type="button" class="btn-text-action" onclick="toggleEditorSearch('conn-outbound-json')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 Поиск
@@ -530,7 +590,7 @@
           <label for="batch-import-text">Список ссылок <span class="req">*</span></label>
           <textarea id="batch-import-text" class="batch-import-textarea" rows="8" placeholder="vless://...#Server 1&#10;vless://...#Server 2" required oninput="updateBatchImportCounter()"></textarea>
           <div class="field-help-row">
-            <small class="help-text">По одной ссылке на строку (формат <code>vless://</code>). Пустые строки и комментарии игнорируются.</small>
+            <small class="help-text">По одной ссылке на строку (поддерживаются <code>vless://</code>, <code>vmess://</code>, <code>trojan://</code>, <code>ss://</code>, <code>wireguard://</code>, <code>hysteria2://</code>). Пустые строки и комментарии игнорируются.</small>
             <span class="badge-counter" id="batch-import-counter">Найдено ссылок: 0</span>
           </div>
         </div>
@@ -871,6 +931,10 @@
         <button type="button" class="settings-tab-btn active" id="tab-btn-settings-general" onclick="switchSettingsTab('general')">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           <span>Пути и команды</span>
+        </button>
+        <button type="button" class="settings-tab-btn" id="tab-btn-settings-core" onclick="switchSettingsTab('core')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>Ядро XKeen</span>
         </button>
         <button type="button" class="settings-tab-btn" id="tab-btn-settings-autofailover" onclick="switchSettingsTab('autofailover')">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
@@ -1260,6 +1324,94 @@
           </div>
         </form>
       </div>
+
+      <!-- TAB 5: PROXY CORE (XRAY / MIHOMO) -->
+      <div id="settings-tab-content-core" class="hidden">
+        <div class="core-settings-container">
+          <!-- CURRENT ACTIVE BANNER -->
+          <div class="core-active-banner">
+            <div class="core-active-info">
+              <span class="core-active-label">Активное ядро XKeen:</span>
+              <strong class="core-active-title" id="core-active-title">Xray</strong>
+            </div>
+            <span class="core-active-badge" id="core-active-badge">Активно</span>
+          </div>
+
+          <!-- CORES COMPARISON CARDS -->
+          <div class="cores-cards-grid">
+            <!-- XRAY CARD -->
+            <div class="core-card glass-card" id="card-core-xray">
+              <div class="core-card-header">
+                <div class="core-card-title-row">
+                  <span class="core-card-icon">⚡</span>
+                  <h4>Xray Core</h4>
+                  <span class="core-installed-badge" id="badge-xray-installed">Установлен</span>
+                </div>
+                <p class="core-card-desc">Классическое ядро XKeen. Максимальная поддержка VLESS Reality и стабильность.</p>
+              </div>
+
+              <div class="core-features-list">
+                <div class="core-feature-item">✓ VLESS (Reality, gRPC, WebSocket, TCP, TLS)</div>
+                <div class="core-feature-item">✓ VMess (WebSocket, TLS, TCP)</div>
+                <div class="core-feature-item">✓ Trojan (TLS, Reality)</div>
+                <div class="core-feature-item">✓ Shadowsocks (AEAD / 2022)</div>
+                <div class="core-feature-item">✓ WireGuard VPN</div>
+              </div>
+
+              <div class="core-card-actions">
+                <button type="button" class="btn btn-primary btn-sm btn-core-switch" id="btn-switch-to-xray" onclick="switchProxyCoreUI('xray')">
+                  Активировать Xray
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="testProxyCoreConfigUI('xray')">
+                  Проверить (xtest)
+                </button>
+              </div>
+            </div>
+
+            <!-- MIHOMO CARD -->
+            <div class="core-card glass-card" id="card-core-mihomo">
+              <div class="core-card-header">
+                <div class="core-card-title-row">
+                  <span class="core-card-icon">🔥</span>
+                  <h4>Mihomo Meta</h4>
+                  <span class="core-installed-badge" id="badge-mihomo-installed">Установлен</span>
+                </div>
+                <p class="core-card-desc">Современное многопротокольное ядро на базе Clash.Meta с поддержкой AmneziaWG.</p>
+              </div>
+
+              <div class="core-features-list">
+                <div class="core-feature-item highlight">★ <strong>AmneziaWG (нативно в бинарнике)</strong></div>
+                <div class="core-feature-item">✓ Shadowsocks, VMess, Trojan</div>
+                <div class="core-feature-item">✓ WireGuard, Hysteria 2, TUIC</div>
+                <div class="core-feature-item">✓ Гибкая маршрутизация на основе правил</div>
+                <div class="core-feature-item">✓ Yq парсер конфигураций</div>
+              </div>
+
+              <div class="core-card-actions">
+                <button type="button" class="btn btn-primary btn-sm btn-core-switch" id="btn-switch-to-mihomo" onclick="switchProxyCoreUI('mihomo')">
+                  Активировать Mihomo
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="testProxyCoreConfigUI('mihomo')">
+                  Проверить (mtest)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TERMINAL TEST OUTPUT -->
+          <div class="core-test-terminal hidden" id="core-test-terminal">
+            <div class="terminal-header">
+              <span id="core-test-title">Результат проверки конфигурации</span>
+              <button type="button" class="btn-text-action" onclick="document.getElementById('core-test-terminal').classList.add('hidden')">Скрыть</button>
+            </div>
+            <pre class="terminal-output" id="core-test-log"></pre>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Закрыть</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1387,6 +1539,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.5.0"></script>
+  <script src="app.js?v=2.6.0"></script>
 </body>
 </html>
