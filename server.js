@@ -2730,22 +2730,46 @@ function copyDirRecursiveSync(srcDir, destDir, excludeNames = []) {
 
 // Evaluate service status from command output and exit code
 function evaluateServiceStatus(res) {
+  const stdout = (res.stdout || '').toLowerCase();
   const combined = ((res.stdout || '') + ' ' + (res.stderr || '') + ' ' + (res.error || '')).toLowerCase();
-  
-  if (combined.includes('failed') || combined.includes('fatal') || combined.includes('panic') || combined.includes('syntax error') || combined.includes('invalid config') || combined.includes('cannot start') || combined.includes('ошибка')) {
-    return 'error';
-  }
 
-  if (combined.includes('is running') || combined.includes(' running') || combined.includes('[ok] xray is running') || combined.includes('active (running)') || combined.includes('работает') || (combined.includes('запущен') && !combined.includes('не запущен') && !combined.includes('не работает'))) {
+  const isRunning = combined.includes('is running') ||
+                    combined.includes(' running') ||
+                    combined.includes('[ok] xray is running') ||
+                    combined.includes('active (running)') ||
+                    combined.includes('работает') ||
+                    (combined.includes('запущен') && !combined.includes('не запущен') && !combined.includes('не работает'));
+
+  const isStopped = combined.includes('stopped') ||
+                    combined.includes('not running') ||
+                    combined.includes('is not running') ||
+                    combined.includes('is dead') ||
+                    combined.includes('inactive') ||
+                    combined.includes('остановлен') ||
+                    combined.includes('не запущен') ||
+                    combined.includes('не работает');
+
+  if (isRunning && !isStopped) {
     return 'running';
   }
 
-  if (combined.includes('stopped') || combined.includes('not running') || combined.includes('is not running') || combined.includes('is dead') || combined.includes('inactive') || combined.includes('остановлен') || combined.includes('не запущен') || combined.includes('не работает')) {
+  if (isStopped && !isRunning) {
     return 'stopped';
   }
 
+  // Explicit fatal error during execution
+  if (combined.includes('failed to start') ||
+      combined.includes('cannot start') ||
+      combined.includes('panic:') ||
+      combined.includes('syntax error') ||
+      combined.includes('invalid config') ||
+      combined.includes('ошибка запуска') ||
+      combined.includes('не удалось запустить')) {
+    return 'error';
+  }
+
   if (res.success && res.code === 0) {
-    return 'running';
+    return isRunning ? 'running' : (isStopped ? 'stopped' : 'running');
   }
 
   return 'error';
