@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.7.9">
+  <link rel="stylesheet" href="style.css?v=2.7.10">
 </head>
 <body>
   <div class="app-background"></div>
@@ -1060,6 +1060,12 @@
             <small class="help-text">Порт веб-интерфейса панели (по умолчанию: 3000).</small>
           </div>
 
+          <div class="form-group">
+            <label for="setting-ping-timeout">Таймаут проверки доступности подключений (мс)</label>
+            <input type="number" id="setting-ping-timeout" min="500" max="60000" step="100" placeholder="3500">
+            <small class="help-text">Время ожидания ответа узла в миллисекундах (по умолчанию: 3500 мс / 3.5 сек). После истечения подключение считается недоступным.</small>
+          </div>
+
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Отмена</button>
             <button type="submit" class="btn btn-primary">Сохранить настройки</button>
@@ -1606,6 +1612,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.7.9"></script>
+  <script src="app.js?v=2.7.10"></script>
 </body>
 </html>

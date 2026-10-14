@@ -2937,6 +2937,7 @@ function loadData() {
       statusCommand: 'xkeen -status',
       activeConnectionId: null,
       port: 3000,
+      pingTimeout: 3500,
       defaultRoutingBlacklist: 'routing_except_ru',
       defaultRoutingWhitelist: 'routing_all_vpn',
       failover: {
@@ -3020,6 +3021,9 @@ function loadData() {
       }
       if (!data.settings.defaultRoutingWhitelist) {
         data.settings.defaultRoutingWhitelist = 'routing_all_vpn';
+      }
+      if (!data.settings.pingTimeout || typeof data.settings.pingTimeout !== 'number' || data.settings.pingTimeout < 500) {
+        data.settings.pingTimeout = 3500;
       }
 
       // Load Groups
@@ -4796,7 +4800,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const pingResult = await measureConnectionHealth(conn, { timeout: 3500 });
+      const pingTimeout = data.settings.pingTimeout || 3500;
+      const pingResult = await measureConnectionHealth(conn, { timeout: pingTimeout });
 
       conn.lastPing = pingResult.ok ? pingResult.latency : null;
       conn.lastPingStatus = pingResult.ok ? 'ok' : 'unreachable';
@@ -4842,8 +4847,9 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const results = [];
+      const pingTimeout = data.settings.pingTimeout || 3500;
       for (const conn of data.connections) {
-        const pingResult = await measureConnectionHealth(conn, { timeout: 3500 });
+        const pingResult = await measureConnectionHealth(conn, { timeout: pingTimeout });
         conn.lastPing = pingResult.ok ? pingResult.latency : null;
         conn.lastPingStatus = pingResult.ok ? 'ok' : 'unreachable';
         conn.lastPingError = pingResult.error || null;
@@ -6040,6 +6046,12 @@ const server = http.createServer(async (req, res) => {
       if (startCommand !== undefined) data.settings.startCommand = startCommand.trim();
       if (stopCommand !== undefined) data.settings.stopCommand = stopCommand.trim();
       if (statusCommand !== undefined) data.settings.statusCommand = statusCommand.trim();
+      if (body.pingTimeout !== undefined && body.pingTimeout !== null && body.pingTimeout !== '') {
+        const pt = parseInt(body.pingTimeout, 10);
+        if (!isNaN(pt) && pt >= 500 && pt <= 60000) {
+          data.settings.pingTimeout = pt;
+        }
+      }
 
       saveData(data);
 

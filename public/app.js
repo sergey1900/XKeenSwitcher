@@ -3929,6 +3929,8 @@ function openSettingsModal() {
   document.getElementById('setting-stop-cmd').value = s.stopCommand || '';
   document.getElementById('setting-status-cmd').value = s.statusCommand || '';
   document.getElementById('setting-panel-port').value = s.port || 3000;
+  const pingTimeoutEl = document.getElementById('setting-ping-timeout');
+  if (pingTimeoutEl) pingTimeoutEl.value = s.pingTimeout || 3500;
   switchSettingsTab('general');
   openModal('settings-modal');
 }
@@ -3942,12 +3944,14 @@ async function onSettingsSubmit(e) {
   const stopCommand = document.getElementById('setting-stop-cmd').value.trim();
   const statusCommand = document.getElementById('setting-status-cmd').value.trim();
   const port = parseInt(document.getElementById('setting-panel-port').value, 10);
+  const pingTimeoutEl = document.getElementById('setting-ping-timeout');
+  const pingTimeout = pingTimeoutEl ? (parseInt(pingTimeoutEl.value, 10) || 3500) : 3500;
 
   try {
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ outboundPath, routingPath, restartCommand, startCommand, stopCommand, statusCommand, port })
+      body: JSON.stringify({ outboundPath, routingPath, restartCommand, startCommand, stopCommand, statusCommand, port, pingTimeout })
     });
 
     const data = await res.json();
