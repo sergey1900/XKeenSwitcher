@@ -217,7 +217,7 @@ function formatNetworkName(net) {
 }
 
 // Render Connections Grid
-function renderConnectionCardHtml(conn, activeId) {
+function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, parentGroup = null) {
   const isActive = (conn.id === activeId);
   const isChecking = pingingConnectionIds.has(conn.id) || isPingingAll;
   const isAwgConn = conn.protocol === 'amneziawg' || conn.protocol === 'awg' || Boolean(conn.amneziaConfig);
@@ -291,7 +291,17 @@ function renderConnectionCardHtml(conn, activeId) {
   const flagHtml = flag ? `<span class="conn-flag" title="${escapeHtml(countryTitle)}">${flag}</span>` : '';
 
   const isFav = Boolean(conn.isFavorite);
-  const isWhitelist = (conn.targetList === 'whitelist');
+
+  // Target list inheritance: if parent group is explicitly blacklist or whitelist, inherit it. If mixed or in favorites, use individual targetList.
+  let effectiveTarget = conn.targetList || 'blacklist';
+  if (!isFavoriteSection && parentGroup) {
+    if (parentGroup.targetList === 'whitelist') {
+      effectiveTarget = 'whitelist';
+    } else if (parentGroup.targetList === 'blacklist') {
+      effectiveTarget = 'blacklist';
+    }
+  }
+  const isWhitelist = (effectiveTarget === 'whitelist');
   const targetBadgeHtml = `<span class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" title="Назначение: ${isWhitelist ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${isWhitelist ? 'БС' : 'ЧС'}</span>`;
 
   let protoClass = '';
@@ -306,6 +316,20 @@ function renderConnectionCardHtml(conn, activeId) {
     protoClass = 'badge-proto-hy2';
     protoText = 'HY2';
     protoTitle = 'Протокол: Hysteria 2 (ядро Mihomo)';
+  }
+
+  // Origin info when rendered in Favorites section
+  let originFooterHtml = '';
+  if (isFavoriteSection) {
+    const originGroup = (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'));
+    const grpName = originGroup ? originGroup.name : 'Общие';
+    const isSub = originGroup ? Boolean(originGroup.isSubscription) : false;
+    originFooterHtml = `
+      <div class="conn-origin-footer" title="${isSub ? 'Подписка' : 'Группа'} источника">
+        <span class="conn-origin-label">${isSub ? 'Подписка:' : 'Группа:'}</span>
+        <span class="conn-origin-name">${escapeHtml(grpName)}</span>
+      </div>
+    `;
   }
 
   return `
@@ -323,11 +347,11 @@ function renderConnectionCardHtml(conn, activeId) {
           ${isActive ? `<span class="active-pill-badge"><span class="status-dot"></span> Активно</span>` : ''}
         </div>
 
-        <!-- BADGES ROW -->
+        <!-- BADGES ROW: TargetList 1st, Protocol 2nd, Host:Port 3rd -->
         <div class="conn-badges-row">
           ${targetBadgeHtml}
-          <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
           <span class="conn-badge badge-proto ${protoClass}" title="${protoTitle}">${protoText}</span>
+          <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
           ${netBadgeHtml}
           ${secBadgeHtml}
         </div>
@@ -356,6 +380,9 @@ function renderConnectionCardHtml(conn, activeId) {
 
         <!-- COMMENT (IF ANY) -->
         ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
+
+        <!-- FAVORITES ORIGIN FOOTER -->
+        ${originFooterHtml}
       </div>
 
       <!-- FOOTER ACTIONS -->
@@ -459,7 +486,7 @@ function renderConnections() {
           <span class="group-count">${favorites.length}</span>
         </div>
         <div class="connections-subgrid">
-          ${favorites.map(c => renderConnectionCardHtml(c, activeId)).join('')}
+          ${favorites.map(c => renderConnectionCardHtml(c, activeId, true)).join('')}
         </div>
       </div>
     `;
@@ -467,15 +494,18 @@ function renderConnections() {
 
   // 2. Groups Accordions
   html += `<div class="groups-container">`;
-  groups.forEach(g => {
+  groups.forEach((g, gIdx) => {
     const groupConns = list.filter(c => (c.groupId || 'group_default') === g.id);
     const isCollapsed = collapsedGroupIds.has(g.id);
     const isSub = Boolean(g.isSubscription);
 
+    const targetClass = (g.targetList === 'whitelist') ? 'bs' : ((g.targetList === 'blacklist') ? 'cs' : 'sm');
+    const targetText = (g.targetList === 'whitelist') ? 'БС' : ((g.targetList === 'blacklist') ? 'ЧС' : 'СМ');
+    const targetTitle = (g.targetList === 'whitelist') ? 'Белые списки (БС)' : ((g.targetList === 'blacklist') ? 'Черные списки (ЧС)' : 'Смешанная группа (СМ)');
+    const groupTargetBadgeHtml = `<span class="group-target-badge ${targetClass}" title="Тип: ${targetTitle}">${targetText}</span>`;
+
     let subInfoHtml = '';
     if (isSub) {
-      const targetText = (g.targetList === 'whitelist') ? 'БС' : 'ЧС';
-      const targetClass = (g.targetList === 'whitelist') ? 'target-whitelist' : 'target-blacklist';
       let trafficText = '';
       if (g.userInfo && (g.userInfo.download || g.userInfo.upload || g.userInfo.total)) {
         const used = (g.userInfo.download || 0) + (g.userInfo.upload || 0);
@@ -490,7 +520,6 @@ function renderConnections() {
 
       subInfoHtml = `
         <span class="group-sub-badge" title="Группа создана из удаленной подписки">Подписка</span>
-        <span class="group-target-badge ${targetClass}" title="Назначение подписки: ${g.targetList === 'whitelist' ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${targetText}</span>
         ${trafficText ? `<span class="group-traffic-badge" title="Трафик подписки">📊 ${escapeHtml(trafficText)}</span>` : ''}
         ${expireText ? `<span class="group-expire-badge" title="Истекает">⏳ до ${escapeHtml(expireText)}</span>` : ''}
       `;
@@ -505,15 +534,25 @@ function renderConnections() {
             </span>
             <span class="group-icon">${isSub ? '🌐' : '📁'}</span>
             <span class="group-name">${escapeHtml(g.name)}</span>
+            ${groupTargetBadgeHtml}
             ${subInfoHtml}
             <span class="group-count-badge">${groupConns.length}</span>
           </div>
           <div class="group-actions" onclick="event.stopPropagation()">
+            <!-- Group Move Up / Down -->
+            <button class="btn-group-action btn-group-move" onclick="moveGroup('${g.id}', -1, event)" ${gIdx === 0 ? 'disabled' : ''} title="Переместить группу выше">▲</button>
+            <button class="btn-group-action btn-group-move" onclick="moveGroup('${g.id}', 1, event)" ${gIdx === groups.length - 1 ? 'disabled' : ''} title="Переместить группу ниже">▼</button>
+
+            <!-- Group Ping All -->
+            <button class="btn-group-action btn-group-ping" id="btn-ping-group-${g.id}" onclick="pingGroupConnections('${g.id}', event)" title="Проверить доступность всех подключений этой группы">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </button>
+
             ${isSub ? `
               <button class="btn-group-action btn-sub-refresh" id="btn-refresh-sub-${g.id}" onclick="updateSubscription('${g.id}', event)" title="Обновить ссылки подписки из интернета">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
               </button>
-              <button class="btn-group-action" onclick="openEditSubscriptionModal('${g.id}', event)" title="Настройки подписки и назначение (ЧС/БС)">
+              <button class="btn-group-action" onclick="openEditSubscriptionModal('${g.id}', event)" title="Настройки подписки и назначение (ЧС/БС/СМ)">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
               <button class="btn-group-action btn-group-delete" onclick="deleteSubscription('${g.id}', '${escapeJs(g.name)}', event)" title="Удалить подписку и все её подключения">
@@ -523,8 +562,8 @@ function renderConnections() {
               <button class="btn-group-action" onclick="openAddConnectionModal('${g.id}')" title="Добавить подключение в эту группу">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
               </button>
-              <button class="btn-group-action" onclick="openRenameGroupModal('${g.id}', '${escapeJs(g.name)}')" title="Переименовать группу">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <button class="btn-group-action" onclick="openRenameGroupModal('${g.id}', '${escapeJs(g.name)}')" title="Настройки группы">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
               ${g.id !== 'group_default' ? `
                 <button class="btn-group-action btn-group-delete" onclick="deleteGroup('${g.id}', '${escapeJs(g.name)}')" title="Удалить группу (подключения переместятся в 'Общие')">
@@ -537,7 +576,7 @@ function renderConnections() {
         <div class="group-body ${isCollapsed ? 'hidden' : ''}" id="group-body-${g.id}">
           ${groupConns.length > 0 ? `
             <div class="connections-subgrid">
-              ${groupConns.map(c => renderConnectionCardHtml(c, activeId)).join('')}
+              ${groupConns.map(c => renderConnectionCardHtml(c, activeId, false, g)).join('')}
             </div>
           ` : `
             <div class="group-empty-state">
@@ -1880,6 +1919,9 @@ function openAddConnectionModal(defaultGroupId = '') {
   const radioBlacklist = document.querySelector('input[name="conn-target-list"][value="blacklist"]');
   if (radioBlacklist) radioBlacklist.checked = true;
 
+  const favCb = document.getElementById('conn-is-favorite');
+  if (favCb) favCb.checked = true;
+
   const addSel = document.getElementById('conn-routing');
   if (addSel && appData.settings?.defaultRoutingBlacklist) {
     addSel.value = appData.settings.defaultRoutingBlacklist;
@@ -1897,6 +1939,7 @@ async function onAddConnectionSubmit(e) {
   const groupId = document.getElementById('conn-group') ? document.getElementById('conn-group').value : 'group_default';
   const routingId = document.getElementById('conn-routing').value;
   const targetList = document.querySelector('input[name="conn-target-list"]:checked')?.value || 'blacklist';
+  const isFavorite = Boolean(document.getElementById('conn-is-favorite')?.checked);
   const outboundContent = document.getElementById('conn-outbound-json').value.trim();
 
   if (!name || !outboundContent) {
@@ -1918,7 +1961,7 @@ async function onAddConnectionSubmit(e) {
   }
 
   try {
-    const payload = { name, description, groupId, routingId, outboundContent, targetList };
+    const payload = { name, description, groupId, routingId, outboundContent, targetList, isFavorite };
     if (currentAddAmneziaConfig) {
       payload.amneziaConfig = currentAddAmneziaConfig;
       payload.protocol = 'amneziawg';
@@ -2045,6 +2088,10 @@ function openCreateGroupModal() {
   if (idInput) idInput.value = '';
   if (titleEl) titleEl.textContent = 'Новая группа';
   if (nameInput) nameInput.value = getNextDefaultGroupName();
+
+  const mixedRadio = document.querySelector('input[name="group-edit-target-list"][value="mixed"]');
+  if (mixedRadio) mixedRadio.checked = true;
+
   openModal('modal-group-edit');
   setTimeout(() => {
     if (nameInput) {
@@ -2054,14 +2101,20 @@ function openCreateGroupModal() {
   }, 100);
 }
 
-// Open modal to rename an existing group
+// Open modal to rename or edit an existing group
 function openRenameGroupModal(groupId, currentName) {
   const idInput = document.getElementById('group-edit-id');
   const titleEl = document.getElementById('group-modal-title');
   const nameInput = document.getElementById('group-edit-name');
   if (idInput) idInput.value = groupId;
-  if (titleEl) titleEl.textContent = 'Переименовать группу';
+  if (titleEl) titleEl.textContent = 'Настройки группы';
   if (nameInput) nameInput.value = currentName || '';
+
+  const grp = (appData.groups || []).find(g => g.id === groupId);
+  const curTarget = grp?.targetList || 'mixed';
+  const radio = document.querySelector(`input[name="group-edit-target-list"][value="${curTarget}"]`);
+  if (radio) radio.checked = true;
+
   openModal('modal-group-edit');
   setTimeout(() => {
     if (nameInput) {
@@ -2071,11 +2124,13 @@ function openRenameGroupModal(groupId, currentName) {
   }, 100);
 }
 
-// Submit Create or Rename Group
+// Submit Create or Edit Group
 async function onGroupEditSubmit(e) {
   e.preventDefault();
   const id = document.getElementById('group-edit-id').value;
   const name = document.getElementById('group-edit-name').value.trim();
+  const targetList = document.querySelector('input[name="group-edit-target-list"]:checked')?.value || 'mixed';
+
   if (!name) {
     showToast('Укажите название группы', 'warning');
     return;
@@ -2087,13 +2142,13 @@ async function onGroupEditSubmit(e) {
       res = await fetch(`/api/groups/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name, targetList })
       });
     } else {
       res = await fetch('/api/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name, targetList })
       });
     }
 
@@ -2105,6 +2160,95 @@ async function onGroupEditSubmit(e) {
     await loadData();
   } catch (err) {
     showToast(err.message, 'error');
+  }
+}
+
+// Move Group Up (-1) or Down (+1)
+async function moveGroup(groupId, direction, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const groups = appData.groups || [];
+  const idx = groups.findIndex(g => g.id === groupId);
+  if (idx < 0) return;
+  const targetIdx = idx + direction;
+  if (targetIdx < 0 || targetIdx >= groups.length) return;
+
+  // Swap
+  const temp = groups[idx];
+  groups[idx] = groups[targetIdx];
+  groups[targetIdx] = temp;
+
+  renderConnections();
+
+  try {
+    const res = await fetch('/api/groups/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupIds: groups.map(g => g.id) })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка изменения порядка групп');
+    if (Array.isArray(data.groups)) {
+      appData.groups = data.groups;
+      renderConnections();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+    await loadData();
+  }
+}
+
+// Ping all connections of a specific group
+async function pingGroupConnections(groupId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const groupConns = (appData.connections || []).filter(c => (c.groupId || 'group_default') === groupId);
+  if (groupConns.length === 0) {
+    showToast('В группе нет подключений для проверки', 'info');
+    return;
+  }
+
+  const btn = document.getElementById(`btn-ping-group-${groupId}`);
+  if (btn) {
+    btn.classList.add('spinning');
+    btn.disabled = true;
+  }
+  showToast(`Проверка подключений группы (${groupConns.length})...`, 'info');
+
+  try {
+    for (const conn of groupConns) {
+      pingingConnectionIds.add(conn.id);
+      renderConnections();
+      try {
+        const res = await fetch(`/api/connections/${conn.id}/ping`, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          conn.lastPing = data.ping;
+          conn.lastPingStatus = data.status;
+          conn.lastPingError = data.error || null;
+          conn.lastPingType = data.checkType || 'tcp';
+          conn.lastPingCheckedAt = data.checkedAt || new Date().toISOString();
+          if (data.countryCode) conn.countryCode = data.countryCode;
+          if (data.countryName) conn.countryName = data.countryName;
+        }
+      } catch (e) {
+      } finally {
+        pingingConnectionIds.delete(conn.id);
+      }
+    }
+    showToast('Проверка группы завершена', 'success');
+  } catch (err) {
+    showToast(`Ошибка проверки группы: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    }
+    renderConnections();
   }
 }
 
@@ -2155,8 +2299,8 @@ function openAddSubscriptionModal() {
   const editOpts = document.getElementById('sub-edit-options');
   if (editOpts) editOpts.classList.add('hidden');
 
-  const radioBlacklist = document.querySelector('input[name="sub-target-list"][value="blacklist"]');
-  if (radioBlacklist) radioBlacklist.checked = true;
+  const radioMixed = document.querySelector('input[name="sub-target-list"][value="mixed"]');
+  if (radioMixed) radioMixed.checked = true;
 
   populateRoutingSelects();
   const subRoutingSel = document.getElementById('sub-routing');
@@ -2189,12 +2333,12 @@ function openEditSubscriptionModal(groupId, event) {
 
   document.getElementById('sub-id').value = group.id;
   document.getElementById('modal-sub-title').textContent = 'Редактирование подписки';
-  document.getElementById('modal-sub-subtitle').textContent = 'Управление ссылкой, маршрутизацией и назначением (ЧС / БС)';
+  document.getElementById('modal-sub-subtitle').textContent = 'Управление ссылкой, маршрутизацией и типом (ЧС / БС / СМ)';
 
   document.getElementById('sub-url').value = group.subscriptionUrl || '';
   document.getElementById('sub-name').value = group.name || '';
 
-  const targetRadio = document.querySelector(`input[name="sub-target-list"][value="${group.targetList || 'blacklist'}"]`);
+  const targetRadio = document.querySelector(`input[name="sub-target-list"][value="${group.targetList || 'mixed'}"]`);
   if (targetRadio) targetRadio.checked = true;
 
   populateRoutingSelects();
@@ -2219,7 +2363,7 @@ function openEditSubscriptionModal(groupId, event) {
 }
 
 function onSubTargetListChange() {
-  const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'blacklist';
+  const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'mixed';
   const defaultRouting = (targetList === 'whitelist')
     ? (appData.settings?.defaultRoutingWhitelist || 'routing_all_vpn')
     : (appData.settings?.defaultRoutingBlacklist || 'routing_except_ru');
@@ -2235,7 +2379,7 @@ async function onSubscriptionSubmit(e) {
   const id = document.getElementById('sub-id').value;
   const url = document.getElementById('sub-url').value.trim();
   const name = document.getElementById('sub-name').value.trim();
-  const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'blacklist';
+  const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'mixed';
   const routingId = document.getElementById('sub-routing').value;
   const submitBtn = document.getElementById('btn-submit-sub');
   const submitText = document.getElementById('btn-submit-sub-text');
@@ -2440,8 +2584,8 @@ function openBatchImportModal() {
   populateRoutingSelects();
   populateGroupSelects();
 
-  const radioBlacklist = document.querySelector('input[name="batch-target-list"][value="blacklist"]');
-  if (radioBlacklist) radioBlacklist.checked = true;
+  const radioMixed = document.querySelector('input[name="batch-target-list"][value="mixed"]');
+  if (radioMixed) radioMixed.checked = true;
 
   const batchRoutingSel = document.getElementById('batch-routing-select');
   if (batchRoutingSel && appData.settings?.defaultRoutingBlacklist) {
@@ -2490,7 +2634,7 @@ async function onBatchImportSubmit(e) {
   e.preventDefault();
   const text = document.getElementById('batch-import-text').value.trim();
   const routingId = document.getElementById('batch-routing-select').value;
-  const targetList = document.querySelector('input[name="batch-target-list"]:checked')?.value || 'blacklist';
+  const targetList = document.querySelector('input[name="batch-target-list"]:checked')?.value || 'mixed';
   const mode = document.querySelector('input[name="batch-group-choice"]:checked')?.value || 'new';
 
   let groupName = '';
@@ -2605,7 +2749,7 @@ function onConnTargetListChange(mode) {
 
 // Handler for switching target list radio in batch import modal
 function onBatchTargetListChange() {
-  const targetList = document.querySelector('input[name="batch-target-list"]:checked')?.value || 'blacklist';
+  const targetList = document.querySelector('input[name="batch-target-list"]:checked')?.value || 'mixed';
   const defaultRouting = (targetList === 'whitelist')
     ? (appData.settings?.defaultRoutingWhitelist || 'routing_all_vpn')
     : (appData.settings?.defaultRoutingBlacklist || 'routing_except_ru');

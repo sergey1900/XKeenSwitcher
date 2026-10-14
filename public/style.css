@@ -1877,22 +1877,57 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: inline-flex;
   align-items: center;
   font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 6px;
+  font-weight: 800;
+  padding: 2px 7px;
   border-radius: 4px;
-  margin-left: 2px;
+  margin-left: 4px;
+  letter-spacing: 0.03em;
 }
 
 .group-target-badge.cs {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: #000000;
+  color: #ffffff;
+  border: 1px solid #475569;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .group-target-badge.bs {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.group-target-badge.sm {
+  background: rgba(147, 51, 234, 0.25);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+}
+
+.btn-group-move {
+  padding: 4px 6px;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.btn-group-move:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-group-ping {
+  color: #38bdf8;
+}
+
+.btn-group-ping:hover {
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.btn-group-ping.spinning svg {
+  animation: spin 1s linear infinite;
 }
 
 .group-traffic-badge,
@@ -2026,7 +2061,37 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .conn-card.is-favorite {
-  border-top: 2px solid rgba(245, 158, 11, 0.75);
+  border: 2px solid #eab308 !important;
+  box-shadow: 0 0 14px rgba(234, 179, 8, 0.22);
+}
+
+.conn-card.is-favorite.active-conn {
+  border: 2px solid #10b981 !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.35), 0 0 0 2px #eab308;
+}
+
+.conn-origin-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+}
+
+.conn-origin-label {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.conn-origin-name {
+  color: #f1f5f9;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .conn-card-header {
@@ -2202,18 +2267,24 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .badge-target-list {
   cursor: default;
   user-select: none;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 4px;
 }
 
 .badge-target-list.target-blacklist {
-  background: rgba(148, 163, 184, 0.14);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 1px solid #475569 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .badge-target-list.target-whitelist {
-  background: rgba(56, 189, 248, 0.16);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 2px rgba(255, 255, 255, 0.2);
 }
 
 /* ROUTING SELECTOR ROW */

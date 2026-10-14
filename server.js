@@ -3024,10 +3024,13 @@ function loadData() {
 
       // Load Groups
       if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
-        data.groups = parsed.groups;
+        data.groups = parsed.groups.map(g => ({
+          ...g,
+          targetList: (g.targetList === 'whitelist' || g.targetList === 'blacklist') ? g.targetList : 'mixed'
+        }));
       }
       if (!data.groups.some(g => g.id === 'group_default')) {
-        data.groups.unshift({ id: 'group_default', name: 'Общие', createdAt: new Date().toISOString() });
+        data.groups.unshift({ id: 'group_default', name: 'Общие', targetList: 'mixed', createdAt: new Date().toISOString() });
       }
 
       // Load Routings
@@ -4298,7 +4301,7 @@ const server = http.createServer(async (req, res) => {
       const data = loadData();
 
       // Resolve targetList and default routing
-      const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : 'blacklist';
+      const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : (reqTargetList === 'blacklist' ? 'blacklist' : 'mixed');
       const defaultForTarget = (targetList === 'whitelist')
         ? (data.settings.defaultRoutingWhitelist || 'routing_all_vpn')
         : (data.settings.defaultRoutingBlacklist || 'routing_except_ru');
@@ -4316,6 +4319,7 @@ const server = http.createServer(async (req, res) => {
           existing = {
             id: 'group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
             name: trimmedName,
+            targetList: targetList,
             createdAt: new Date().toISOString()
           };
           data.groups.push(existing);
@@ -4885,6 +4889,34 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { groups: data.groups || [] });
   }
 
+  // POST /api/groups/reorder - Reorder groups
+  if (urlParts === '/api/groups/reorder' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { groupIds } = body;
+      if (!Array.isArray(groupIds)) {
+        return sendJson(res, 400, { error: 'Неверный список ID групп' });
+      }
+      const data = loadData();
+      const groupMap = new Map(data.groups.map(g => [g.id, g]));
+      const reordered = [];
+      for (const id of groupIds) {
+        if (groupMap.has(id)) {
+          reordered.push(groupMap.get(id));
+          groupMap.delete(id);
+        }
+      }
+      for (const g of groupMap.values()) {
+        reordered.push(g);
+      }
+      data.groups = reordered;
+      saveData(data);
+      return sendJson(res, 200, { message: 'Порядок групп сохранён', groups: data.groups });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка изменения порядка групп' });
+    }
+  }
+
   // POST /api/groups - Create a new group
   if (urlParts === '/api/groups' && req.method === 'POST') {
     try {
@@ -4894,10 +4926,12 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'Укажите название группы' });
       }
       const data = loadData();
+      const targetList = (body.targetList === 'whitelist' || body.targetList === 'blacklist') ? body.targetList : 'mixed';
       const newGroup = {
         id: 'group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         name: name,
         collapsed: false,
+        targetList: targetList,
         createdAt: new Date().toISOString()
       };
       data.groups.push(newGroup);
@@ -4909,7 +4943,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // PUT /api/groups/:id - Update or rename group
-  if (urlParts.startsWith('/api/groups/') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+  if (urlParts.startsWith('/api/groups/') && !urlParts.includes('/reorder') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
     const id = urlParts.replace('/api/groups/', '');
     try {
       const body = await parseJsonBody(req);
@@ -4923,6 +4957,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (typeof body.collapsed !== 'undefined') {
         group.collapsed = Boolean(body.collapsed);
+      }
+      if (body.targetList) {
+        group.targetList = (body.targetList === 'whitelist' || body.targetList === 'blacklist') ? body.targetList : 'mixed';
       }
       group.updatedAt = new Date().toISOString();
       saveData(data);
@@ -4974,7 +5011,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const data = loadData();
-      const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : 'blacklist';
+      const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : (reqTargetList === 'blacklist' ? 'blacklist' : 'mixed');
       const defaultRouting = (targetList === 'whitelist')
         ? (data.settings.defaultRoutingWhitelist || 'routing_all_vpn')
         : (data.settings.defaultRoutingBlacklist || 'routing_except_ru');
@@ -5063,7 +5100,7 @@ const server = http.createServer(async (req, res) => {
           countryCode: null,
           countryName: null,
           isFavorite: false,
-          targetList: targetList,
+          targetList: (targetList === 'whitelist' || targetList === 'blacklist') ? targetList : 'blacklist',
           lastPing: null,
           lastPingStatus: null,
           lastPingCheckedAt: null,
@@ -5108,7 +5145,7 @@ const server = http.createServer(async (req, res) => {
       }
       group.lastUpdated = new Date().toISOString();
 
-      const targetList = group.targetList || 'blacklist';
+      const targetList = group.targetList || 'mixed';
       const effectiveRoutingId = group.routingId || (targetList === 'whitelist' ? data.settings.defaultRoutingWhitelist : data.settings.defaultRoutingBlacklist);
 
       const existingConns = data.connections.filter(c => c.groupId === id);
@@ -5176,7 +5213,9 @@ const server = http.createServer(async (req, res) => {
           found.network = item.network;
           found.security = item.security;
           found.sni = item.sni;
-          found.targetList = targetList;
+          if (targetList === 'whitelist' || targetList === 'blacklist') {
+            found.targetList = targetList;
+          }
           found.updatedAt = new Date().toISOString();
           updatedCount++;
         } else {
@@ -5196,7 +5235,7 @@ const server = http.createServer(async (req, res) => {
             countryCode: null,
             countryName: null,
             isFavorite: false,
-            targetList: targetList,
+            targetList: (targetList === 'whitelist' || targetList === 'blacklist') ? targetList : 'blacklist',
             lastPing: null,
             lastPingStatus: null,
             lastPingCheckedAt: null,
@@ -5258,12 +5297,14 @@ const server = http.createServer(async (req, res) => {
       if (body.subscriptionUrl && body.subscriptionUrl.trim()) {
         group.subscriptionUrl = body.subscriptionUrl.trim();
       }
-      if (body.targetList && (body.targetList === 'blacklist' || body.targetList === 'whitelist')) {
+      if (body.targetList && (body.targetList === 'blacklist' || body.targetList === 'whitelist' || body.targetList === 'mixed')) {
         group.targetList = body.targetList;
-        // Update targetList on ALL connections in this subscription group
-        for (const conn of data.connections) {
-          if (conn.groupId === id) {
-            conn.targetList = group.targetList;
+        if (group.targetList !== 'mixed') {
+          // Update targetList on ALL connections in this subscription group
+          for (const conn of data.connections) {
+            if (conn.groupId === id) {
+              conn.targetList = group.targetList;
+            }
           }
         }
       }

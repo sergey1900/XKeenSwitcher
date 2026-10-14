@@ -236,7 +236,7 @@
               <span>Справка по протоколам</span>
             </button>
           </div>
-          <input type="text" id="input-vless-url" placeholder="Вставьте ссылку (vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg://)..." autocomplete="off" spellcheck="false">
+          <input type="text" id="input-vless-url" placeholder="Вставьте ссылку (vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg://, hysteria2://) или конфиг [Interface]..." autocomplete="off" spellcheck="false">
           
           <div class="supported-protocols-row">
             <span class="proto-pill active" title="VLESS Reality, gRPC, WebSocket, TCP, TLS">VLESS</span>
@@ -247,6 +247,10 @@
             <span class="proto-pill active proto-pill-awg" title="AmneziaWG (нативно поддерживается в ядре Mihomo)">AmneziaWG</span>
             <span class="proto-pill active" title="Hysteria 2 UDP tunnel">Hysteria2</span>
           </div>
+
+          <p class="form-hint" style="margin-top: 6px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+            Поддерживаются: <strong>VLESS</strong>, <strong>VMess</strong>, <strong>Trojan</strong>, <strong>Shadowsocks</strong>, <strong>Hysteria 2</strong>, <strong>WireGuard</strong> (ссылка или текст <code>[Interface]</code>) и <strong>AmneziaWG</strong> (<code>vpn://</code>, <code>awg://</code> или конфиг <code>[Interface]</code> с параметрами Jc/H/S).
+          </p>
 
           <!-- COLLAPSIBLE PROTOCOL EXAMPLES -->
           <div class="protocol-guide-panel hidden" id="protocol-guide-panel">
@@ -269,6 +273,10 @@
             <div class="proto-guide-item">
               <span class="proto-guide-name">Shadowsocks:</span>
               <code>ss://base64(method:password)@host:port#Name</code>
+            </div>
+            <div class="proto-guide-item">
+              <span class="proto-guide-name">Hysteria 2:</span>
+              <code>hysteria2://password@host:port?sni=domain.com&alpn=h3#Name</code>
             </div>
             <div class="proto-guide-item">
               <span class="proto-guide-name">WireGuard:</span>
@@ -308,16 +316,24 @@
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 16px;">
-          <label>Назначение подключения</label>
-          <div class="radio-toggle-group">
-            <label class="radio-label">
-              <input type="radio" name="conn-target-list" value="blacklist" checked onchange="onConnTargetListChange('add')">
-              <span>Черные списки (по умолчанию)</span>
-            </label>
-            <label class="radio-label">
-              <input type="radio" name="conn-target-list" value="whitelist" onchange="onConnTargetListChange('add')">
-              <span>Белые списки</span>
+        <div class="form-row" style="align-items: center; margin-bottom: 16px;">
+          <div class="form-group flex-2">
+            <label>Назначение подключения</label>
+            <div class="radio-toggle-group">
+              <label class="radio-label">
+                <input type="radio" name="conn-target-list" value="blacklist" checked onchange="onConnTargetListChange('add')">
+                <span>Черные списки (ЧС)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="conn-target-list" value="whitelist" onchange="onConnTargetListChange('add')">
+                <span>Белые списки (БС)</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group flex-1" style="display: flex; align-items: flex-end; padding-bottom: 4px;">
+            <label class="checkbox-label" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.92rem; font-weight: 500; color: #f1f5f9; user-select: none;">
+              <input type="checkbox" id="conn-is-favorite" checked style="width: 17px; height: 17px; accent-color: #eab308; cursor: pointer;">
+              <span>⭐ В Избранное</span>
             </label>
           </div>
         </div>
@@ -600,15 +616,19 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 16px;">
-          <label>Назначение подключений (список)</label>
+          <label>Тип / Назначение подключений (список)</label>
           <div class="radio-toggle-group">
             <label class="radio-label">
-              <input type="radio" name="batch-target-list" value="blacklist" checked onchange="onBatchTargetListChange()">
-              <span>Черные списки (по умолчанию)</span>
+              <input type="radio" name="batch-target-list" value="mixed" checked onchange="onBatchTargetListChange()">
+              <span>СМ (Смешанная, по умолчанию)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="batch-target-list" value="blacklist" onchange="onBatchTargetListChange()">
+              <span>ЧС (Черные списки)</span>
             </label>
             <label class="radio-label">
               <input type="radio" name="batch-target-list" value="whitelist" onchange="onBatchTargetListChange()">
-              <span>Белые списки</span>
+              <span>БС (Белые списки)</span>
             </label>
           </div>
         </div>
@@ -694,15 +714,19 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 16px;">
-          <label>Назначение подписки</label>
+          <label>Тип / Назначение подписки</label>
           <div class="radio-toggle-group">
             <label class="radio-label">
-              <input type="radio" name="sub-target-list" value="blacklist" checked onchange="onSubTargetListChange()">
-              <span>Черные списки (по умолчанию)</span>
+              <input type="radio" name="sub-target-list" value="mixed" checked onchange="onSubTargetListChange()">
+              <span>СМ (Смешанная, по умолчанию)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="sub-target-list" value="blacklist" onchange="onSubTargetListChange()">
+              <span>ЧС (Черные списки)</span>
             </label>
             <label class="radio-label">
               <input type="radio" name="sub-target-list" value="whitelist" onchange="onSubTargetListChange()">
-              <span>Белые списки</span>
+              <span>БС (Белые списки)</span>
             </label>
           </div>
         </div>
@@ -795,6 +819,24 @@
         <div class="form-group">
           <label for="group-edit-name">Название группы <span class="req">*</span></label>
           <input type="text" id="group-edit-name" placeholder="Например: Нидерланды или Group 1" required>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label>Тип группы</label>
+          <div class="radio-toggle-group">
+            <label class="radio-label">
+              <input type="radio" name="group-edit-target-list" value="mixed" checked>
+              <span>СМ (Смешанная, по умолчанию)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="group-edit-target-list" value="blacklist">
+              <span>ЧС (Черные списки)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="group-edit-target-list" value="whitelist">
+              <span>БС (Белые списки)</span>
+            </label>
+          </div>
         </div>
 
         <div class="modal-footer">
