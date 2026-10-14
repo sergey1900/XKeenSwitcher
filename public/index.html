@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.7.5">
+  <link rel="stylesheet" href="style.css?v=2.7.6">
 </head>
 <body>
   <div class="app-background"></div>
@@ -771,6 +771,10 @@
 
       <form id="form-move-copy" onsubmit="onMoveCopySubmit(event)">
         <input type="hidden" id="move-copy-conn-id">
+
+        <div id="move-copy-sub-notice" class="hidden" style="margin-bottom: 14px; font-size: 0.82rem; padding: 10px 14px; border-radius: 8px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); color: #7dd3fc; line-height: 1.45;">
+          ℹ️ Подключение входит в подписку. Перенос невозможен — доступно только копирование в другую группу.
+        </div>
 
         <div class="form-group">
           <label>Действие</label>
@@ -1588,6 +1592,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.7.5"></script>
+  <script src="app.js?v=2.7.6"></script>
 </body>
 </html>

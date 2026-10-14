@@ -391,7 +391,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
         </div>
 
         <div class="conn-footer-actions">
-          <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="Переместить или скопировать в другую группу">
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="${(parentGroup?.isSubscription || (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'))?.isSubscription) ? 'Скопировать в другую группу' : 'Переместить или скопировать в другую группу'}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </button>
           <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
@@ -712,30 +712,32 @@ function populateGroupSelects(selectedGroupId = null) {
     ? appData.groups
     : [{ id: 'group_default', name: 'Общие' }];
 
-  const optionsHtml = groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+  const allOptionsHtml = groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}${g.isSubscription ? ' (Подписка)' : ''}</option>`).join('');
+  const nonSubGroups = groups.filter(g => !g.isSubscription);
+  const nonSubOptionsHtml = (nonSubGroups.length > 0 ? nonSubGroups : groups).map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
 
   const addGroupSel = document.getElementById('conn-group');
   if (addGroupSel) {
     const cur = selectedGroupId || addGroupSel.value || 'group_default';
-    addGroupSel.innerHTML = optionsHtml;
-    addGroupSel.value = groups.some(g => g.id === cur) ? cur : groups[0].id;
+    addGroupSel.innerHTML = nonSubOptionsHtml;
+    addGroupSel.value = groups.some(g => !g.isSubscription && g.id === cur) ? cur : (nonSubGroups[0]?.id || 'group_default');
   }
 
   const editGroupSel = document.getElementById('edit-conn-group');
   if (editGroupSel) {
     const cur = selectedGroupId || editGroupSel.value || 'group_default';
-    editGroupSel.innerHTML = optionsHtml;
+    editGroupSel.innerHTML = allOptionsHtml;
     editGroupSel.value = groups.some(g => g.id === cur) ? cur : groups[0].id;
   }
 
   const batchGroupSel = document.getElementById('batch-group-select');
   if (batchGroupSel) {
-    batchGroupSel.innerHTML = optionsHtml;
+    batchGroupSel.innerHTML = nonSubOptionsHtml;
   }
 
   const moveCopySel = document.getElementById('move-copy-target-group');
   if (moveCopySel) {
-    moveCopySel.innerHTML = optionsHtml;
+    moveCopySel.innerHTML = nonSubOptionsHtml;
   }
 }
 
@@ -2070,8 +2072,14 @@ function openEditConnectionModal(id) {
   document.getElementById('edit-conn-desc').value = conn.description || '';
   populateRoutingSelects();
   populateGroupSelects();
+  const originGroup = (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'));
+  const isFromSub = Boolean(originGroup?.isSubscription);
   const editGroupSel = document.getElementById('edit-conn-group');
-  if (editGroupSel) editGroupSel.value = conn.groupId || 'group_default';
+  if (editGroupSel) {
+    editGroupSel.value = conn.groupId || 'group_default';
+    editGroupSel.disabled = isFromSub;
+    editGroupSel.title = isFromSub ? 'Подключение входит в подписку. Перенос запрещен, доступно только копирование.' : '';
+  }
   document.getElementById('edit-conn-routing').value = conn.routingId || 'routing_all_vpn';
 
   const targetRadio = document.querySelector(`input[name="edit-conn-target-list"][value="${conn.targetList || 'blacklist'}"]`);
@@ -2646,17 +2654,58 @@ function openMoveCopyModal(connId) {
   const conn = (appData.connections || []).find(c => c.id === connId);
   if (!conn) return;
 
+  const currentGroup = (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'));
+  const isFromSubscription = Boolean(currentGroup?.isSubscription);
+
   document.getElementById('move-copy-conn-id').value = conn.id;
   document.getElementById('move-copy-conn-name').textContent = conn.name;
   populateGroupSelects();
 
+  const titleEl = document.getElementById('move-copy-title');
+  if (titleEl) {
+    titleEl.textContent = isFromSubscription ? 'Копирование подключения из подписки' : 'Управление группой подключения';
+  }
+
   const targetGroupSel = document.getElementById('move-copy-target-group');
   if (targetGroupSel) {
-    targetGroupSel.value = conn.groupId || 'group_default';
+    const nonSubGroup = (appData.groups || []).find(g => !g.isSubscription);
+    targetGroupSel.value = (isFromSubscription && nonSubGroup) ? nonSubGroup.id : (conn.groupId || 'group_default');
   }
 
   const radioMove = document.querySelector('input[name="move-copy-action"][value="move"]');
-  if (radioMove) radioMove.checked = true;
+  const radioCopy = document.querySelector('input[name="move-copy-action"][value="copy"]');
+  const subNotice = document.getElementById('move-copy-sub-notice');
+
+  if (isFromSubscription) {
+    if (radioMove) {
+      radioMove.disabled = true;
+      radioMove.checked = false;
+      if (radioMove.parentElement) {
+        radioMove.parentElement.style.opacity = '0.5';
+        radioMove.parentElement.style.cursor = 'not-allowed';
+        radioMove.parentElement.title = 'Перенос из подписок невозможен, только копирование';
+      }
+    }
+    if (radioCopy) {
+      radioCopy.checked = true;
+    }
+    if (subNotice) {
+      subNotice.classList.remove('hidden');
+    }
+  } else {
+    if (radioMove) {
+      radioMove.disabled = false;
+      radioMove.checked = true;
+      if (radioMove.parentElement) {
+        radioMove.parentElement.style.opacity = '1';
+        radioMove.parentElement.style.cursor = 'pointer';
+        radioMove.parentElement.title = '';
+      }
+    }
+    if (subNotice) {
+      subNotice.classList.add('hidden');
+    }
+  }
 
   const newNameInput = document.getElementById('move-copy-new-name');
   if (newNameInput) newNameInput.value = `${conn.name} (Копия)`;
@@ -2687,6 +2736,13 @@ async function onMoveCopySubmit(e) {
 
   if (!connId || !targetGroupId) {
     showToast('Не выбрана целевая группа', 'warning');
+    return;
+  }
+
+  const conn = (appData.connections || []).find(c => c.id === connId);
+  const curGroup = (appData.groups || []).find(g => g.id === (conn?.groupId || 'group_default'));
+  if (curGroup?.isSubscription && action === 'move') {
+    showToast('Перенос подключений из подписок невозможен, только копирование', 'warning');
     return;
   }
 

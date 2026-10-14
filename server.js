@@ -4444,6 +4444,12 @@ const server = http.createServer(async (req, res) => {
       const data = loadData();
       const conn = data.connections.find(c => c.id === id);
       if (!conn) return sendJson(res, 404, { error: 'Подключение не найдено' });
+
+      const currentGroup = data.groups.find(g => g.id === (conn.groupId || 'group_default'));
+      if (currentGroup && currentGroup.isSubscription && targetGroupId !== currentGroup.id) {
+        return sendJson(res, 400, { error: 'Перенос подключений из подписок невозможен, доступно только копирование' });
+      }
+
       if (!targetGroupId || !data.groups.some(g => g.id === targetGroupId)) {
         return sendJson(res, 400, { error: 'Целевая группа не найдена' });
       }
@@ -4512,6 +4518,10 @@ const server = http.createServer(async (req, res) => {
       conn.name = name.trim();
       conn.description = (description || '').trim();
       if (groupId && data.groups.some(g => g.id === groupId)) {
+        const curGroup = data.groups.find(g => g.id === (conn.groupId || 'group_default'));
+        if (curGroup && curGroup.isSubscription && groupId !== curGroup.id) {
+          return sendJson(res, 400, { error: 'Перенос подключений из подписок невозможен, доступно только копирование' });
+        }
         conn.groupId = groupId;
       }
       if (typeof isFavorite !== 'undefined') {
