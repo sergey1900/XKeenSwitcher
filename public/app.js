@@ -278,6 +278,8 @@ function renderConnectionCardHtml(conn, activeId) {
   const flagHtml = flag ? `<span class="conn-flag" title="${escapeHtml(countryTitle)}">${flag}</span>` : '';
 
   const isFav = Boolean(conn.isFavorite);
+  const isWhitelist = (conn.targetList === 'whitelist');
+  const targetBadgeHtml = `<button type="button" class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" onclick="toggleConnectionTargetList('${conn.id}', event)" title="Нажмите, чтобы переключить назначение (Черные списки / Белые списки)">${isWhitelist ? '⚪ БС' : '⚫ ЧС'}</button>`;
 
   return `
     <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
@@ -296,6 +298,7 @@ function renderConnectionCardHtml(conn, activeId) {
 
         <!-- BADGES ROW -->
         <div class="conn-badges-row">
+          ${targetBadgeHtml}
           <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
           <span class="conn-badge badge-proto" title="Протокол">${escapeHtml((conn.protocol || 'vless').toUpperCase())}</span>
           ${netBadgeHtml}
@@ -499,12 +502,21 @@ function renderRoutings() {
   if (routingsBadge) routingsBadge.textContent = list.length;
 
   routingsGrid.innerHTML = list.map(routing => {
+    const isDefBlacklist = (appData.settings?.defaultRoutingBlacklist === routing.id);
+    const isDefWhitelist = (appData.settings?.defaultRoutingWhitelist === routing.id);
+
     return `
       <div class="routing-card glass-card ${routing.isSystem ? 'system-routing' : ''}">
         <div>
           <div class="routing-header">
-            <h3 class="routing-title">${escapeHtml(routing.name)}</h3>
-            ${routing.isSystem ? `<span class="routing-system-badge">🔒 Защищен</span>` : ''}
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <h3 class="routing-title">${escapeHtml(routing.name)}</h3>
+              ${routing.isSystem ? `<span class="routing-system-badge">🔒 Защищен</span>` : ''}
+            </div>
+            <div class="routing-badges-row">
+              ${isDefBlacklist ? `<span class="routing-default-badge badge-blacklist" title="Маршрутизация по умолчанию для Черных списков (ЧС)">⚫ ЧС по умолчанию</span>` : ''}
+              ${isDefWhitelist ? `<span class="routing-default-badge badge-whitelist" title="Маршрутизация по умолчанию для Белых списков (БС)">⚪ БС по умолчанию</span>` : ''}
+            </div>
           </div>
 
           <p class="routing-desc">${escapeHtml(routing.description || 'Без описания')}</p>
@@ -517,7 +529,14 @@ function renderRoutings() {
         </div>
 
         <div class="routing-card-footer">
-          <div></div>
+          <div class="routing-default-actions" title="Назначить эту маршрутизацию по умолчанию">
+            <button type="button" class="btn-routing-default ${isDefBlacklist ? 'active-blacklist' : ''}" onclick="toggleRoutingDefault('${routing.id}', 'blacklist')" title="${isDefBlacklist ? 'Маршрутизация по умолчанию для Черных списков' : 'Сделать по умолчанию для Черных списков (ЧС)'}">
+              ${isDefBlacklist ? '✓ ⚫ ЧС' : '⚫ ЧС'}
+            </button>
+            <button type="button" class="btn-routing-default ${isDefWhitelist ? 'active-whitelist' : ''}" onclick="toggleRoutingDefault('${routing.id}', 'whitelist')" title="${isDefWhitelist ? 'Маршрутизация по умолчанию для Белых списков' : 'Сделать по умолчанию для Белых списков (БС)'}">
+              ${isDefWhitelist ? '✓ ⚪ БС' : '⚪ БС'}
+            </button>
+          </div>
           <div class="conn-footer-actions">
             <button class="btn btn-secondary btn-sm btn-icon" onclick="openRoutingModal('${routing.id}')" title="${routing.isSystem ? 'Просмотр конфигурации JSON' : 'Редактировать routing.json'}">
               ${routing.isSystem ? `
@@ -762,6 +781,15 @@ function openAddConnectionModal(defaultGroupId = '') {
   document.getElementById('add-meta-preview').classList.add('hidden');
   populateRoutingSelects();
   populateGroupSelects(defaultGroupId || 'group_default');
+
+  const radioBlacklist = document.querySelector('input[name="conn-target-list"][value="blacklist"]');
+  if (radioBlacklist) radioBlacklist.checked = true;
+
+  const addSel = document.getElementById('conn-routing');
+  if (addSel && appData.settings?.defaultRoutingBlacklist) {
+    addSel.value = appData.settings.defaultRoutingBlacklist;
+  }
+
   setEditorContent('conn-outbound-json', '{\n    "outbounds": []\n}');
   openModal('modal-add-connection');
 }
@@ -773,6 +801,7 @@ async function onAddConnectionSubmit(e) {
   const description = document.getElementById('conn-desc').value.trim();
   const groupId = document.getElementById('conn-group') ? document.getElementById('conn-group').value : 'group_default';
   const routingId = document.getElementById('conn-routing').value;
+  const targetList = document.querySelector('input[name="conn-target-list"]:checked')?.value || 'blacklist';
   const outboundContent = document.getElementById('conn-outbound-json').value.trim();
 
   if (!name || !outboundContent) {
@@ -784,7 +813,7 @@ async function onAddConnectionSubmit(e) {
     const res = await fetch('/api/connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, groupId, routingId, outboundContent })
+      body: JSON.stringify({ name, description, groupId, routingId, outboundContent, targetList })
     });
 
     const data = await res.json();
@@ -811,6 +840,9 @@ function openEditConnectionModal(id) {
   const editGroupSel = document.getElementById('edit-conn-group');
   if (editGroupSel) editGroupSel.value = conn.groupId || 'group_default';
   document.getElementById('edit-conn-routing').value = conn.routingId || 'routing_all_vpn';
+
+  const targetRadio = document.querySelector(`input[name="edit-conn-target-list"][value="${conn.targetList || 'blacklist'}"]`);
+  if (targetRadio) targetRadio.checked = true;
 
   // Preview pills
   document.getElementById('edit-preview-host').textContent = conn.serverAddress || '-';
@@ -853,13 +885,14 @@ async function onEditConnectionSubmit(e) {
   const description = document.getElementById('edit-conn-desc').value.trim();
   const groupId = document.getElementById('edit-conn-group') ? document.getElementById('edit-conn-group').value : 'group_default';
   const routingId = document.getElementById('edit-conn-routing').value;
+  const targetList = document.querySelector('input[name="edit-conn-target-list"]:checked')?.value || 'blacklist';
   const outboundContent = document.getElementById('edit-conn-outbound-json').value.trim();
 
   try {
     const res = await fetch(`/api/connections/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, groupId, routingId, outboundContent })
+      body: JSON.stringify({ name, description, groupId, routingId, outboundContent, targetList })
     });
 
     const data = await res.json();
@@ -1073,6 +1106,14 @@ function openBatchImportModal() {
   populateRoutingSelects();
   populateGroupSelects();
 
+  const radioBlacklist = document.querySelector('input[name="batch-target-list"][value="blacklist"]');
+  if (radioBlacklist) radioBlacklist.checked = true;
+
+  const batchRoutingSel = document.getElementById('batch-routing-select');
+  if (batchRoutingSel && appData.settings?.defaultRoutingBlacklist) {
+    batchRoutingSel.value = appData.settings.defaultRoutingBlacklist;
+  }
+
   const newNameInput = document.getElementById('batch-group-new-name');
   if (newNameInput) newNameInput.value = getNextDefaultGroupName();
 
@@ -1115,6 +1156,7 @@ async function onBatchImportSubmit(e) {
   e.preventDefault();
   const text = document.getElementById('batch-import-text').value.trim();
   const routingId = document.getElementById('batch-routing-select').value;
+  const targetList = document.querySelector('input[name="batch-target-list"]:checked')?.value || 'blacklist';
   const mode = document.querySelector('input[name="batch-group-choice"]:checked')?.value || 'new';
 
   let groupName = '';
@@ -1139,7 +1181,7 @@ async function onBatchImportSubmit(e) {
     const res = await fetch('/api/connections/batch-import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, groupName, groupId, routingId })
+      body: JSON.stringify({ text, groupName, groupId, routingId, targetList })
     });
 
     const data = await res.json();
@@ -1205,6 +1247,92 @@ async function toggleFavoriteConnection(connId, event) {
     conn.isFavorite = previousState;
     renderConnections();
     showToast('Не удалось обновить статус: ' + err.message, 'error');
+  }
+}
+
+// Toggle Target List (blacklist / whitelist) status for Connection
+async function toggleConnectionTargetList(connId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const conn = (appData.connections || []).find(c => c.id === connId);
+  if (!conn) return;
+
+  const previousTarget = conn.targetList || 'blacklist';
+  const newTarget = (previousTarget === 'whitelist') ? 'blacklist' : 'whitelist';
+  conn.targetList = newTarget;
+  renderConnections();
+
+  try {
+    const res = await fetch(`/api/connections/${encodeURIComponent(connId)}/target-list`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetList: newTarget })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка смены назначения подключения');
+
+    showToast(data.message || (newTarget === 'whitelist' ? 'Назначено для Белых списков' : 'Назначено для Черных списков'), 'success');
+  } catch (err) {
+    conn.targetList = previousTarget;
+    renderConnections();
+    showToast('Не удалось сменить назначение: ' + err.message, 'error');
+  }
+}
+
+// Toggle Default Routing for Blacklist or Whitelist
+async function toggleRoutingDefault(routingId, type) {
+  try {
+    const res = await fetch(`/api/routings/${encodeURIComponent(routingId)}/set-default`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка назначения маршрутизации по умолчанию');
+
+    if (!appData.settings) appData.settings = {};
+    if (type === 'blacklist') {
+      appData.settings.defaultRoutingBlacklist = routingId;
+    } else {
+      appData.settings.defaultRoutingWhitelist = routingId;
+    }
+
+    renderRoutings();
+    showToast(data.message, 'success');
+  } catch (err) {
+    showToast('Не удалось назначить маршрутизацию: ' + err.message, 'error');
+  }
+}
+
+// Handlers for switching target list radio in add/edit modals
+function onConnTargetListChange(mode) {
+  const targetList = (mode === 'add')
+    ? (document.querySelector('input[name="conn-target-list"]:checked')?.value || 'blacklist')
+    : (document.querySelector('input[name="edit-conn-target-list"]:checked')?.value || 'blacklist');
+
+  const defaultRouting = (targetList === 'whitelist')
+    ? (appData.settings?.defaultRoutingWhitelist || 'routing_all_vpn')
+    : (appData.settings?.defaultRoutingBlacklist || 'routing_except_ru');
+
+  const routingSelectId = (mode === 'add') ? 'conn-routing' : 'edit-conn-routing';
+  const sel = document.getElementById(routingSelectId);
+  if (sel && defaultRouting) {
+    sel.value = defaultRouting;
+  }
+}
+
+// Handler for switching target list radio in batch import modal
+function onBatchTargetListChange() {
+  const targetList = document.querySelector('input[name="batch-target-list"]:checked')?.value || 'blacklist';
+  const defaultRouting = (targetList === 'whitelist')
+    ? (appData.settings?.defaultRoutingWhitelist || 'routing_all_vpn')
+    : (appData.settings?.defaultRoutingBlacklist || 'routing_except_ru');
+
+  const sel = document.getElementById('batch-routing-select');
+  if (sel && defaultRouting) {
+    sel.value = defaultRouting;
   }
 }
 
@@ -1499,6 +1627,17 @@ function openAddRoutingModal() {
   document.getElementById('btn-save-routing').classList.remove('hidden');
   document.getElementById('btn-format-routing').classList.remove('hidden');
 
+  const chkBlacklist = document.getElementById('routing-default-blacklist');
+  const chkWhitelist = document.getElementById('routing-default-whitelist');
+  if (chkBlacklist) {
+    chkBlacklist.checked = false;
+    chkBlacklist.disabled = false;
+  }
+  if (chkWhitelist) {
+    chkWhitelist.checked = false;
+    chkWhitelist.disabled = false;
+  }
+
   const defaultRoutingTemplate = JSON.stringify({
     routing: {
       domainStrategy: "IPIfNonMatch",
@@ -1541,6 +1680,19 @@ function openRoutingModal(id) {
   descInput.value = routing.description || '';
   descInput.readOnly = Boolean(routing.isSystem);
 
+  const isDefBlacklist = (appData.settings?.defaultRoutingBlacklist === routing.id);
+  const isDefWhitelist = (appData.settings?.defaultRoutingWhitelist === routing.id);
+  const chkBlacklist = document.getElementById('routing-default-blacklist');
+  const chkWhitelist = document.getElementById('routing-default-whitelist');
+  if (chkBlacklist) {
+    chkBlacklist.checked = isDefBlacklist;
+    chkBlacklist.disabled = Boolean(routing.isSystem);
+  }
+  if (chkWhitelist) {
+    chkWhitelist.checked = isDefWhitelist;
+    chkWhitelist.disabled = Boolean(routing.isSystem);
+  }
+
   const saveBtn = document.getElementById('btn-save-routing');
   const formatBtn = document.getElementById('btn-format-routing');
   if (routing.isSystem) {
@@ -1562,6 +1714,8 @@ async function onRoutingSubmit(e) {
   const name = document.getElementById('routing-name').value.trim();
   const description = document.getElementById('routing-desc').value.trim();
   const content = document.getElementById('routing-content-json').value.trim();
+  const isDefaultBlacklist = Boolean(document.getElementById('routing-default-blacklist')?.checked);
+  const isDefaultWhitelist = Boolean(document.getElementById('routing-default-whitelist')?.checked);
 
   if (!name || !content) {
     showToast('Укажите название и содержимое routing.json', 'warning');
@@ -1579,7 +1733,7 @@ async function onRoutingSubmit(e) {
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, content })
+      body: JSON.stringify({ name, description, content, isDefaultBlacklist, isDefaultWhitelist })
     });
 
     const data = await res.json();

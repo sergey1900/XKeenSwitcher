@@ -1177,6 +1177,8 @@ function loadData() {
       statusCommand: 'xkeen -status',
       activeConnectionId: null,
       port: 3000,
+      defaultRoutingBlacklist: 'routing_except_ru',
+      defaultRoutingWhitelist: 'routing_all_vpn',
       failover: {
         enabled: false,
         primaryConnectionId: '',
@@ -1253,6 +1255,12 @@ function loadData() {
       if (data.settings.routingPath && !fs.existsSync(data.settings.routingPath) && fs.existsSync(detected.routingPath)) {
         data.settings.routingPath = detected.routingPath;
       }
+      if (!data.settings.defaultRoutingBlacklist) {
+        data.settings.defaultRoutingBlacklist = 'routing_except_ru';
+      }
+      if (!data.settings.defaultRoutingWhitelist) {
+        data.settings.defaultRoutingWhitelist = 'routing_all_vpn';
+      }
 
       // Load Groups
       if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
@@ -1327,6 +1335,7 @@ function loadData() {
             countryCode: c.countryCode || null,
             countryName: c.countryName || null,
             isFavorite: Boolean(c.isFavorite),
+            targetList: (c.targetList === 'whitelist') ? 'whitelist' : 'blacklist',
             lastPing: c.lastPing !== undefined ? c.lastPing : null,
             lastPingStatus: c.lastPingStatus || null,
             lastPingError: c.lastPingError || null,
@@ -2386,9 +2395,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       const data = loadData();
+      const targetList = (body.targetList === 'whitelist') ? 'whitelist' : 'blacklist';
 
       if (!routingId || !data.routings.some(r => r.id === routingId)) {
-        routingId = 'routing_all_vpn';
+        routingId = (targetList === 'whitelist')
+          ? (data.settings.defaultRoutingWhitelist || 'routing_all_vpn')
+          : (data.settings.defaultRoutingBlacklist || 'routing_except_ru');
+      }
+      if (!routingId || !data.routings.some(r => r.id === routingId)) {
+        routingId = data.routings[0] ? data.routings[0].id : 'routing_all_vpn';
       }
 
       const meta = extractOutboundMetadata(outboundContent);
@@ -2420,6 +2435,7 @@ const server = http.createServer(async (req, res) => {
         countryName: countryName,
         groupId: (body.groupId && data.groups.some(g => g.id === body.groupId)) ? body.groupId : 'group_default',
         isFavorite: Boolean(body.isFavorite),
+        targetList: targetList,
         lastPing: null,
         lastPingStatus: null,
         lastPingCheckedAt: null,
@@ -2439,11 +2455,21 @@ const server = http.createServer(async (req, res) => {
   if (urlParts === '/api/connections/batch-import' && req.method === 'POST') {
     try {
       const body = await parseJsonBody(req);
-      const { text, groupName, groupId, routingId } = body;
+      const { text, groupName, groupId, routingId, targetList: reqTargetList } = body;
       if (!text || typeof text !== 'string' || !text.trim()) {
         return sendJson(res, 400, { error: 'Вставьте хотя бы одну ссылку подключения' });
       }
       const data = loadData();
+
+      // Resolve targetList and default routing
+      const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : 'blacklist';
+      const defaultForTarget = (targetList === 'whitelist')
+        ? (data.settings.defaultRoutingWhitelist || 'routing_all_vpn')
+        : (data.settings.defaultRoutingBlacklist || 'routing_except_ru');
+
+      const effectiveRoutingId = (routingId && data.routings.some(r => r.id === routingId))
+        ? routingId
+        : defaultForTarget;
 
       // Resolve or create target group
       let targetGroupId = groupId;
@@ -2463,8 +2489,6 @@ const server = http.createServer(async (req, res) => {
       if (!targetGroupId || !data.groups.some(g => g.id === targetGroupId)) {
         targetGroupId = 'group_default';
       }
-
-      const effectiveRoutingId = (routingId && data.routings.some(r => r.id === routingId)) ? routingId : 'routing_all_vpn';
 
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
       if (lines.length === 0) {
@@ -2496,6 +2520,7 @@ const server = http.createServer(async (req, res) => {
             countryCode: null,
             countryName: null,
             isFavorite: false,
+            targetList: targetList,
             lastPing: null,
             lastPingStatus: null,
             lastPingCheckedAt: null,
@@ -2545,6 +2570,29 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { message: 'Статус избранного обновлен', isFavorite: conn.isFavorite, connection: conn });
   }
 
+  // POST /api/connections/:id/target-list - Toggle or set target list (blacklist/whitelist)
+  if (urlParts.startsWith('/api/connections/') && urlParts.endsWith('/target-list') && req.method === 'POST') {
+    const id = urlParts.replace('/api/connections/', '').replace('/target-list', '');
+    const data = loadData();
+    const conn = data.connections.find(c => c.id === id);
+    if (!conn) {
+      return sendJson(res, 404, { error: 'Подключение не найдено' });
+    }
+    const body = await parseJsonBody(req).catch(() => ({}));
+    if (body.targetList && (body.targetList === 'blacklist' || body.targetList === 'whitelist')) {
+      conn.targetList = body.targetList;
+    } else {
+      conn.targetList = (conn.targetList === 'whitelist') ? 'blacklist' : 'whitelist';
+    }
+    conn.updatedAt = new Date().toISOString();
+    saveData(data);
+    return sendJson(res, 200, {
+      message: `Назначение для "${conn.name}" изменено на ${conn.targetList === 'whitelist' ? 'Белые списки' : 'Черные списки'}`,
+      targetList: conn.targetList,
+      connection: conn
+    });
+  }
+
   // POST /api/connections/:id/move - Move connection to another group
   if (urlParts.startsWith('/api/connections/') && urlParts.endsWith('/move') && req.method === 'POST') {
     const id = urlParts.replace('/api/connections/', '').replace('/move', '');
@@ -2583,6 +2631,7 @@ const server = http.createServer(async (req, res) => {
         name: (newName || (conn.name + ' (Копия)')).trim(),
         groupId: destGroupId,
         isFavorite: false,
+        targetList: conn.targetList || 'blacklist',
         createdAt: new Date().toISOString()
       };
       delete clonedConn.updatedAt;
@@ -2595,7 +2644,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // PUT /api/connections/:id - Update connection
-  if (urlParts.startsWith('/api/connections/') && !urlParts.includes('/activate') && !urlParts.includes('/ping') && !urlParts.includes('/set-routing') && !urlParts.includes('/favorite') && !urlParts.includes('/move') && !urlParts.includes('/copy') && !urlParts.includes('/batch-import') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+  if (urlParts.startsWith('/api/connections/') && !urlParts.includes('/activate') && !urlParts.includes('/ping') && !urlParts.includes('/set-routing') && !urlParts.includes('/favorite') && !urlParts.includes('/target-list') && !urlParts.includes('/move') && !urlParts.includes('/copy') && !urlParts.includes('/batch-import') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
     const id = urlParts.replace('/api/connections/', '');
     const data = loadData();
     const conn = data.connections.find(c => c.id === id);
@@ -2606,7 +2655,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const body = await parseJsonBody(req);
-      const { name, description, groupId, routingId, outboundContent, isFavorite } = body;
+      const { name, description, groupId, routingId, outboundContent, isFavorite, targetList } = body;
 
       if (!name || !outboundContent) {
         return sendJson(res, 400, { error: 'Заполните название и содержимое outbound.json' });
@@ -2628,6 +2677,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (routingId && data.routings.some(r => r.id === routingId)) {
         conn.routingId = routingId;
+      }
+      if (typeof targetList !== 'undefined') {
+        conn.targetList = (targetList === 'whitelist') ? 'whitelist' : 'blacklist';
       }
       conn.outboundContent = outboundContent.trim();
       
@@ -3099,6 +3151,14 @@ const server = http.createServer(async (req, res) => {
       } else {
         data.routings.push(newRouting);
       }
+
+      if (body.isDefaultBlacklist) {
+        data.settings.defaultRoutingBlacklist = newRouting.id;
+      }
+      if (body.isDefaultWhitelist) {
+        data.settings.defaultRoutingWhitelist = newRouting.id;
+      }
+
       saveData(data);
 
       return sendJson(res, 201, { message: 'Конфигурация маршрутизации создана', routing: newRouting });
@@ -3107,8 +3167,36 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // POST /api/routings/:id/set-default - Set default routing for blacklist or whitelist
+  if (urlParts.startsWith('/api/routings/') && urlParts.endsWith('/set-default') && req.method === 'POST') {
+    const id = urlParts.replace('/api/routings/', '').replace('/set-default', '');
+    const data = loadData();
+    const routing = data.routings.find(r => r.id === id);
+    if (!routing) {
+      return sendJson(res, 404, { error: 'Конфигурация маршрутизации не найдена' });
+    }
+    const body = await parseJsonBody(req).catch(() => ({}));
+    const type = body.type; // 'blacklist' or 'whitelist'
+    if (type !== 'blacklist' && type !== 'whitelist') {
+      return sendJson(res, 400, { error: 'Укажите тип: blacklist или whitelist' });
+    }
+
+    if (type === 'blacklist') {
+      data.settings.defaultRoutingBlacklist = id;
+    } else {
+      data.settings.defaultRoutingWhitelist = id;
+    }
+
+    saveData(data);
+    return sendJson(res, 200, {
+      message: `Маршрутизация "${routing.name}" назначена по умолчанию для ${type === 'whitelist' ? 'Белых списков (БС)' : 'Черных списков (ЧС)'}`,
+      defaultRoutingBlacklist: data.settings.defaultRoutingBlacklist,
+      defaultRoutingWhitelist: data.settings.defaultRoutingWhitelist
+    });
+  }
+
   // PUT /api/routings/:id (forbidden for isSystem)
-  if (urlParts.startsWith('/api/routings/') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+  if (urlParts.startsWith('/api/routings/') && !urlParts.endsWith('/set-default') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
     const id = urlParts.replace('/api/routings/', '');
     const data = loadData();
     const routing = data.routings.find(r => r.id === id);
@@ -3139,6 +3227,21 @@ const server = http.createServer(async (req, res) => {
       routing.description = (description || '').trim();
       routing.content = content.trim();
       routing.updatedAt = new Date().toISOString();
+
+      if (typeof body.isDefaultBlacklist !== 'undefined') {
+        if (Boolean(body.isDefaultBlacklist)) {
+          data.settings.defaultRoutingBlacklist = id;
+        } else if (data.settings.defaultRoutingBlacklist === id) {
+          data.settings.defaultRoutingBlacklist = '';
+        }
+      }
+      if (typeof body.isDefaultWhitelist !== 'undefined') {
+        if (Boolean(body.isDefaultWhitelist)) {
+          data.settings.defaultRoutingWhitelist = id;
+        } else if (data.settings.defaultRoutingWhitelist === id) {
+          data.settings.defaultRoutingWhitelist = '';
+        }
+      }
 
       const activeConn = data.connections.find(c => c.id === data.settings.activeConnectionId);
       if (activeConn && activeConn.routingId === id) {
@@ -3184,6 +3287,13 @@ const server = http.createServer(async (req, res) => {
       if (conn.routingId === id) {
         conn.routingId = 'routing_all_vpn';
       }
+    }
+
+    if (data.settings.defaultRoutingBlacklist === id) {
+      data.settings.defaultRoutingBlacklist = 'routing_except_ru';
+    }
+    if (data.settings.defaultRoutingWhitelist === id) {
+      data.settings.defaultRoutingWhitelist = 'routing_all_vpn';
     }
 
     data.routings.splice(index, 1);
