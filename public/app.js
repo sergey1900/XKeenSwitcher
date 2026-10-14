@@ -443,30 +443,68 @@ function renderConnections() {
   groups.forEach(g => {
     const groupConns = list.filter(c => (c.groupId || 'group_default') === g.id);
     const isCollapsed = collapsedGroupIds.has(g.id);
+    const isSub = Boolean(g.isSubscription);
+
+    let subInfoHtml = '';
+    if (isSub) {
+      const targetText = (g.targetList === 'whitelist') ? 'БС' : 'ЧС';
+      const targetClass = (g.targetList === 'whitelist') ? 'target-whitelist' : 'target-blacklist';
+      let trafficText = '';
+      if (g.userInfo && (g.userInfo.download || g.userInfo.upload || g.userInfo.total)) {
+        const used = (g.userInfo.download || 0) + (g.userInfo.upload || 0);
+        const total = g.userInfo.total || 0;
+        trafficText = total > 0 ? `${formatBytes(used)} / ${formatBytes(total)}` : formatBytes(used);
+      }
+      let expireText = '';
+      if (g.userInfo && g.userInfo.expire) {
+        const expDate = new Date(g.userInfo.expire * 1000);
+        expireText = expDate.toLocaleDateString();
+      }
+
+      subInfoHtml = `
+        <span class="group-sub-badge" title="Группа создана из удаленной подписки">Подписка</span>
+        <span class="group-target-badge ${targetClass}" title="Назначение подписки: ${g.targetList === 'whitelist' ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${targetText}</span>
+        ${trafficText ? `<span class="group-traffic-badge" title="Трафик подписки">📊 ${escapeHtml(trafficText)}</span>` : ''}
+        ${expireText ? `<span class="group-expire-badge" title="Истекает">⏳ до ${escapeHtml(expireText)}</span>` : ''}
+      `;
+    }
 
     html += `
-      <div class="group-accordion-card ${isCollapsed ? 'collapsed' : ''}" id="group-card-${g.id}">
+      <div class="group-accordion-card ${isSub ? 'subscription-group-card' : ''} ${isCollapsed ? 'collapsed' : ''}" id="group-card-${g.id}">
         <div class="group-header" onclick="toggleGroupCollapse('${g.id}')">
           <div class="group-header-left">
             <span class="group-toggle-arrow ${isCollapsed ? '' : 'expanded'}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </span>
-            <span class="group-icon">📁</span>
+            <span class="group-icon">${isSub ? '🌐' : '📁'}</span>
             <span class="group-name">${escapeHtml(g.name)}</span>
+            ${subInfoHtml}
             <span class="group-count-badge">${groupConns.length}</span>
           </div>
           <div class="group-actions" onclick="event.stopPropagation()">
-            <button class="btn-group-action" onclick="openAddConnectionModal('${g.id}')" title="Добавить подключение в эту группу">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-            <button class="btn-group-action" onclick="openRenameGroupModal('${g.id}', '${escapeJs(g.name)}')" title="Переименовать группу">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-            </button>
-            ${g.id !== 'group_default' ? `
-              <button class="btn-group-action btn-group-delete" onclick="deleteGroup('${g.id}', '${escapeJs(g.name)}')" title="Удалить группу (подключения переместятся в 'Общие')">
+            ${isSub ? `
+              <button class="btn-group-action btn-sub-refresh" id="btn-refresh-sub-${g.id}" onclick="updateSubscription('${g.id}', event)" title="Обновить ссылки подписки из интернета">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              </button>
+              <button class="btn-group-action" onclick="openEditSubscriptionModal('${g.id}', event)" title="Настройки подписки и назначение (ЧС/БС)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
+              <button class="btn-group-action btn-group-delete" onclick="deleteSubscription('${g.id}', '${escapeJs(g.name)}', event)" title="Удалить подписку и все её подключения">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
-            ` : ''}
+            ` : `
+              <button class="btn-group-action" onclick="openAddConnectionModal('${g.id}')" title="Добавить подключение в эту группу">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              <button class="btn-group-action" onclick="openRenameGroupModal('${g.id}', '${escapeJs(g.name)}')" title="Переименовать группу">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              </button>
+              ${g.id !== 'group_default' ? `
+                <button class="btn-group-action btn-group-delete" onclick="deleteGroup('${g.id}', '${escapeJs(g.name)}')" title="Удалить группу (подключения переместятся в 'Общие')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              ` : ''}
+            `}
           </div>
         </div>
         <div class="group-body ${isCollapsed ? 'hidden' : ''}" id="group-body-${g.id}">
@@ -476,8 +514,12 @@ function renderConnections() {
             </div>
           ` : `
             <div class="group-empty-state">
-              <span>В этой группе пока нет подключений</span>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="openAddConnectionModal('${g.id}')">Добавить подключение</button>
+              <span>${isSub ? 'В этой подписке пока нет подключений' : 'В этой группе пока нет подключений'}</span>
+              ${isSub ? `
+                <button type="button" class="btn btn-secondary btn-sm" onclick="updateSubscription('${g.id}', event)">Загрузить ссылки</button>
+              ` : `
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openAddConnectionModal('${g.id}')">Добавить подключение</button>
+              `}
             </div>
           `}
         </div>
@@ -568,6 +610,9 @@ function populateRoutingSelects() {
 
   const batchSel = document.getElementById('batch-routing-select');
   if (batchSel) batchSel.innerHTML = optionsHtml;
+
+  const subSel = document.getElementById('sub-routing');
+  if (subSel) subSel.innerHTML = optionsHtml;
 }
 
 // Populate group select dropdowns in modals
@@ -1003,6 +1048,224 @@ async function deleteGroup(groupId, groupName) {
     if (!res.ok) throw new Error(data.error || 'Ошибка удаления группы');
 
     showToast(data.message || 'Группа удалена', 'success');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ==============================================================================
+// SUBSCRIPTION ACTIONS
+// ==============================================================================
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function openAddSubscriptionModal() {
+  const form = document.getElementById('form-subscription');
+  if (form) form.reset();
+
+  document.getElementById('sub-id').value = '';
+  document.getElementById('modal-sub-title').textContent = 'Добавить подписку';
+  document.getElementById('modal-sub-subtitle').textContent = 'Подписка будет создана как отдельная группа подключений';
+
+  const editOpts = document.getElementById('sub-edit-options');
+  if (editOpts) editOpts.classList.add('hidden');
+
+  const radioBlacklist = document.querySelector('input[name="sub-target-list"][value="blacklist"]');
+  if (radioBlacklist) radioBlacklist.checked = true;
+
+  populateRoutingSelects();
+  const subRoutingSel = document.getElementById('sub-routing');
+  if (subRoutingSel && appData.settings?.defaultRoutingBlacklist) {
+    subRoutingSel.value = appData.settings.defaultRoutingBlacklist;
+  }
+
+  const subNameInput = document.getElementById('sub-name');
+  if (subNameInput) {
+    const subCount = (appData.groups || []).filter(g => g.isSubscription).length;
+    subNameInput.value = `Подписка ${subCount + 1}`;
+  }
+
+  const submitText = document.getElementById('btn-submit-sub-text');
+  if (submitText) submitText.textContent = 'Загрузить подписку';
+
+  openModal('modal-subscription');
+}
+
+function openEditSubscriptionModal(groupId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const group = (appData.groups || []).find(g => g.id === groupId);
+  if (!group) return;
+
+  const form = document.getElementById('form-subscription');
+  if (form) form.reset();
+
+  document.getElementById('sub-id').value = group.id;
+  document.getElementById('modal-sub-title').textContent = 'Редактирование подписки';
+  document.getElementById('modal-sub-subtitle').textContent = 'Управление ссылкой, маршрутизацией и назначением (ЧС / БС)';
+
+  document.getElementById('sub-url').value = group.subscriptionUrl || '';
+  document.getElementById('sub-name').value = group.name || '';
+
+  const targetRadio = document.querySelector(`input[name="sub-target-list"][value="${group.targetList || 'blacklist'}"]`);
+  if (targetRadio) targetRadio.checked = true;
+
+  populateRoutingSelects();
+  const subRoutingSel = document.getElementById('sub-routing');
+  if (subRoutingSel) {
+    subRoutingSel.value = group.routingId || (group.targetList === 'whitelist' ? appData.settings?.defaultRoutingWhitelist : appData.settings?.defaultRoutingBlacklist);
+  }
+
+  const editOpts = document.getElementById('sub-edit-options');
+  if (editOpts) editOpts.classList.remove('hidden');
+
+  const syncNow = document.getElementById('sub-sync-now');
+  if (syncNow) syncNow.checked = false;
+
+  const applyRouting = document.getElementById('sub-apply-routing');
+  if (applyRouting) applyRouting.checked = true;
+
+  const submitText = document.getElementById('btn-submit-sub-text');
+  if (submitText) submitText.textContent = 'Сохранить изменения';
+
+  openModal('modal-subscription');
+}
+
+function onSubTargetListChange() {
+  const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'blacklist';
+  const defaultRouting = (targetList === 'whitelist')
+    ? (appData.settings?.defaultRoutingWhitelist || 'routing_all_vpn')
+    : (appData.settings?.defaultRoutingBlacklist || 'routing_except_ru');
+
+  const sel = document.getElementById('sub-routing');
+  if (sel && defaultRouting) {
+    sel.value = defaultRouting;
+  }
+}
+
+async function onSubscriptionSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('sub-id').value;
+  const url = document.getElementById('sub-url').value.trim();
+  const name = document.getElementById('sub-name').value.trim();
+  const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'blacklist';
+  const routingId = document.getElementById('sub-routing').value;
+  const submitBtn = document.getElementById('btn-submit-sub');
+  const submitText = document.getElementById('btn-submit-sub-text');
+
+  if (!url) {
+    showToast('Укажите URL подписки', 'warning');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = id ? 'Сохранение...' : 'Загрузка и парсинг...';
+
+  try {
+    if (id) {
+      // Edit existing subscription
+      const applyRoutingToConnections = document.getElementById('sub-apply-routing')?.checked || false;
+      const syncNow = document.getElementById('sub-sync-now')?.checked || false;
+
+      const res = await fetch(`/api/subscriptions/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, applyRoutingToConnections })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка сохранения параметров подписки');
+
+      if (syncNow) {
+        showToast('Обновление ссылок из подписки...', 'info');
+        const syncRes = await fetch(`/api/subscriptions/${encodeURIComponent(id)}/update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const syncData = await syncRes.json();
+        if (!syncRes.ok) throw new Error(syncData.error || 'Ошибка синхронизации ссылок');
+        showToast(syncData.message, 'success');
+      } else {
+        showToast(data.message || 'Подписка сохранена', 'success');
+      }
+
+      closeModal('modal-subscription');
+      await loadData();
+    } else {
+      // Create new subscription
+      const res = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, name, targetList, routingId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');
+
+      showToast(data.message || 'Подписка успешно добавлена', 'success');
+      if (data.errors && data.errors.length > 0) {
+        console.warn('Предупреждения при загрузке подписки:', data.errors);
+      }
+      closeModal('modal-subscription');
+      await loadData();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitText) submitText.textContent = id ? 'Сохранить изменения' : 'Загрузить подписку';
+  }
+}
+
+async function updateSubscription(groupId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const btn = document.getElementById(`btn-refresh-sub-${groupId}`);
+  if (btn) btn.classList.add('spinning');
+
+  try {
+    showToast('Загрузка свежих ссылок из подписки...', 'info');
+    const res = await fetch(`/api/subscriptions/${encodeURIComponent(groupId)}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка обновления подписки');
+
+    showToast(data.message || 'Подписка успешно обновлена', 'success');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+  }
+}
+
+async function deleteSubscription(groupId, subName, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const confirmed = confirm(`Удалить подписку "${subName}"?\nВсе входящие в неё подключения будут безвозвратно удалены.`);
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/subscriptions/${encodeURIComponent(groupId)}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка удаления подписки');
+
+    showToast(data.message || 'Подписка удалена', 'success');
     await loadData();
   } catch (err) {
     showToast(err.message, 'error');

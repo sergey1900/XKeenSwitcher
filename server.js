@@ -440,6 +440,104 @@ function extractOutboundMetadata(outboundContent) {
   return { serverAddress, serverPort, protocol, network, security, sni };
 }
 
+// Parse subscription-userinfo header into object
+function parseSubscriptionUserInfo(headerStr) {
+  if (!headerStr) return null;
+  const info = {};
+  const items = String(headerStr).split(';');
+  for (const item of items) {
+    const [k, v] = item.split('=').map(s => s.trim().toLowerCase());
+    if (k && v) {
+      const num = parseInt(v, 10);
+      if (!isNaN(num)) {
+        info[k] = num;
+      }
+    }
+  }
+  return Object.keys(info).length > 0 ? info : null;
+}
+
+// Helper: Fetch remote subscription contents, handles redirects, Base64 decoding, user-agent
+async function fetchSubscriptionContent(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') {
+    throw new Error('Укажите URL подписки');
+  }
+  const cleanUrl = urlStr.trim();
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    throw new Error('URL подписки должен начинаться с http:// или https://');
+  }
+
+  let rawBody = '';
+  let userInfo = null;
+  let fetchSucceeded = false;
+
+  // Try native fetch first
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const res = await fetch(cleanUrl, {
+      headers: {
+        'User-Agent': 'v2rayN/6.23 clash/1.0 v2ray/5.0'
+      },
+      redirect: 'follow',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const userInfoHeader = res.headers.get('subscription-userinfo');
+      if (userInfoHeader) {
+        userInfo = parseSubscriptionUserInfo(userInfoHeader);
+      }
+      rawBody = await res.text();
+      fetchSucceeded = true;
+    }
+  } catch (e) {
+    // Fall back to curl on router
+  }
+
+  if (!fetchSucceeded) {
+    const curlEscaped = `'${cleanUrl.replace(/'/g, "'\\''")}'`;
+    const curlRes = await runShellCommand(`curl -sSL -k -A "v2rayN/6.23" -D - --max-time 15 ${curlEscaped}`, 18000);
+    if (!curlRes.success && !curlRes.stdout) {
+      throw new Error('Не удалось загрузить подписку по указанному URL');
+    }
+    const stdout = curlRes.stdout || '';
+    const parts = stdout.split(/\r?\n\r?\n/);
+    if (parts.length > 1) {
+      rawBody = parts[parts.length - 1];
+      const headersText = parts.slice(0, parts.length - 1).join('\n');
+      const match = headersText.match(/subscription-userinfo:\s*([^\r\n]+)/i);
+      if (match) {
+        userInfo = parseSubscriptionUserInfo(match[1]);
+      }
+    } else {
+      rawBody = stdout;
+    }
+  }
+
+  if (!rawBody || !rawBody.trim()) {
+    throw new Error('Ответ сервера подписки пуст');
+  }
+
+  let textContent = rawBody.trim();
+  // Decode Base64 if needed
+  if (!textContent.includes('://')) {
+    try {
+      const decoded = Buffer.from(textContent, 'base64').toString('utf8');
+      if (decoded.includes('://')) {
+        textContent = decoded;
+      }
+    } catch (e) {}
+  }
+
+  const lines = textContent.split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
+
+  return { lines, userInfo };
+}
+
 // Helper: Measure TCP handshake latency (ping in ms) to host:port
 function measureTcpLatency(host, port, timeout = 3500) {
   return new Promise((resolve) => {
@@ -3108,6 +3206,301 @@ const server = http.createServer(async (req, res) => {
       message: `Группа удалена. Перемещено подключений в "Общие": ${movedCount}`,
       groups: data.groups,
       movedCount
+    });
+  }
+
+  // --- SUBSCRIPTIONS ROUTES ---
+
+  // POST /api/subscriptions - Add a new subscription
+  if (urlParts === '/api/subscriptions' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { url, name, targetList: reqTargetList, routingId } = body;
+
+      if (!url || typeof url !== 'string' || !url.trim()) {
+        return sendJson(res, 400, { error: 'Укажите URL подписки' });
+      }
+
+      const data = loadData();
+      const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : 'blacklist';
+      const defaultRouting = (targetList === 'whitelist')
+        ? (data.settings.defaultRoutingWhitelist || 'routing_all_vpn')
+        : (data.settings.defaultRoutingBlacklist || 'routing_except_ru');
+
+      const effectiveRoutingId = (routingId && data.routings.some(r => r.id === routingId))
+        ? routingId
+        : defaultRouting;
+
+      const subName = (name && name.trim()) ? name.trim() : `Подписка ${data.groups.filter(g => g.isSubscription).length + 1}`;
+
+      const { lines, userInfo } = await fetchSubscriptionContent(url.trim());
+
+      const subGroup = {
+        id: 'group_sub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        name: subName,
+        isSubscription: true,
+        subscriptionUrl: url.trim(),
+        targetList: targetList,
+        routingId: effectiveRoutingId,
+        lastUpdated: new Date().toISOString(),
+        userInfo: userInfo || null,
+        collapsed: false,
+        createdAt: new Date().toISOString()
+      };
+
+      data.groups.push(subGroup);
+
+      let importedCount = 0;
+      const errors = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        try {
+          const parsed = parseVlessUrl(line);
+          const meta = extractOutboundMetadata(parsed.outboundJson);
+
+          const newConn = {
+            id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+            name: parsed.name,
+            description: '',
+            groupId: subGroup.id,
+            routingId: effectiveRoutingId,
+            outboundContent: parsed.outboundJson,
+            serverAddress: parsed.serverAddress || meta.serverAddress,
+            serverPort: parsed.serverPort || meta.serverPort,
+            protocol: parsed.protocol || meta.protocol,
+            network: parsed.network || meta.network,
+            security: parsed.security || meta.security,
+            sni: parsed.sni || meta.sni,
+            countryCode: null,
+            countryName: null,
+            isFavorite: false,
+            targetList: targetList,
+            lastPing: null,
+            lastPingStatus: null,
+            lastPingCheckedAt: null,
+            createdAt: new Date().toISOString()
+          };
+
+          data.connections.push(newConn);
+          importedCount++;
+        } catch (err) {
+          errors.push(`Строка ${i + 1}: ${err.message}`);
+        }
+      }
+
+      saveData(data);
+      setTimeout(sweepGeoIpForConnections, 1000);
+
+      return sendJson(res, 201, {
+        message: `Подписка "${subName}" успешно добавлена. Загружено подключений: ${importedCount}`,
+        group: subGroup,
+        count: importedCount,
+        errors: errors.length > 0 ? errors : undefined
+      });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка загрузки подписки' });
+    }
+  }
+
+  // POST /api/subscriptions/:id/update - Refresh / sync subscription
+  if (urlParts.startsWith('/api/subscriptions/') && urlParts.endsWith('/update') && req.method === 'POST') {
+    const id = urlParts.replace('/api/subscriptions/', '').replace('/update', '');
+    try {
+      const data = loadData();
+      const group = data.groups.find(g => g.id === id);
+      if (!group || !group.isSubscription) {
+        return sendJson(res, 404, { error: 'Подписка не найдена' });
+      }
+
+      if (!group.subscriptionUrl) {
+        return sendJson(res, 400, { error: 'У подписки не указан URL' });
+      }
+
+      const { lines, userInfo } = await fetchSubscriptionContent(group.subscriptionUrl);
+      if (userInfo) {
+        group.userInfo = userInfo;
+      }
+      group.lastUpdated = new Date().toISOString();
+
+      const targetList = group.targetList || 'blacklist';
+      const effectiveRoutingId = group.routingId || (targetList === 'whitelist' ? data.settings.defaultRoutingWhitelist : data.settings.defaultRoutingBlacklist);
+
+      const existingConns = data.connections.filter(c => c.groupId === id);
+      const matchedIds = new Set();
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        try {
+          const parsed = parseVlessUrl(line);
+          const meta = extractOutboundMetadata(parsed.outboundJson);
+          const host = parsed.serverAddress || meta.serverAddress;
+          const port = parsed.serverPort || meta.serverPort;
+
+          let found = existingConns.find(c =>
+            !matchedIds.has(c.id) &&
+            c.serverAddress === host &&
+            String(c.serverPort) === String(port) &&
+            (c.sni === (parsed.sni || meta.sni) || c.name === parsed.name)
+          );
+
+          if (found) {
+            matchedIds.add(found.id);
+            found.name = parsed.name;
+            found.outboundContent = parsed.outboundJson;
+            found.serverAddress = host;
+            found.serverPort = port;
+            found.protocol = parsed.protocol || meta.protocol;
+            found.network = parsed.network || meta.network;
+            found.security = parsed.security || meta.security;
+            found.sni = parsed.sni || meta.sni;
+            found.targetList = targetList;
+            found.updatedAt = new Date().toISOString();
+            updatedCount++;
+          } else {
+            const newConn = {
+              id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+              name: parsed.name,
+              description: '',
+              groupId: id,
+              routingId: effectiveRoutingId,
+              outboundContent: parsed.outboundJson,
+              serverAddress: host,
+              serverPort: port,
+              protocol: parsed.protocol || meta.protocol,
+              network: parsed.network || meta.network,
+              security: parsed.security || meta.security,
+              sni: parsed.sni || meta.sni,
+              countryCode: null,
+              countryName: null,
+              isFavorite: false,
+              targetList: targetList,
+              lastPing: null,
+              lastPingStatus: null,
+              lastPingCheckedAt: null,
+              createdAt: new Date().toISOString()
+            };
+            data.connections.push(newConn);
+            matchedIds.add(newConn.id);
+            addedCount++;
+          }
+        } catch (err) {
+          // ignore single line parse error
+        }
+      }
+
+      let removedCount = 0;
+      data.connections = data.connections.filter(c => {
+        if (c.groupId === id && !matchedIds.has(c.id)) {
+          if (c.id === data.settings.activeConnectionId) {
+            return true;
+          }
+          removedCount++;
+          return false;
+        }
+        return true;
+      });
+
+      const activeConn = data.connections.find(c => c.id === data.settings.activeConnectionId);
+      if (activeConn && activeConn.groupId === id) {
+        fs.writeFileSync(data.settings.outboundPath, activeConn.outboundContent, 'utf8');
+      }
+
+      saveData(data);
+      setTimeout(sweepGeoIpForConnections, 1000);
+
+      return sendJson(res, 200, {
+        message: `Подписка "${group.name}" обновлена: +${addedCount} добавлено, ${updatedCount} обновлено, -${removedCount} удалено`,
+        group,
+        total: data.connections.filter(c => c.groupId === id).length,
+        added: addedCount,
+        updated: updatedCount,
+        removed: removedCount
+      });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка обновления подписки' });
+    }
+  }
+
+  // PUT /api/subscriptions/:id - Update subscription settings (name, URL, targetList, routingId)
+  if (urlParts.startsWith('/api/subscriptions/') && !urlParts.endsWith('/update') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+    const id = urlParts.replace('/api/subscriptions/', '');
+    try {
+      const data = loadData();
+      const group = data.groups.find(g => g.id === id);
+      if (!group || !group.isSubscription) {
+        return sendJson(res, 404, { error: 'Подписка не найдена' });
+      }
+
+      const body = await parseJsonBody(req);
+      if (body.name && body.name.trim()) {
+        group.name = body.name.trim();
+      }
+      if (body.subscriptionUrl && body.subscriptionUrl.trim()) {
+        group.subscriptionUrl = body.subscriptionUrl.trim();
+      }
+      if (body.targetList && (body.targetList === 'blacklist' || body.targetList === 'whitelist')) {
+        group.targetList = body.targetList;
+        // Update targetList on ALL connections in this subscription group
+        for (const conn of data.connections) {
+          if (conn.groupId === id) {
+            conn.targetList = group.targetList;
+          }
+        }
+      }
+      if (body.routingId && data.routings.some(r => r.id === body.routingId)) {
+        group.routingId = body.routingId;
+        if (body.applyRoutingToConnections) {
+          for (const conn of data.connections) {
+            if (conn.groupId === id) {
+              conn.routingId = group.routingId;
+            }
+          }
+        }
+      }
+
+      group.updatedAt = new Date().toISOString();
+      saveData(data);
+
+      return sendJson(res, 200, {
+        message: `Параметры подписки "${group.name}" сохранены`,
+        group
+      });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка обновления подписки' });
+    }
+  }
+
+  // DELETE /api/subscriptions/:id - Delete subscription group and all its connections
+  if (urlParts.startsWith('/api/subscriptions/') && req.method === 'DELETE') {
+    const id = urlParts.replace('/api/subscriptions/', '');
+    const data = loadData();
+    const groupIndex = data.groups.findIndex(g => g.id === id && g.isSubscription);
+    if (groupIndex === -1) {
+      return sendJson(res, 404, { error: 'Подписка не найдена' });
+    }
+
+    const subName = data.groups[groupIndex].name;
+    let deletedConnsCount = 0;
+    data.connections = data.connections.filter(c => {
+      if (c.groupId === id) {
+        if (c.id === data.settings.activeConnectionId) {
+          data.settings.activeConnectionId = null;
+        }
+        deletedConnsCount++;
+        return false;
+      }
+      return true;
+    });
+
+    data.groups.splice(groupIndex, 1);
+    saveData(data);
+
+    return sendJson(res, 200, {
+      message: `Подписка "${subName}" и ${deletedConnsCount} подключений удалены`,
+      groups: data.groups
     });
   }
 

@@ -1855,6 +1855,64 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+.subscription-group-card {
+  border-left: 3px solid rgba(99, 102, 241, 0.7) !important;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.group-sub-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.18);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  margin-left: 4px;
+}
+
+.group-target-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 2px;
+}
+
+.group-target-badge.cs {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.group-target-badge.bs {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.group-traffic-badge,
+.group-expire-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-left: 4px;
+}
+
+.btn-sub-refresh.spinning svg {
+  animation: spin 1s linear infinite;
+}
+
 .group-body {
   padding: 18px;
 }
