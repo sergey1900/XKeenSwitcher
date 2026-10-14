@@ -1594,6 +1594,37 @@ function findXrayPath() {
   return null;
 }
 
+// Helper: Locate Mihomo binary on router / host system
+let cachedMihomoPath = undefined;
+function findMihomoPath() {
+  if (cachedMihomoPath !== undefined) return cachedMihomoPath;
+  const candidates = [
+    '/opt/sbin/mihomo',
+    '/opt/bin/mihomo',
+    '/usr/sbin/mihomo',
+    '/usr/bin/mihomo',
+    '/usr/local/bin/mihomo'
+  ];
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) {
+        cachedMihomoPath = c;
+        return c;
+      }
+    } catch (e) {}
+  }
+  try {
+    const whichRes = execSync('which mihomo 2>/dev/null', { timeout: 1000 }).toString().trim();
+    if (whichRes && fs.existsSync(whichRes)) {
+      cachedMihomoPath = whichRes;
+      return whichRes;
+    }
+  } catch (e) {}
+
+  cachedMihomoPath = null;
+  return null;
+}
+
 // Helper: Dynamically find an available TCP port on localhost for test instance
 function getAvailableTestPort() {
   return new Promise((resolve, reject) => {
@@ -1782,6 +1813,247 @@ async function measureProxyHealth(outboundContent, options = {}) {
   });
 }
 
+// Helper: Direct HTTP proxy request test to canary URL
+function testHttpProxyDirect(proxyHost, proxyPort, canaryUrl, timeout = 3500) {
+  return new Promise((resolve) => {
+    let canaryParsed;
+    try {
+      canaryParsed = new URL(canaryUrl);
+    } catch (e) {
+      return resolve({ ok: false, error: 'Некорректный Canary URL' });
+    }
+
+    const t0 = Date.now();
+    const req = http.request(
+      {
+        host: proxyHost,
+        port: proxyPort,
+        method: 'GET',
+        path: canaryUrl,
+        headers: { Host: canaryParsed.host },
+        timeout: timeout
+      },
+      (res) => {
+        const latency = Date.now() - t0;
+        res.resume();
+        if (res.statusCode >= 200 && res.statusCode < 400) {
+          resolve({ ok: true, latency, statusCode: res.statusCode });
+        } else {
+          resolve({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
+        }
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, error: 'Таймаут сквозного ответа через туннель' });
+    });
+
+    req.on('error', (err) => {
+      resolve({ ok: false, error: 'Сбой соединения через прокси: ' + (err.message || 'ошибка сети') });
+    });
+
+    req.end();
+  });
+}
+
+// Helper: Real end-to-end tunnel test for AmneziaWG / WireGuard via Mihomo
+async function testAmneziaWgWithRealTunnel(conn, options = {}) {
+  const mihomoBin = findMihomoPath();
+  if (!mihomoBin) {
+    return { ok: false, error: 'Бинарный файл mihomo не найден' };
+  }
+
+  const timeout = options.timeout || 4000;
+  const canaryUrl = options.canaryUrl || 'http://cp.cloudflare.com/generate_204';
+
+  const data = loadData();
+  const isActive = (data.settings && data.settings.activeConnectionId === conn.id);
+  const coreInfo = detectActiveProxyCore();
+
+  // If this connection is currently active and Mihomo is running, test via its active mixed-port (7890)
+  if (isActive && coreInfo.activeCore === 'mihomo') {
+    try {
+      const activeRes = await testHttpProxyDirect('127.0.0.1', 7890, canaryUrl, timeout);
+      if (activeRes.ok) return activeRes;
+    } catch (e) {}
+  }
+
+  // Otherwise spawn an isolated test Mihomo instance on an ephemeral port
+  return runWithProxyConcurrency(async () => {
+    let testPort;
+    try {
+      testPort = await getAvailableTestPort();
+    } catch (err) {
+      return { ok: false, error: 'Не удалось выделить порт: ' + err.message };
+    }
+
+    const testConfigFile = path.join(
+      os.tmpdir(),
+      `mihomo-health-${Date.now()}-${Math.floor(Math.random() * 100000)}.yaml`
+    );
+
+    const am = conn.amneziaConfig || {};
+    let host = conn.serverAddress || '';
+    let port = conn.serverPort || 51820;
+    let clientIp = (am.client_ip || '').split('/')[0];
+    let clientPrivKey = am.client_priv_key || '';
+    let serverPubKey = am.server_pub_key || '';
+    let psk = am.psk || '';
+
+    if ((!clientPrivKey || !serverPubKey || !clientIp) && conn.outboundContent) {
+      try {
+        const clean = stripJsonComments(conn.outboundContent);
+        const parsed = JSON.parse(clean);
+        const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+        const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
+        if (ob && ob.settings) {
+          if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
+          if (!clientIp && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
+            clientIp = String(ob.settings.address[0]).split('/')[0];
+          }
+          if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
+            const peer = ob.settings.peers[0];
+            if (!serverPubKey && peer.publicKey) serverPubKey = peer.publicKey;
+            if (!psk && (peer.preSharedKey || peer.presharedKey)) psk = peer.preSharedKey || peer.presharedKey;
+            if ((!host || !port) && peer.endpoint) {
+              const ep = String(peer.endpoint).trim();
+              const lastColon = ep.lastIndexOf(':');
+              if (lastColon !== -1) {
+                if (!host) host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
+                if (!port) port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!clientIp) clientIp = '10.8.1.2';
+
+    const awgOptionLines = [];
+    awgOptionLines.push(`      version: ${am.version || 2}`);
+    if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
+    if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
+    if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
+    if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
+    if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
+    if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
+    if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
+    if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
+    if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
+    if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
+    if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+    if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+
+    const yaml = `port: ${testPort}
+mode: direct
+log-level: silent
+proxies:
+  - name: test-proxy
+    type: wireguard
+    server: ${host}
+    port: ${port}
+    ip: ${clientIp}
+    public-key: ${JSON.stringify(serverPubKey)}
+    private-key: ${JSON.stringify(clientPrivKey)}
+${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
+    remote-dns-resolve: true
+    dns:
+      - 1.1.1.1
+    amnezia-wg-option:
+${awgOptionLines.join('\n')}
+rules:
+  - MATCH,test-proxy
+`;
+
+    try {
+      fs.writeFileSync(testConfigFile, yaml);
+    } catch (err) {
+      return { ok: false, error: 'Ошибка записи тестового конфига: ' + err.message };
+    }
+
+    let child;
+    try {
+      child = spawn(mihomoBin, ['-d', '/opt/etc/mihomo', '-f', testConfigFile], {
+        stdio: ['ignore', 'ignore', 'ignore']
+      });
+    } catch (err) {
+      try { fs.unlinkSync(testConfigFile); } catch (e) {}
+      return { ok: false, error: 'Ошибка запуска Mihomo: ' + err.message };
+    }
+
+    const cleanup = () => {
+      try { child.kill('SIGKILL'); } catch (e) {}
+      try { fs.unlinkSync(testConfigFile); } catch (e) {}
+    };
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (res) => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve(res);
+        }
+      };
+
+      child.on('error', (err) => {
+        finish({ ok: false, error: 'Сбой процесса Mihomo: ' + err.message });
+      });
+
+      child.on('exit', (code) => {
+        if (!settled && code !== 0 && code !== null) {
+          finish({ ok: false, error: `Mihomo завершился с кодом ошибки ${code}` });
+        }
+      });
+
+      // 400ms for Mihomo initialization
+      setTimeout(() => {
+        if (settled) return;
+        let canaryParsed;
+        try {
+          canaryParsed = new URL(canaryUrl);
+        } catch (e) {
+          return finish({ ok: false, error: 'Некорректный Canary URL' });
+        }
+
+        const t0 = Date.now();
+        const req = http.request(
+          {
+            host: '127.0.0.1',
+            port: testPort,
+            method: 'GET',
+            path: canaryUrl,
+            headers: { Host: canaryParsed.host },
+            timeout: timeout
+          },
+          (res) => {
+            const latency = Date.now() - t0;
+            res.resume();
+            if (res.statusCode >= 200 && res.statusCode < 400) {
+              finish({ ok: true, latency, statusCode: res.statusCode });
+            } else {
+              finish({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
+            }
+          }
+        );
+
+        req.on('timeout', () => {
+          req.destroy();
+          finish({ ok: false, error: 'Таймаут сквозного ответа через туннель AWG' });
+        });
+
+        req.on('error', (err) => {
+          finish({ ok: false, error: 'Сбой соединения через прокси AWG: ' + (err.message || 'ошибка сети') });
+        });
+
+        req.end();
+      }, 400);
+    });
+  });
+}
+
 // Helper: Measure ICMP latency (ping)
 function measureIcmpLatency(host, timeout = 3000) {
   return new Promise((resolve) => {
@@ -1813,17 +2085,28 @@ async function measureConnectionHealth(conn, options = {}) {
   }
 
   const timeout = options.timeout || 3500;
-  const isUdp = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || conn.network === 'udp';
+  const isUdp = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || Boolean(conn.amneziaConfig);
 
+  // AmneziaWG / WireGuard: Real proxy tunnel check via Mihomo
   if (isUdp && conn.serverAddress) {
-    const icmpRes = await measureIcmpLatency(conn.serverAddress, Math.min(timeout, 3000));
-    if (icmpRes.ok) {
+    const icmpRes = await measureIcmpLatency(conn.serverAddress, Math.min(timeout, 2000));
+    const realTunnelRes = await testAmneziaWgWithRealTunnel(conn, { timeout, canaryUrl: options.canaryUrl });
+    if (realTunnelRes.ok) {
       return {
         ok: true,
-        latency: icmpRes.latency,
-        tcpLatency: icmpRes.latency,
+        latency: realTunnelRes.latency,
+        tcpLatency: icmpRes.ok ? icmpRes.latency : null,
         status: 'ok',
-        checkType: 'icmp'
+        checkType: 'proxy'
+      };
+    } else {
+      return {
+        ok: false,
+        latency: null,
+        tcpLatency: icmpRes.ok ? icmpRes.latency : null,
+        status: 'unreachable',
+        checkType: 'proxy_failed',
+        error: realTunnelRes.error || 'Сквозной туннель AWG не отвечает'
       };
     }
   }
