@@ -2388,6 +2388,11 @@ async function pingFavoritesConnections(event) {
   }
 
   isPingingFavorites = true;
+  for (const conn of favList) {
+    conn.lastPing = null;
+    conn.lastPingStatus = null;
+    conn.lastPingError = null;
+  }
   renderConnections();
   showToast(`Проверка избранных подключений (${favList.length})...`, 'info');
 
@@ -2448,6 +2453,11 @@ async function pingGroupConnections(groupId, event) {
   }
 
   pingingGroupIds.add(groupId);
+  for (const conn of groupConns) {
+    conn.lastPing = null;
+    conn.lastPingStatus = null;
+    conn.lastPingError = null;
+  }
   renderConnections();
   showToast(`Проверка подключений группы (${groupConns.length})...`, 'info');
 
@@ -3343,6 +3353,13 @@ async function checkAllPing() {
 
   isPingingAll = true;
   if (btn) btn.disabled = true;
+
+  for (const conn of list) {
+    conn.lastPing = null;
+    conn.lastPingStatus = null;
+    conn.lastPingError = null;
+  }
+  renderConnections();
 
   try {
     for (let i = 0; i < list.length; i++) {
