@@ -846,20 +846,35 @@ function parseShadowsocksUrl(cleanStr) {
 
 // Parse WireGuard / AmneziaWG INI config text
 function parseWireguardConfig(confText) {
-  const lines = confText.split(/\r?\n/).map(l => l.trim());
+  let normalizedText = confText || '';
+  if (!normalizedText.includes('\n') && (normalizedText.includes('[Interface]') || normalizedText.includes('[Peer]'))) {
+    normalizedText = normalizedText
+      .replace(/\s*(\[(?:Interface|Peer)\])\s*/gi, '\n$1\n')
+      .replace(/\s*(PrivateKey|PublicKey|Address|DNS|MTU|Endpoint|AllowedIPs|PresharedKey|pre-shared-key|psk|Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4)\s*=/gi, '\n$1=');
+  }
+
+  const lines = normalizedText.split(/\r?\n/).map(l => l.trim());
   let currentSection = '';
   const iface = {};
   const peer = {};
+  let commentName = '';
 
   for (const line of lines) {
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    if (!line) continue;
+    if (line.startsWith('#') || line.startsWith(';')) {
+      const c = line.replace(/^[#;]\s*/, '').trim();
+      if (c && !commentName && !c.toLowerCase().startsWith('interface') && !c.toLowerCase().startsWith('peer') && !c.includes('=')) {
+        commentName = c;
+      }
+      continue;
+    }
     if (line.startsWith('[') && line.endsWith(']')) {
       currentSection = line.slice(1, -1).trim().toLowerCase();
       continue;
     }
     const eqIdx = line.indexOf('=');
     if (eqIdx !== -1) {
-      const k = line.substring(0, eqIdx).trim().toLowerCase();
+      const k = line.substring(0, eqIdx).trim().toLowerCase().replace(/-/g, '_');
       const v = line.substring(eqIdx + 1).trim();
       if (currentSection === 'interface') iface[k] = v;
       else if (currentSection === 'peer') peer[k] = v;
@@ -886,7 +901,7 @@ function parseWireguardConfig(confText) {
   }
 
   const isAwg = Boolean(iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.h1);
-  const name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
+  const name = commentName || `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
   const cleanAddress = address.split(',')[0].trim();
   const psk = peer.presharedkey || peer.preshared_key || peer.psk || '';
 
@@ -1293,24 +1308,30 @@ function generateMihomoConfig(conn, routing) {
 
     if (!clientIp) clientIp = '10.8.1.2';
 
-    const awgOptionLines = [];
-    awgOptionLines.push(`      version: ${am.version || 2}`);
-    if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
-    if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
-    if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
-    if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
-    if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
-    if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
-    if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
-    if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
-    if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
-    if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
-    if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
-    if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
-    if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
-    if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
-    if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
-    if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
+    const isAwg = conn.protocol === 'amneziawg' || Boolean(am.jc !== undefined || am.s1 !== undefined || am.h1 || am.jmin !== undefined || am.jmax !== undefined);
+
+    let awgOptionStr = '';
+    if (isAwg) {
+      const awgOptionLines = [];
+      awgOptionLines.push(`      version: ${am.version || 2}`);
+      if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
+      if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
+      if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
+      if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
+      if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
+      if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
+      if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
+      if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
+      if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
+      if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
+      if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+      if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+      if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
+      if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
+      if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
+      if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
+      awgOptionStr = `\n    amnezia-wg-option:\n${awgOptionLines.join('\n')}`;
+    }
 
     proxyYamlEntry = `  - name: ${JSON.stringify(connName)}
     type: wireguard
@@ -1323,9 +1344,7 @@ ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
     remote-dns-resolve: true
     dns:
       - 1.1.1.1
-      - 1.0.0.1
-    amnezia-wg-option:
-${awgOptionLines.join('\n')}`;
+      - 1.0.0.1${awgOptionStr}`;
   }
 
   let rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
@@ -2043,20 +2062,26 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
 
     if (!clientIp) clientIp = '10.8.1.2';
 
-    const awgOptionLines = [];
-    awgOptionLines.push(`      version: ${am.version || 2}`);
-    if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
-    if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
-    if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
-    if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
-    if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
-    if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
-    if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
-    if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
-    if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
-    if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
-    if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
-    if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+    const isAwg = conn.protocol === 'amneziawg' || Boolean(am.jc !== undefined || am.s1 !== undefined || am.h1 || am.jmin !== undefined || am.jmax !== undefined);
+
+    let awgOptionStr = '';
+    if (isAwg) {
+      const awgOptionLines = [];
+      awgOptionLines.push(`      version: ${am.version || 2}`);
+      if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
+      if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
+      if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
+      if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
+      if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
+      if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
+      if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
+      if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
+      if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
+      if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
+      if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+      if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+      awgOptionStr = `\n    amnezia-wg-option:\n${awgOptionLines.join('\n')}`;
+    }
 
     const yaml = `port: ${testPort}
 mode: direct
@@ -2072,9 +2097,7 @@ proxies:
 ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
     remote-dns-resolve: true
     dns:
-      - 1.1.1.1
-    amnezia-wg-option:
-${awgOptionLines.join('\n')}
+      - 1.1.1.1${awgOptionStr}
 rules:
   - MATCH,test-proxy
 `;

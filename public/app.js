@@ -47,7 +47,13 @@ document.addEventListener('DOMContentLoaded', () => {
     urlInput.addEventListener('input', () => {
       parseVlessUrlInput(false);
     });
-    urlInput.addEventListener('paste', () => {
+    urlInput.addEventListener('paste', (e) => {
+      const pasted = (e.clipboardData || window.clipboardData)?.getData('text');
+      if (pasted && (pasted.includes('[Interface]') || pasted.includes('[Peer]'))) {
+        e.preventDefault();
+        tryParseAndApplyWireguardText(pasted);
+        return;
+      }
       setTimeout(() => parseVlessUrlInput(false), 50);
     });
   }
@@ -1619,20 +1625,35 @@ function parseShadowsocksClient(rawUrl) {
 
 // WireGuard / AmneziaWG Config Text Parser
 function parseWireguardConfigClient(confText) {
-  const lines = confText.split(/\r?\n/).map(l => l.trim());
+  let normalizedText = confText || '';
+  if (!normalizedText.includes('\n') && (normalizedText.includes('[Interface]') || normalizedText.includes('[Peer]'))) {
+    normalizedText = normalizedText
+      .replace(/\s*(\[(?:Interface|Peer)\])\s*/gi, '\n$1\n')
+      .replace(/\s*(PrivateKey|PublicKey|Address|DNS|MTU|Endpoint|AllowedIPs|PresharedKey|pre-shared-key|psk|Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4)\s*=/gi, '\n$1=');
+  }
+
+  const lines = normalizedText.split(/\r?\n/).map(l => l.trim());
   let currentSection = '';
   const iface = {};
   const peer = {};
+  let commentName = '';
 
   for (const line of lines) {
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    if (!line) continue;
+    if (line.startsWith('#') || line.startsWith(';')) {
+      const c = line.replace(/^[#;]\s*/, '').trim();
+      if (c && !commentName && !c.toLowerCase().startsWith('interface') && !c.toLowerCase().startsWith('peer') && !c.includes('=')) {
+        commentName = c;
+      }
+      continue;
+    }
     if (line.startsWith('[') && line.endsWith(']')) {
       currentSection = line.slice(1, -1).trim().toLowerCase();
       continue;
     }
     const eqIdx = line.indexOf('=');
     if (eqIdx !== -1) {
-      const k = line.substring(0, eqIdx).trim().toLowerCase();
+      const k = line.substring(0, eqIdx).trim().toLowerCase().replace(/-/g, '_');
       const v = line.substring(eqIdx + 1).trim();
       if (currentSection === 'interface') iface[k] = v;
       else if (currentSection === 'peer') peer[k] = v;
@@ -1659,8 +1680,9 @@ function parseWireguardConfigClient(confText) {
   }
 
   const isAwg = Boolean(iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.h1);
-  const name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
+  const name = commentName || `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
   const cleanAddress = address.split(',')[0].trim();
+  const psk = peer.presharedkey || peer.preshared_key || peer.psk || '';
 
   const outboundJsonObj = {
     outbounds: [
@@ -1674,7 +1696,8 @@ function parseWireguardConfigClient(confText) {
             {
               publicKey: publicKey,
               endpoint: `${endpointHost}:${endpointPort}`,
-              allowedIPs: ['0.0.0.0/0', '::/0']
+              allowedIPs: ['0.0.0.0/0', '::/0'],
+              preSharedKey: psk || undefined
             }
           ],
           mtu: parseInt(iface.mtu, 10) || 1420
@@ -1685,6 +1708,34 @@ function parseWireguardConfigClient(confText) {
     ]
   };
 
+  let amneziaConfig = null;
+  if (isAwg) {
+    amneziaConfig = {
+      client_ip: cleanAddress,
+      client_priv_key: privateKey,
+      server_pub_key: publicKey,
+      psk: psk,
+      version: parseInt(iface.protocol_version || '2', 10),
+      jc: iface.jc !== undefined ? parseInt(iface.jc, 10) : undefined,
+      jmin: iface.jmin !== undefined ? parseInt(iface.jmin, 10) : undefined,
+      jmax: iface.jmax !== undefined ? parseInt(iface.jmax, 10) : undefined,
+      s1: iface.s1 !== undefined ? parseInt(iface.s1, 10) : undefined,
+      s2: iface.s2 !== undefined ? parseInt(iface.s2, 10) : undefined,
+      s3: iface.s3 !== undefined ? parseInt(iface.s3, 10) : undefined,
+      s4: iface.s4 !== undefined ? parseInt(iface.s4, 10) : undefined,
+      h1: iface.h1 || undefined,
+      h2: iface.h2 || undefined,
+      h3: iface.h3 || undefined,
+      h4: iface.h4 || undefined,
+      i1: iface.i1 || undefined,
+      i2: iface.i2 || undefined,
+      i3: iface.i3 || undefined,
+      i4: iface.i4 || undefined,
+      i5: iface.i5 || undefined,
+      dns: iface.dns ? iface.dns.split(',').map(s => s.trim()) : ['1.1.1.1', '1.0.0.1']
+    };
+  }
+
   return {
     name,
     serverAddress: endpointHost,
@@ -1694,7 +1745,8 @@ function parseWireguardConfigClient(confText) {
     security: isAwg ? 'Amnezia' : 'WG',
     sni: '',
     desc: isAwg ? 'AmneziaWG (нативно поддерживается в ядре Mihomo)' : 'WireGuard VPN',
-    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4),
+    amneziaConfig
   };
 }
 
@@ -4231,18 +4283,100 @@ const editorIds = [
   { textId: 'routing-content-json', codeId: 'routing-content-code', statusId: 'routing-content-status' }
 ];
 
+function tryParseAndApplyWireguardText(rawText) {
+  try {
+    const parsed = parseWireguardConfigClient(rawText);
+    if (!parsed) return false;
+    const nameInput = document.getElementById('conn-name');
+    if (nameInput && (!nameInput.value.trim() || nameInput.value.startsWith('Мой сервер') || nameInput.value.startsWith('Подключение'))) {
+      nameInput.value = parsed.name;
+    }
+    const descInput = document.getElementById('conn-desc');
+    if (descInput && !descInput.value.trim()) {
+      descInput.value = parsed.desc || '';
+    }
+    const urlInput = document.getElementById('input-vless-url');
+    if (urlInput) {
+      urlInput.value = `WireGuard: ${parsed.serverAddress}:${parsed.serverPort}`;
+    }
+    if (parsed.amneziaConfig) {
+      currentAddAmneziaConfig = parsed.amneziaConfig;
+    }
+    setEditorContent('conn-outbound-json', parsed.outboundJson);
+
+    // Preview badges
+    document.getElementById('preview-host').textContent = parsed.serverAddress || '-';
+    document.getElementById('preview-port').textContent = parsed.serverPort || '-';
+    const isAwg = parsed.protocol === 'amneziawg' || Boolean(parsed.amneziaConfig);
+    document.getElementById('preview-proto').textContent = isAwg ? 'AWG' : 'WG';
+    const previewNetEl = document.getElementById('preview-net');
+    if (previewNetEl) previewNetEl.textContent = 'UDP';
+    document.getElementById('preview-sec').textContent = isAwg ? 'Amnezia' : 'WG';
+    document.getElementById('add-meta-preview').classList.remove('hidden');
+
+    showToast('Конфигурация WireGuard успешно распознана и преобразована!', 'success');
+    return true;
+  } catch (err) {
+    showToast('Ошибка разбора конфига WireGuard: ' + err.message, 'error');
+    return false;
+  }
+}
+
 function setupCodeEditors() {
   editorIds.forEach(({ textId, codeId, statusId }) => {
     const textarea = document.getElementById(textId);
     const code = document.getElementById(codeId);
     if (!textarea || !code) return;
 
+    const checkAndConvertWireguard = (val) => {
+      if (!val || typeof val !== 'string') return false;
+      const trimmed = val.trim();
+      if ((trimmed.startsWith('[Interface]') || trimmed.startsWith('[Peer]') || (trimmed.includes('[Interface]') && trimmed.includes('[Peer]'))) && !trimmed.startsWith('{')) {
+        try {
+          const parsed = parseWireguardConfigClient(trimmed);
+          if (parsed && parsed.outboundJson) {
+            setEditorContent(textId, parsed.outboundJson);
+            if (textId === 'conn-outbound-json') {
+              const nameInput = document.getElementById('conn-name');
+              if (nameInput && (!nameInput.value.trim() || nameInput.value.startsWith('Мой сервер') || nameInput.value.startsWith('Подключение'))) {
+                nameInput.value = parsed.name;
+              }
+              const descInput = document.getElementById('conn-desc');
+              if (descInput && !descInput.value.trim()) {
+                descInput.value = parsed.desc || '';
+              }
+              if (parsed.amneziaConfig) {
+                currentAddAmneziaConfig = parsed.amneziaConfig;
+              }
+              document.getElementById('preview-host').textContent = parsed.serverAddress || '-';
+              document.getElementById('preview-port').textContent = parsed.serverPort || '-';
+              const isAwg = parsed.protocol === 'amneziawg' || Boolean(parsed.amneziaConfig);
+              document.getElementById('preview-proto').textContent = isAwg ? 'AWG' : 'WG';
+              const previewNetEl = document.getElementById('preview-net');
+              if (previewNetEl) previewNetEl.textContent = 'UDP';
+              document.getElementById('preview-sec').textContent = isAwg ? 'Amnezia' : 'WG';
+              document.getElementById('add-meta-preview').classList.remove('hidden');
+            }
+            showToast('Конфигурация WireGuard автоматически преобразована в outbound.json!', 'success');
+            return true;
+          }
+        } catch (e) {}
+      }
+      return false;
+    };
+
     const update = () => {
+      if (checkAndConvertWireguard(textarea.value)) return;
       code.innerHTML = highlightJson(textarea.value);
       validateEditorJson(textarea.value, statusId);
     };
 
     textarea.addEventListener('input', update);
+    textarea.addEventListener('paste', () => {
+      setTimeout(() => {
+        checkAndConvertWireguard(textarea.value);
+      }, 30);
+    });
     textarea.addEventListener('scroll', () => {
       code.parentElement.scrollTop = textarea.scrollTop;
       code.parentElement.scrollLeft = textarea.scrollLeft;
@@ -4524,8 +4658,13 @@ function closeModal(id) {
   }
 }
 
+let modalMouseDownTarget = null;
+window.addEventListener('mousedown', (e) => {
+  modalMouseDownTarget = e.target;
+});
+
 window.addEventListener('click', (e) => {
-  if (e.target.classList.contains('modal-overlay')) {
+  if (e.target.classList.contains('modal-overlay') && modalMouseDownTarget === e.target) {
     closeModal(e.target.id);
   }
 });
