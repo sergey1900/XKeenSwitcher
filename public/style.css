@@ -1960,6 +1960,41 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   animation: spin 1s linear infinite;
 }
 
+.group-spinner-circle {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(56, 189, 248, 0.25);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: group-spin 0.75s linear infinite;
+  display: inline-block;
+  box-sizing: border-box;
+}
+
+@keyframes group-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.btn-group-action.is-loading {
+  cursor: wait !important;
+  pointer-events: none;
+  opacity: 0.95;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-group-ping.is-loading {
+  background: rgba(56, 189, 248, 0.12) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+
+.btn-sub-refresh.is-loading {
+  background: rgba(168, 85, 247, 0.12) !important;
+  border-color: rgba(168, 85, 247, 0.4) !important;
+}
+
 .group-traffic-badge,
 .group-expire-badge {
   display: inline-flex;

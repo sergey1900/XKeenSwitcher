@@ -14,6 +14,8 @@ let appData = {
 let currentTab = 'connections'; // 'connections' | 'routings'
 let currentSort = localStorage.getItem('xkeen_connections_sort') || 'default';
 let pingingConnectionIds = new Set();
+let pingingGroupIds = new Set();
+let updatingSubscriptionIds = new Set();
 let isPingingAll = false;
 let servicePollingTimer = null;
 let lastServiceLog = '';
@@ -492,6 +494,8 @@ function renderConnections() {
     const availableCount = groupConns.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
     const isCollapsed = collapsedGroupIds.has(g.id);
     const isSub = Boolean(g.isSubscription);
+    const isPingingGroup = pingingGroupIds.has(g.id) || (isPingingAll && groupConns.some(c => pingingConnectionIds.has(c.id)));
+    const isUpdatingSub = updatingSubscriptionIds.has(g.id);
 
     const targetClass = (g.targetList === 'whitelist') ? 'bs' : ((g.targetList === 'blacklist') ? 'cs' : 'sm');
     const targetText = (g.targetList === 'whitelist') ? 'БС' : ((g.targetList === 'blacklist') ? 'ЧС' : 'СМ');
@@ -538,14 +542,26 @@ function renderConnections() {
             <button class="btn-group-action btn-group-move" onclick="moveGroup('${g.id}', 1, event)" ${gIdx === groups.length - 1 ? 'disabled' : ''} title="Переместить группу ниже">▼</button>
 
             <!-- Group Ping All -->
-            <button class="btn-group-action btn-group-ping" id="btn-ping-group-${g.id}" onclick="pingGroupConnections('${g.id}', event)" title="Проверить доступность всех подключений этой группы">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            </button>
+            ${isPingingGroup ? `
+              <button class="btn-group-action btn-group-ping is-loading" disabled title="Выполняется проверка доступности подключений...">
+                <span class="group-spinner-circle"></span>
+              </button>
+            ` : `
+              <button class="btn-group-action btn-group-ping" id="btn-ping-group-${g.id}" onclick="pingGroupConnections('${g.id}', event)" title="Проверить доступность всех подключений этой группы">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </button>
+            `}
 
             ${isSub ? `
-              <button class="btn-group-action btn-sub-refresh" id="btn-refresh-sub-${g.id}" onclick="updateSubscription('${g.id}', event)" title="Обновить ссылки подписки из интернета">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-              </button>
+              ${isUpdatingSub ? `
+                <button class="btn-group-action btn-sub-refresh is-loading" disabled title="Обновление ссылок подписки...">
+                  <span class="group-spinner-circle" style="border-top-color: #a855f7;"></span>
+                </button>
+              ` : `
+                <button class="btn-group-action btn-sub-refresh" id="btn-refresh-sub-${g.id}" onclick="updateSubscription('${g.id}', event)" title="Обновить ссылки подписки из интернета">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </button>
+              `}
               <button class="btn-group-action" onclick="openEditSubscriptionModal('${g.id}', event)" title="Настройки подписки и назначение (ЧС/БС/СМ)">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
@@ -2250,17 +2266,16 @@ async function pingGroupConnections(groupId, event) {
     event.stopPropagation();
     event.preventDefault();
   }
+  if (pingingGroupIds.has(groupId)) return;
+
   const groupConns = (appData.connections || []).filter(c => (c.groupId || 'group_default') === groupId);
   if (groupConns.length === 0) {
     showToast('В группе нет подключений для проверки', 'info');
     return;
   }
 
-  const btn = document.getElementById(`btn-ping-group-${groupId}`);
-  if (btn) {
-    btn.classList.add('spinning');
-    btn.disabled = true;
-  }
+  pingingGroupIds.add(groupId);
+  renderConnections();
   showToast(`Проверка подключений группы (${groupConns.length})...`, 'info');
 
   try {
@@ -2300,10 +2315,7 @@ async function pingGroupConnections(groupId, event) {
   } catch (err) {
     showToast(`Ошибка проверки группы: ${err.message}`, 'error');
   } finally {
-    if (btn) {
-      btn.classList.remove('spinning');
-      btn.disabled = false;
-    }
+    pingingGroupIds.delete(groupId);
     renderConnections();
   }
 }
@@ -2507,8 +2519,10 @@ async function updateSubscription(groupId, event) {
     event.stopPropagation();
     event.preventDefault();
   }
-  const btn = document.getElementById(`btn-refresh-sub-${groupId}`);
-  if (btn) btn.classList.add('spinning');
+  if (updatingSubscriptionIds.has(groupId)) return;
+
+  updatingSubscriptionIds.add(groupId);
+  renderConnections();
 
   try {
     showToast('Загрузка свежих ссылок из подписки...', 'info');
@@ -2524,7 +2538,8 @@ async function updateSubscription(groupId, event) {
   } catch (err) {
     showToast(err.message, 'error');
   } finally {
-    if (btn) btn.classList.remove('spinning');
+    updatingSubscriptionIds.delete(groupId);
+    renderConnections();
   }
 }
 
