@@ -4487,5 +4487,40 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   background: #090d16;
 }
 
+/* GROUP HIDDEN UNREACHABLE NOTICE */
+.group-hidden-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin-top: 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.group-hidden-notice strong {
+  color: #f87171;
+}
+
+.btn-group-show-hidden {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-group-show-hidden:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
 
 

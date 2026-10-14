@@ -18,6 +18,7 @@ let pingingGroupIds = new Set();
 let updatingSubscriptionIds = new Set();
 let isPingingFavorites = false;
 let isPingingAll = false;
+let revealedHiddenGroupIds = new Set();
 let servicePollingTimer = null;
 let lastServiceLog = '';
 
@@ -121,6 +122,40 @@ function onSortChange(val) {
   try {
     localStorage.setItem('xkeen_connections_sort', val);
   } catch (e) {}
+  renderConnections();
+}
+
+// Sort connections: available first, then untested, then unreachable
+function sortConnsAvailability(conns) {
+  if (!Array.isArray(conns)) return [];
+  const available = [];
+  const untested = [];
+  const unreachable = [];
+
+  for (const c of conns) {
+    if (c.lastPingStatus === 'ok' && c.lastPing !== null) {
+      available.push(c);
+    } else if (c.lastPingStatus === 'unreachable') {
+      unreachable.push(c);
+    } else {
+      untested.push(c);
+    }
+  }
+
+  return [...available, ...untested, ...unreachable];
+}
+
+// Toggle showing hidden unreachable connections for a specific group
+function toggleShowHiddenForGroup(groupId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (revealedHiddenGroupIds.has(groupId)) {
+    revealedHiddenGroupIds.delete(groupId);
+  } else {
+    revealedHiddenGroupIds.add(groupId);
+  }
   renderConnections();
 }
 
@@ -495,7 +530,7 @@ function renderConnections() {
           </div>
         </div>
         <div class="connections-subgrid">
-          ${favorites.map(c => renderConnectionCardHtml(c, activeId, true)).join('')}
+          ${sortConnsAvailability(favorites).map(c => renderConnectionCardHtml(c, activeId, true)).join('')}
         </div>
       </div>
     `;
@@ -511,6 +546,23 @@ function renderConnections() {
     const isSub = Boolean(g.isSubscription);
     const isPingingGroup = pingingGroupIds.has(g.id) || (isPingingAll && groupConns.some(c => pingingConnectionIds.has(c.id)));
     const isUpdatingSub = updatingSubscriptionIds.has(g.id);
+
+    const sortedGroupConns = sortConnsAvailability(groupConns);
+    const shouldHideUnreachable = (g.hideUnreachable !== false);
+    const isTemporarilyRevealed = revealedHiddenGroupIds.has(g.id);
+    let displayedConns = sortedGroupConns;
+    let hiddenUnreachableCount = 0;
+    if (shouldHideUnreachable && !isTemporarilyRevealed) {
+      displayedConns = sortedGroupConns.filter(c => {
+        if (c.lastPingStatus === 'unreachable' && c.id !== activeId) {
+          hiddenUnreachableCount++;
+          return false;
+        }
+        return true;
+      });
+    } else if (shouldHideUnreachable && isTemporarilyRevealed) {
+      hiddenUnreachableCount = sortedGroupConns.filter(c => c.lastPingStatus === 'unreachable' && c.id !== activeId).length;
+    }
 
     const targetClass = (g.targetList === 'whitelist') ? 'bs' : ((g.targetList === 'blacklist') ? 'cs' : 'sm');
     const targetText = (g.targetList === 'whitelist') ? 'БС' : ((g.targetList === 'blacklist') ? 'ЧС' : 'СМ');
@@ -535,6 +587,49 @@ function renderConnections() {
         <span class="group-sub-badge" title="Группа создана из удаленной подписки">Подписка</span>
         ${trafficText ? `<span class="group-traffic-badge" title="Трафик подписки">📊 ${escapeHtml(trafficText)}</span>` : ''}
         ${expireText ? `<span class="group-expire-badge" title="Истекает">⏳ до ${escapeHtml(expireText)}</span>` : ''}
+      `;
+    }
+
+    let hiddenNoticeHtml = '';
+    if (hiddenUnreachableCount > 0) {
+      const toggleLabel = isTemporarilyRevealed ? 'Скрыть обратно' : 'Показать';
+      hiddenNoticeHtml = `
+        <div class="group-hidden-notice">
+          <span>Скрыто недоступных: <strong>${hiddenUnreachableCount}</strong></span>
+          <button type="button" class="btn-group-show-hidden" onclick="toggleShowHiddenForGroup('${g.id}', event)">
+            ${toggleLabel}
+          </button>
+        </div>
+      `;
+    }
+
+    let bodyContentHtml = '';
+    if (displayedConns.length > 0) {
+      bodyContentHtml = `
+        <div class="connections-subgrid">
+          ${displayedConns.map(c => renderConnectionCardHtml(c, activeId, false, g)).join('')}
+        </div>
+      `;
+    } else if (groupConns.length > 0) {
+      const showBtnLabel = isTemporarilyRevealed ? 'Скрыть обратно' : ('Показать недоступные (' + hiddenUnreachableCount + ')');
+      bodyContentHtml = `
+        <div class="group-empty-state">
+          <span>Все подключения (${totalCount}) недоступны и скрыты настройкой</span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleShowHiddenForGroup('${g.id}', event)">
+            <span>${showBtnLabel}</span>
+          </button>
+        </div>
+      `;
+    } else {
+      bodyContentHtml = `
+        <div class="group-empty-state">
+          <span>${isSub ? 'В этой подписке пока нет подключений' : 'В этой группе пока нет подключений'}</span>
+          ${isSub ? `
+            <button type="button" class="btn btn-secondary btn-sm" onclick="updateSubscription('${g.id}', event)">Загрузить ссылки</button>
+          ` : `
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openAddConnectionModal('${g.id}')">Добавить подключение</button>
+          `}
+        </div>
       `;
     }
 
@@ -599,20 +694,8 @@ function renderConnections() {
           </div>
         </div>
         <div class="group-body ${isCollapsed ? 'hidden' : ''}" id="group-body-${g.id}">
-          ${groupConns.length > 0 ? `
-            <div class="connections-subgrid">
-              ${groupConns.map(c => renderConnectionCardHtml(c, activeId, false, g)).join('')}
-            </div>
-          ` : `
-            <div class="group-empty-state">
-              <span>${isSub ? 'В этой подписке пока нет подключений' : 'В этой группе пока нет подключений'}</span>
-              ${isSub ? `
-                <button type="button" class="btn btn-secondary btn-sm" onclick="updateSubscription('${g.id}', event)">Загрузить ссылки</button>
-              ` : `
-                <button type="button" class="btn btn-secondary btn-sm" onclick="openAddConnectionModal('${g.id}')">Добавить подключение</button>
-              `}
-            </div>
-          `}
+          ${hiddenNoticeHtml}
+          ${bodyContentHtml}
         </div>
       </div>
     `;
@@ -2175,6 +2258,9 @@ function openCreateGroupModal() {
   const mixedRadio = document.querySelector('input[name="group-edit-target-list"][value="mixed"]');
   if (mixedRadio) mixedRadio.checked = true;
 
+  const hideUnreachEl = document.getElementById('group-edit-hide-unreachable');
+  if (hideUnreachEl) hideUnreachEl.checked = true;
+
   openModal('modal-group-edit');
   setTimeout(() => {
     if (nameInput) {
@@ -2198,6 +2284,9 @@ function openRenameGroupModal(groupId, currentName) {
   const radio = document.querySelector(`input[name="group-edit-target-list"][value="${curTarget}"]`);
   if (radio) radio.checked = true;
 
+  const hideUnreachEl = document.getElementById('group-edit-hide-unreachable');
+  if (hideUnreachEl) hideUnreachEl.checked = (grp?.hideUnreachable !== false);
+
   openModal('modal-group-edit');
   setTimeout(() => {
     if (nameInput) {
@@ -2213,6 +2302,7 @@ async function onGroupEditSubmit(e) {
   const id = document.getElementById('group-edit-id').value;
   const name = document.getElementById('group-edit-name').value.trim();
   const targetList = document.querySelector('input[name="group-edit-target-list"]:checked')?.value || 'mixed';
+  const hideUnreachable = Boolean(document.getElementById('group-edit-hide-unreachable')?.checked);
 
   if (!name) {
     showToast('Укажите название группы', 'warning');
@@ -2225,13 +2315,13 @@ async function onGroupEditSubmit(e) {
       res = await fetch(`/api/groups/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, targetList })
+        body: JSON.stringify({ name, targetList, hideUnreachable })
       });
     } else {
       res = await fetch('/api/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, targetList })
+        body: JSON.stringify({ name, targetList, hideUnreachable })
       });
     }
 
@@ -2281,6 +2371,8 @@ async function moveGroup(groupId, direction, event) {
     showToast(err.message, 'error');
     await loadData();
   }
+}
+
 // Ping all favorite connections
 async function pingFavoritesConnections(event) {
   if (event) {
@@ -2451,6 +2543,9 @@ function openAddSubscriptionModal() {
   const radioMixed = document.querySelector('input[name="sub-target-list"][value="mixed"]');
   if (radioMixed) radioMixed.checked = true;
 
+  const subHideUnreachEl = document.getElementById('sub-hide-unreachable');
+  if (subHideUnreachEl) subHideUnreachEl.checked = true;
+
   populateRoutingSelects();
   const subRoutingSel = document.getElementById('sub-routing');
   if (subRoutingSel && appData.settings?.defaultRoutingBlacklist) {
@@ -2489,6 +2584,9 @@ function openEditSubscriptionModal(groupId, event) {
 
   const targetRadio = document.querySelector(`input[name="sub-target-list"][value="${group.targetList || 'mixed'}"]`);
   if (targetRadio) targetRadio.checked = true;
+
+  const subHideUnreachEl = document.getElementById('sub-hide-unreachable');
+  if (subHideUnreachEl) subHideUnreachEl.checked = (group.hideUnreachable !== false);
 
   populateRoutingSelects();
   const subRoutingSel = document.getElementById('sub-routing');
@@ -2530,6 +2628,7 @@ async function onSubscriptionSubmit(e) {
   const name = document.getElementById('sub-name').value.trim();
   const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'mixed';
   const routingId = document.getElementById('sub-routing').value;
+  const hideUnreachable = Boolean(document.getElementById('sub-hide-unreachable')?.checked);
   const submitBtn = document.getElementById('btn-submit-sub');
   const submitText = document.getElementById('btn-submit-sub-text');
 
@@ -2550,7 +2649,7 @@ async function onSubscriptionSubmit(e) {
       const res = await fetch(`/api/subscriptions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, applyRoutingToConnections })
+        body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, applyRoutingToConnections, hideUnreachable })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка сохранения параметров подписки');
@@ -2575,7 +2674,7 @@ async function onSubscriptionSubmit(e) {
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, name, targetList, routingId })
+        body: JSON.stringify({ url, name, targetList, routingId, hideUnreachable })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');

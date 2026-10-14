@@ -3026,11 +3026,12 @@ function loadData() {
       if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
         data.groups = parsed.groups.map(g => ({
           ...g,
-          targetList: (g.targetList === 'whitelist' || g.targetList === 'blacklist') ? g.targetList : 'mixed'
+          targetList: (g.targetList === 'whitelist' || g.targetList === 'blacklist') ? g.targetList : 'mixed',
+          hideUnreachable: (typeof g.hideUnreachable !== 'undefined') ? Boolean(g.hideUnreachable) : true
         }));
       }
       if (!data.groups.some(g => g.id === 'group_default')) {
-        data.groups.unshift({ id: 'group_default', name: 'Общие', targetList: 'mixed', createdAt: new Date().toISOString() });
+        data.groups.unshift({ id: 'group_default', name: 'Общие', targetList: 'mixed', hideUnreachable: true, createdAt: new Date().toISOString() });
       }
 
       // Load Routings
@@ -4937,11 +4938,13 @@ const server = http.createServer(async (req, res) => {
       }
       const data = loadData();
       const targetList = (body.targetList === 'whitelist' || body.targetList === 'blacklist') ? body.targetList : 'mixed';
+      const hideUnreachable = (typeof body.hideUnreachable !== 'undefined') ? Boolean(body.hideUnreachable) : true;
       const newGroup = {
         id: 'group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         name: name,
         collapsed: false,
         targetList: targetList,
+        hideUnreachable: hideUnreachable,
         createdAt: new Date().toISOString()
       };
       data.groups.push(newGroup);
@@ -4967,6 +4970,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (typeof body.collapsed !== 'undefined') {
         group.collapsed = Boolean(body.collapsed);
+      }
+      if (typeof body.hideUnreachable !== 'undefined') {
+        group.hideUnreachable = Boolean(body.hideUnreachable);
       }
       if (body.targetList) {
         group.targetList = (body.targetList === 'whitelist' || body.targetList === 'blacklist') ? body.targetList : 'mixed';
@@ -5041,12 +5047,14 @@ const server = http.createServer(async (req, res) => {
 
       const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(url.trim());
 
+      const hideUnreachable = (typeof body.hideUnreachable !== 'undefined') ? Boolean(body.hideUnreachable) : true;
       const subGroup = {
         id: 'group_sub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         name: subName,
         isSubscription: true,
         subscriptionUrl: url.trim(),
         targetList: targetList,
+        hideUnreachable: hideUnreachable,
         routingId: effectiveRoutingId,
         lastUpdated: new Date().toISOString(),
         userInfo: userInfo || null,
@@ -5334,6 +5342,10 @@ const server = http.createServer(async (req, res) => {
             }
           }
         }
+      }
+
+      if (typeof body.hideUnreachable !== 'undefined') {
+        group.hideUnreachable = Boolean(body.hideUnreachable);
       }
 
       group.updatedAt = new Date().toISOString();
