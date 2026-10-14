@@ -1885,17 +1885,17 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .group-target-badge.cs {
-  background: #000000;
-  color: #ffffff;
-  border: 1px solid #475569;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 1px solid #ffffff !important;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.35);
 }
 
 .group-target-badge.bs {
-  background: #ffffff;
-  color: #0f172a;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 2px rgba(255, 255, 255, 0.2);
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #000000 !important;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
 }
 
 .group-target-badge.sm {
@@ -2276,15 +2276,15 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .badge-target-list.target-blacklist {
   background: #000000 !important;
   color: #ffffff !important;
-  border: 1px solid #475569 !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  border: 1px solid #ffffff !important;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.35);
 }
 
 .badge-target-list.target-whitelist {
   background: #ffffff !important;
-  color: #0f172a !important;
-  border: 1px solid #cbd5e1 !important;
-  box-shadow: 0 1px 2px rgba(255, 255, 255, 0.2);
+  color: #000000 !important;
+  border: 1px solid #000000 !important;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
 }
 
 /* ROUTING SELECTOR ROW */
