@@ -236,7 +236,7 @@
               <span>Справка по протоколам</span>
             </button>
           </div>
-          <input type="text" id="input-vless-url" placeholder="Вставьте ссылку (vless://, vmess://, trojan://, ss://, wireguard://)..." autocomplete="off" spellcheck="false">
+          <input type="text" id="input-vless-url" placeholder="Вставьте ссылку (vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg://)..." autocomplete="off" spellcheck="false">
           
           <div class="supported-protocols-row">
             <span class="proto-pill active" title="VLESS Reality, gRPC, WebSocket, TCP, TLS">VLESS</span>
@@ -255,6 +255,10 @@
               <code>vless://uuid@host:port?security=reality&pbk=KEY&sni=yahoo.com#Name</code>
             </div>
             <div class="proto-guide-item">
+              <span class="proto-guide-name">AmneziaWG / VPN:</span>
+              <code>vpn://...</code>, <code>awg://...</code> или конфиг <code>[Interface]</code> с параметрами Amnezia (Jc, H1-H4, S1-S4).
+            </div>
+            <div class="proto-guide-item">
               <span class="proto-guide-name">VMess:</span>
               <code>vmess://eyJhZGQiOiIxLjIuMy40IiwicG9ydCI6NDQzLCJpZCI6Ii4uLiJ9</code>
             </div>
@@ -267,7 +271,7 @@
               <code>ss://base64(method:password)@host:port#Name</code>
             </div>
             <div class="proto-guide-item">
-              <span class="proto-guide-name">WireGuard / AWG:</span>
+              <span class="proto-guide-name">WireGuard:</span>
               <code>wireguard://privateKey@host:port?publickey=...&address=10.0.0.2#Name</code> или вставьте блок <code>[Interface]</code> в редактор ниже.
             </div>
           </div>
@@ -590,7 +594,7 @@
           <label for="batch-import-text">Список ссылок <span class="req">*</span></label>
           <textarea id="batch-import-text" class="batch-import-textarea" rows="8" placeholder="vless://...#Server 1&#10;vless://...#Server 2" required oninput="updateBatchImportCounter()"></textarea>
           <div class="field-help-row">
-            <small class="help-text">По одной ссылке на строку (поддерживаются <code>vless://</code>, <code>vmess://</code>, <code>trojan://</code>, <code>ss://</code>, <code>wireguard://</code>, <code>hysteria2://</code>). Пустые строки и комментарии игнорируются.</small>
+            <small class="help-text">По одной ссылке на строку (поддерживаются <code>vless://</code>, <code>vmess://</code>, <code>vpn://</code>, <code>trojan://</code>, <code>ss://</code>, <code>wireguard://</code>, <code>awg://</code>, <code>hysteria2://</code>). Пустые строки и комментарии игнорируются.</small>
             <span class="badge-counter" id="batch-import-counter">Найдено ссылок: 0</span>
           </div>
         </div>

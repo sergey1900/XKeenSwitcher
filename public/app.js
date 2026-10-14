@@ -203,6 +203,8 @@ function formatNetworkName(net) {
     case 'domainsocket':
     case 'ds': return 'DomainSocket';
     case 'wireguard': return 'WireGuard';
+    case 'amneziawg':
+    case 'awg': return 'AWG';
     case 'udp': return 'UDP';
     default: return n.toUpperCase();
   }
@@ -212,10 +214,13 @@ function formatNetworkName(net) {
 function renderConnectionCardHtml(conn, activeId) {
   const isActive = (conn.id === activeId);
   const isChecking = pingingConnectionIds.has(conn.id) || isPingingAll;
+  const isAwgConn = conn.protocol === 'amneziawg' || conn.protocol === 'awg' || Boolean(conn.amneziaConfig);
 
   // Security & SNI
   let secBadgeHtml = '';
-  if (conn.security === 'reality') {
+  if (isAwgConn || conn.security === 'Amnezia') {
+    secBadgeHtml = `<span class="conn-badge badge-sec badge-sec-awg" title="Маскировка заголовков и junk-пакетов Amnezia">Amnezia</span>`;
+  } else if (conn.security === 'reality') {
     secBadgeHtml = `<span class="conn-badge badge-sec">Reality</span>`;
     if (conn.sni) {
       secBadgeHtml += `<span class="conn-badge badge-sni" title="SNI / ServerName">${escapeHtml(conn.sni)}</span>`;
@@ -242,7 +247,7 @@ function renderConnectionCardHtml(conn, activeId) {
       }
     } catch (e) {}
   }
-  const netFormatted = formatNetworkName(connNetwork || (conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
+  const netFormatted = formatNetworkName(connNetwork || (isAwgConn || conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
   const netBadgeHtml = `<span class="conn-badge badge-net" title="Транспорт: ${escapeHtml(netFormatted)}">${escapeHtml(netFormatted)}</span>`;
 
   // Ping status display
@@ -251,7 +256,8 @@ function renderConnectionCardHtml(conn, activeId) {
     pingHtml = `<span class="ping-badge ping-loading"><span class="spin-icon">⏳</span> Проверка...</span>`;
   } else if (conn.lastPingStatus === 'ok' && conn.lastPing !== null) {
     const isProxy = conn.lastPingType === 'proxy';
-    const checkTitle = (isProxy ? 'Сквозной туннель подтверждён' : 'TCP доступен') +
+    const isIcmp = conn.lastPingType === 'icmp';
+    const checkTitle = (isProxy ? 'Сквозной туннель подтверждён' : (isIcmp ? 'ICMP ping доступен' : 'TCP доступен')) +
       (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
     pingHtml = `<span class="ping-badge ping-ok" title="${escapeHtml(checkTitle)}">● ${conn.lastPing} ms</span>`;
   } else if (conn.lastPingStatus === 'unreachable') {
@@ -281,6 +287,10 @@ function renderConnectionCardHtml(conn, activeId) {
   const isWhitelist = (conn.targetList === 'whitelist');
   const targetBadgeHtml = `<span class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" title="Назначение: ${isWhitelist ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${isWhitelist ? 'БС' : 'ЧС'}</span>`;
 
+  const protoClass = isAwgConn ? 'badge-proto-awg' : '';
+  const protoText = isAwgConn ? 'AWG' : escapeHtml((conn.protocol || 'vless').toUpperCase());
+  const protoTitle = isAwgConn ? 'Протокол: AmneziaWG (ядро Mihomo)' : `Протокол: ${protoText}`;
+
   return `
     <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
       <div>
@@ -300,7 +310,7 @@ function renderConnectionCardHtml(conn, activeId) {
         <div class="conn-badges-row">
           ${targetBadgeHtml}
           <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
-          <span class="conn-badge badge-proto" title="Протокол">${escapeHtml((conn.protocol || 'vless').toUpperCase())}</span>
+          <span class="conn-badge badge-proto ${protoClass}" title="${protoTitle}">${protoText}</span>
           ${netBadgeHtml}
           ${secBadgeHtml}
         </div>
@@ -1030,17 +1040,31 @@ function insertOutboundTemplate(tplKey) {
   showToast(`Вставлен шаблон: ${tpl.name}. Заполните ваши IP, порт и ключи!`, 'info');
 }
 
+let currentAddAmneziaConfig = null;
+
 // Universal Client-side Proxy URL & Config Parser
-function parseProxyUrlInput(showNotice = true) {
+async function parseProxyUrlInput(showNotice = true) {
   const input = document.getElementById('input-vless-url');
   if (!input || !input.value.trim()) return;
 
   const rawUrl = input.value.trim();
+  currentAddAmneziaConfig = null;
 
   try {
     let result = null;
 
-    if (rawUrl.includes('[Interface]') || rawUrl.includes('[Peer]')) {
+    if (rawUrl.startsWith('vpn://') || (rawUrl.includes('[Interface]') && (rawUrl.includes('Jc') || rawUrl.includes('jc') || rawUrl.includes('H1') || rawUrl.includes('h1')))) {
+      if (showNotice) showToast('Распознавание ссылки Amnezia VPN...', 'info');
+      const res = await fetch('/api/connections/parse-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: rawUrl })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка разбора ссылки Amnezia');
+      result = data;
+      currentAddAmneziaConfig = data.amneziaConfig || null;
+    } else if (rawUrl.includes('[Interface]') || rawUrl.includes('[Peer]')) {
       result = parseWireguardConfigClient(rawUrl);
     } else if (rawUrl.startsWith('vless://')) {
       result = parseVlessClient(rawUrl);
@@ -1055,7 +1079,7 @@ function parseProxyUrlInput(showNotice = true) {
     } else if (rawUrl.startsWith('hysteria2://') || rawUrl.startsWith('hy2://')) {
       result = parseHysteria2Client(rawUrl);
     } else {
-      if (showNotice) showToast('Неизвестный протокол. Вставьте vless://, vmess://, trojan://, ss://, wireguard:// или конфиг [Interface]', 'warning');
+      if (showNotice) showToast('Неизвестный протокол. Вставьте vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg:// или конфиг [Interface]', 'warning');
       return;
     }
 
@@ -1070,12 +1094,13 @@ function parseProxyUrlInput(showNotice = true) {
     setEditorContent('conn-outbound-json', result.outboundJson);
 
     // Show Preview Pills
-    document.getElementById('preview-host').textContent = result.serverAddress;
-    document.getElementById('preview-port').textContent = result.serverPort;
-    document.getElementById('preview-proto').textContent = (result.protocol || 'VLESS').toUpperCase();
+    document.getElementById('preview-host').textContent = result.serverAddress || '-';
+    document.getElementById('preview-port').textContent = result.serverPort || '-';
+    const isAwg = result.protocol === 'amneziawg' || result.protocol === 'awg' || Boolean(result.amneziaConfig);
+    document.getElementById('preview-proto').textContent = isAwg ? 'AWG' : (result.protocol || 'VLESS').toUpperCase();
     const previewNetEl = document.getElementById('preview-net');
-    if (previewNetEl) previewNetEl.textContent = formatNetworkName(result.network || 'tcp');
-    document.getElementById('preview-sec').textContent = result.security === 'reality' ? 'Reality' : (result.security || 'None');
+    if (previewNetEl) previewNetEl.textContent = formatNetworkName(result.network || (isAwg ? 'udp' : 'tcp'));
+    document.getElementById('preview-sec').textContent = isAwg ? 'Amnezia' : (result.security === 'reality' ? 'Reality' : (result.security || 'None'));
     const sniWrap = document.getElementById('preview-sni-wrap');
     if (result.sni) {
       document.getElementById('preview-sni').textContent = result.sni;
@@ -1085,7 +1110,10 @@ function parseProxyUrlInput(showNotice = true) {
     }
     document.getElementById('add-meta-preview').classList.remove('hidden');
 
-    if (showNotice) showToast(`Ссылка ${result.protocol.toUpperCase()} успешно распознана!`, 'success');
+    const noticeText = isAwg
+      ? 'Ссылка Amnezia AWG успешно распознана! Для проксирования будет использовано ядро Mihomo.'
+      : `Ссылка ${result.protocol.toUpperCase()} успешно распознана!`;
+    if (showNotice) showToast(noticeText, 'success');
   } catch (err) {
     if (showNotice) showToast('Ошибка разбора ссылки: ' + err.message, 'error');
   }
@@ -1693,6 +1721,7 @@ function parseHysteria2Client(rawUrl) {
 function openAddConnectionModal(defaultGroupId = '') {
   document.getElementById('form-add-connection').reset();
   document.getElementById('add-meta-preview').classList.add('hidden');
+  currentAddAmneziaConfig = null;
   populateRoutingSelects();
   populateGroupSelects(defaultGroupId || 'group_default');
 
@@ -1724,15 +1753,22 @@ async function onAddConnectionSubmit(e) {
   }
 
   try {
+    const payload = { name, description, groupId, routingId, outboundContent, targetList };
+    if (currentAddAmneziaConfig) {
+      payload.amneziaConfig = currentAddAmneziaConfig;
+      payload.protocol = 'amneziawg';
+    }
+
     const res = await fetch('/api/connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, groupId, routingId, outboundContent, targetList })
+      body: JSON.stringify(payload)
     });
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка при сохранении подключения');
 
+    currentAddAmneziaConfig = null;
     showToast(data.message || 'Подключение успешно добавлено', 'success');
     closeModal('modal-add-connection');
     await loadData();
@@ -1759,9 +1795,10 @@ function openEditConnectionModal(id) {
   if (targetRadio) targetRadio.checked = true;
 
   // Preview pills
+  const isAwg = (conn.protocol === 'amneziawg' || conn.protocol === 'awg' || Boolean(conn.amneziaConfig));
   document.getElementById('edit-preview-host').textContent = conn.serverAddress || '-';
   document.getElementById('edit-preview-port').textContent = conn.serverPort || '-';
-  document.getElementById('edit-preview-proto').textContent = (conn.protocol || 'VLESS').toUpperCase();
+  document.getElementById('edit-preview-proto').textContent = isAwg ? 'AWG' : (conn.protocol || 'VLESS').toUpperCase();
   const editNetEl = document.getElementById('edit-preview-net');
   if (editNetEl) {
     let editNet = conn.network;
@@ -1776,9 +1813,9 @@ function openEditConnectionModal(id) {
         }
       } catch (e) {}
     }
-    editNetEl.textContent = formatNetworkName(editNet || (conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
+    editNetEl.textContent = formatNetworkName(editNet || (isAwg || conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
   }
-  document.getElementById('edit-preview-sec').textContent = conn.security || 'none';
+  document.getElementById('edit-preview-sec').textContent = isAwg ? 'Amnezia' : (conn.security || 'none');
   const sniWrap = document.getElementById('edit-preview-sni-wrap');
   if (conn.sni) {
     document.getElementById('edit-preview-sni').textContent = conn.sni;

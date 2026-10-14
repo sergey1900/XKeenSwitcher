@@ -220,7 +220,49 @@ function detectConfigPaths() {
     }
   }
 
+  // Ensure dat symlinks for Xray and Mihomo if needed
+  try {
+    const xrayDatDir = '/opt/etc/xray/dat';
+    if (fs.existsSync(xrayDatDir)) {
+      if (!fs.existsSync(path.join(xrayDatDir, 'geoip.dat')) && fs.existsSync(path.join(xrayDatDir, 'geoip_v2fly.dat'))) {
+        fs.symlinkSync(path.join(xrayDatDir, 'geoip_v2fly.dat'), path.join(xrayDatDir, 'geoip.dat'));
+      }
+      if (!fs.existsSync(path.join(xrayDatDir, 'geosite.dat')) && fs.existsSync(path.join(xrayDatDir, 'geosite_v2fly.dat'))) {
+        fs.symlinkSync(path.join(xrayDatDir, 'geosite_v2fly.dat'), path.join(xrayDatDir, 'geosite.dat'));
+      }
+    }
+    const mihomoDir = '/opt/etc/mihomo';
+    if (fs.existsSync(mihomoDir) && fs.existsSync(path.join(xrayDatDir, 'geosite_v2fly.dat'))) {
+      if (!fs.existsSync(path.join(mihomoDir, 'GeoSite.dat'))) {
+        fs.symlinkSync(path.join(xrayDatDir, 'geosite_v2fly.dat'), path.join(mihomoDir, 'GeoSite.dat'));
+      }
+    }
+  } catch (e) {}
+
   return { outboundPath, routingPath };
+}
+
+// Helper: Detect active proxy core from S05xkeen and binaries
+function detectActiveProxyCore() {
+  let activeCore = 'xray';
+  const initdPath = '/opt/etc/init.d/S05xkeen';
+  if (fs.existsSync(initdPath)) {
+    try {
+      const content = fs.readFileSync(initdPath, 'utf8');
+      if (/name_client="mihomo"/.test(content)) {
+        activeCore = 'mihomo';
+      } else if (/name_client="xray"/.test(content)) {
+        activeCore = 'xray';
+      }
+    } catch (e) {}
+  }
+  const hasXray = fs.existsSync('/opt/sbin/xray') || fs.existsSync('/opt/bin/xray');
+  const hasMihomo = fs.existsSync('/opt/sbin/mihomo') || fs.existsSync('/opt/bin/mihomo');
+  return {
+    activeCore,
+    hasXray,
+    hasMihomo
+  };
 }
 
 // Strip single-line (//) and multi-line (/* */) comments and trailing commas from JSON string
@@ -285,17 +327,22 @@ function parseProxyUrl(urlStr) {
     return parseShadowsocksUrl(cleanStr);
   }
 
-  // 6. WireGuard / AmneziaWG URL
+  // 6. Amnezia VPN URL
+  if (cleanStr.startsWith('vpn://')) {
+    return parseAmneziaVpnUrl(cleanStr);
+  }
+
+  // 7. WireGuard / AmneziaWG URL
   if (cleanStr.startsWith('wireguard://') || cleanStr.startsWith('awg://')) {
     return parseWireguardUrl(cleanStr);
   }
 
-  // 7. Hysteria 2
+  // 8. Hysteria 2
   if (cleanStr.startsWith('hysteria2://') || cleanStr.startsWith('hy2://')) {
     return parseHysteria2Url(cleanStr);
   }
 
-  throw new Error('Неизвестный протокол. Поддерживаются: vless://, vmess://, trojan://, ss://, wireguard://, awg://, hysteria2:// или файл конфига [Interface]');
+  throw new Error('Неизвестный протокол. Поддерживаются: vless://, vmess://, vpn://, trojan://, ss://, wireguard://, awg://, hysteria2:// или файл конфига [Interface]');
 }
 
 // Backwards-compatible alias
@@ -790,6 +837,7 @@ function parseWireguardConfig(confText) {
   const isAwg = Boolean(iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.h1);
   const name = `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
   const cleanAddress = address.split(',')[0].trim();
+  const psk = peer.presharedkey || peer.preshared_key || peer.psk || '';
 
   const outboundJsonObj = {
     outbounds: [
@@ -803,7 +851,8 @@ function parseWireguardConfig(confText) {
             {
               publicKey: publicKey,
               endpoint: `${endpointHost}:${endpointPort}`,
-              allowedIPs: ['0.0.0.0/0', '::/0']
+              allowedIPs: ['0.0.0.0/0', '::/0'],
+              preSharedKey: psk || undefined
             }
           ],
           mtu: parseInt(iface.mtu, 10) || 1420
@@ -814,6 +863,34 @@ function parseWireguardConfig(confText) {
     ]
   };
 
+  let amneziaConfig = null;
+  if (isAwg) {
+    amneziaConfig = {
+      client_ip: cleanAddress,
+      client_priv_key: privateKey,
+      server_pub_key: publicKey,
+      psk: psk,
+      version: parseInt(iface.protocol_version || '2', 10),
+      jc: iface.jc !== undefined ? parseInt(iface.jc, 10) : undefined,
+      jmin: iface.jmin !== undefined ? parseInt(iface.jmin, 10) : undefined,
+      jmax: iface.jmax !== undefined ? parseInt(iface.jmax, 10) : undefined,
+      s1: iface.s1 !== undefined ? parseInt(iface.s1, 10) : undefined,
+      s2: iface.s2 !== undefined ? parseInt(iface.s2, 10) : undefined,
+      s3: iface.s3 !== undefined ? parseInt(iface.s3, 10) : undefined,
+      s4: iface.s4 !== undefined ? parseInt(iface.s4, 10) : undefined,
+      h1: iface.h1 || undefined,
+      h2: iface.h2 || undefined,
+      h3: iface.h3 || undefined,
+      h4: iface.h4 || undefined,
+      i1: iface.i1 || undefined,
+      i2: iface.i2 || undefined,
+      i3: iface.i3 || undefined,
+      i4: iface.i4 || undefined,
+      i5: iface.i5 || undefined,
+      dns: iface.dns ? iface.dns.split(',').map(s => s.trim()) : ['1.1.1.1', '1.0.0.1']
+    };
+  }
+
   return {
     name,
     serverAddress: endpointHost,
@@ -822,7 +899,8 @@ function parseWireguardConfig(confText) {
     network: 'udp',
     security: isAwg ? 'Amnezia' : 'WG',
     sni: '',
-    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4),
+    amneziaConfig
   };
 }
 
@@ -835,6 +913,7 @@ function parseWireguardUrl(cleanStr) {
   const sp = u.searchParams;
   const publicKey = sp.get('publickey') || sp.get('pubkey') || '';
   const address = sp.get('address') || sp.get('ip') || '10.0.0.2/32';
+  const psk = sp.get('psk') || sp.get('presharedkey') || sp.get('pre-shared-key') || '';
 
   if (!privateKey || !publicKey || !endpointHost) {
     throw new Error('Некорректная ссылка WireGuard: отсутствуют PrivateKey, PublicKey или хост');
@@ -858,7 +937,8 @@ function parseWireguardUrl(cleanStr) {
             {
               publicKey: publicKey,
               endpoint: `${endpointHost}:${endpointPort}`,
-              allowedIPs: ['0.0.0.0/0', '::/0']
+              allowedIPs: ['0.0.0.0/0', '::/0'],
+              preSharedKey: psk || undefined
             }
           ],
           mtu: parseInt(sp.get('mtu'), 10) || 1420
@@ -869,6 +949,30 @@ function parseWireguardUrl(cleanStr) {
     ]
   };
 
+  let amneziaConfig = null;
+  if (isAwg) {
+    amneziaConfig = {
+      client_ip: address,
+      client_priv_key: privateKey,
+      server_pub_key: publicKey,
+      psk: psk,
+      version: parseInt(sp.get('version') || '2', 10),
+      jc: sp.get('jc') !== null ? parseInt(sp.get('jc'), 10) : undefined,
+      jmin: sp.get('jmin') !== null ? parseInt(sp.get('jmin'), 10) : undefined,
+      jmax: sp.get('jmax') !== null ? parseInt(sp.get('jmax'), 10) : undefined,
+      s1: sp.get('s1') !== null ? parseInt(sp.get('s1'), 10) : undefined,
+      s2: sp.get('s2') !== null ? parseInt(sp.get('s2'), 10) : undefined,
+      s3: sp.get('s3') !== null ? parseInt(sp.get('s3'), 10) : undefined,
+      s4: sp.get('s4') !== null ? parseInt(sp.get('s4'), 10) : undefined,
+      h1: sp.get('h1') || undefined,
+      h2: sp.get('h2') || undefined,
+      h3: sp.get('h3') || undefined,
+      h4: sp.get('h4') || undefined,
+      i1: sp.get('i1') || undefined,
+      dns: sp.get('dns') ? sp.get('dns').split(',').map(s => s.trim()) : ['1.1.1.1', '1.0.0.1']
+    };
+  }
+
   return {
     name,
     serverAddress: endpointHost,
@@ -877,8 +981,269 @@ function parseWireguardUrl(cleanStr) {
     network: 'udp',
     security: isAwg ? 'Amnezia' : 'WG',
     sni: '',
-    outboundJson: JSON.stringify(outboundJsonObj, null, 4)
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4),
+    amneziaConfig
   };
+}
+
+// Parse Amnezia VPN URL (vpn://<base64-deflate-json>)
+function parseAmneziaVpnUrl(cleanStr) {
+  let raw = cleanStr.replace(/^vpn:\/\//i, '').trim();
+  if (raw.includes('#')) raw = raw.split('#')[0];
+  if (raw.includes('?')) raw = raw.split('?')[0];
+
+  const base64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+  let buf;
+  try {
+    buf = Buffer.from(base64, 'base64');
+  } catch (e) {
+    throw new Error('Некорректная Base64 строка в ссылке Amnezia vpn://');
+  }
+
+  if (buf.length < 5) {
+    throw new Error('Некорректная ссылка vpn://: недостаточно данных');
+  }
+
+  // First 4 bytes are big-endian uint32 payload length prefix
+  const payload = buf.subarray(4);
+  let decompressed = null;
+
+  try {
+    decompressed = zlib.inflateSync(payload);
+  } catch (err1) {
+    try {
+      decompressed = zlib.unzipSync(payload);
+    } catch (err2) {
+      try {
+        decompressed = zlib.inflateRawSync(payload);
+      } catch (err3) {
+        throw new Error('Ошибка распаковки данных Amnezia vpn://: ' + err1.message);
+      }
+    }
+  }
+
+  const jsonStr = decompressed.toString('utf8');
+  let data;
+  try {
+    data = JSON.parse(jsonStr);
+  } catch (err) {
+    throw new Error('Некорректный JSON в данных Amnezia vpn://');
+  }
+
+  const containers = data.containers || [];
+  const defaultContainer = data.defaultContainer || '';
+  let targetContainer = containers.find(c => c.container === defaultContainer) || containers[0];
+  if (!targetContainer && containers.length > 0) {
+    targetContainer = containers[0];
+  }
+
+  if (!targetContainer) {
+    throw new Error('В ссылке Amnezia vpn:// не найдены поддерживаемые контейнеры');
+  }
+
+  const awg = targetContainer.awg || targetContainer.wireguard;
+  if (!awg) {
+    throw new Error(`Контейнер ${targetContainer.container || 'неизвестный'} пока не поддерживается`);
+  }
+
+  let lastConfig = null;
+  if (awg.last_config) {
+    try {
+      lastConfig = typeof awg.last_config === 'string' && awg.last_config.trim().startsWith('{')
+        ? JSON.parse(awg.last_config)
+        : null;
+    } catch (e) {}
+  }
+
+  const host = awg.hostName || (lastConfig && lastConfig.hostName) || awg.server_ip || awg.ip || data.hostName || '';
+  const port = parseInt(awg.port || (lastConfig && lastConfig.port), 10) || 51820;
+  let clientIp = awg.client_ip || (lastConfig && lastConfig.client_ip) || '10.8.1.2';
+  if (!clientIp.includes('/')) clientIp += '/32';
+  const clientPrivKey = awg.client_priv_key || (lastConfig && lastConfig.client_priv_key) || '';
+  const serverPubKey = awg.server_pub_key || (lastConfig && lastConfig.server_pub_key) || '';
+  const psk = awg.psk_key || (lastConfig && lastConfig.psk_key) || '';
+
+  const isAwg = Boolean(
+    (targetContainer.container && targetContainer.container.includes('awg')) ||
+    awg.Jc || awg.H1 || (lastConfig && (lastConfig.Jc || lastConfig.H1))
+  );
+
+  const connName = data.description || (host ? `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${host}` : `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${port}`);
+
+  const amneziaParams = {
+    client_ip: clientIp,
+    client_priv_key: clientPrivKey,
+    server_pub_key: serverPubKey,
+    psk: psk,
+    version: parseInt(awg.protocol_version || (lastConfig && lastConfig.protocol_version) || '2', 10),
+    jc: (awg.Jc !== undefined ? parseInt(awg.Jc, 10) : (lastConfig && lastConfig.Jc !== undefined ? parseInt(lastConfig.Jc, 10) : 4)),
+    jmin: (awg.Jmin !== undefined ? parseInt(awg.Jmin, 10) : (lastConfig && lastConfig.Jmin !== undefined ? parseInt(lastConfig.Jmin, 10) : 40)),
+    jmax: (awg.Jmax !== undefined ? parseInt(awg.Jmax, 10) : (lastConfig && lastConfig.Jmax !== undefined ? parseInt(lastConfig.Jmax, 10) : 70)),
+    s1: (awg.S1 !== undefined ? parseInt(awg.S1, 10) : (lastConfig && lastConfig.S1 !== undefined ? parseInt(lastConfig.S1, 10) : 15)),
+    s2: (awg.S2 !== undefined ? parseInt(awg.S2, 10) : (lastConfig && lastConfig.S2 !== undefined ? parseInt(lastConfig.S2, 10) : 30)),
+    s3: (awg.S3 !== undefined ? parseInt(awg.S3, 10) : (lastConfig && lastConfig.S3 !== undefined ? parseInt(lastConfig.S3, 10) : undefined)),
+    s4: (awg.S4 !== undefined ? parseInt(awg.S4, 10) : (lastConfig && lastConfig.S4 !== undefined ? parseInt(lastConfig.S4, 10) : undefined)),
+    h1: awg.H1 || (lastConfig && lastConfig.H1) || undefined,
+    h2: awg.H2 || (lastConfig && lastConfig.H2) || undefined,
+    h3: awg.H3 || (lastConfig && lastConfig.H3) || undefined,
+    h4: awg.H4 || (lastConfig && lastConfig.H4) || undefined,
+    i1: awg.I1 || (lastConfig && lastConfig.I1) || undefined,
+    i2: awg.I2 || (lastConfig && lastConfig.I2) || undefined,
+    i3: awg.I3 || (lastConfig && lastConfig.I3) || undefined,
+    i4: awg.I4 || (lastConfig && lastConfig.I4) || undefined,
+    i5: awg.I5 || (lastConfig && lastConfig.I5) || undefined,
+    dns: [data.dns1 || '1.1.1.1', data.dns2 || '1.0.0.1'].filter(Boolean)
+  };
+
+  const outboundJsonObj = {
+    outbounds: [
+      {
+        tag: isAwg ? 'amneziawg' : 'wireguard',
+        protocol: 'wireguard',
+        settings: {
+          secretKey: clientPrivKey,
+          address: [clientIp],
+          peers: [
+            {
+              publicKey: serverPubKey,
+              endpoint: `${host}:${port}`,
+              allowedIPs: ['0.0.0.0/0', '::/0'],
+              preSharedKey: psk || undefined
+            }
+          ],
+          mtu: parseInt(awg.mtu || (lastConfig && lastConfig.mtu), 10) || 1376
+        }
+      },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole', settings: { response: { type: 'http' } } }
+    ]
+  };
+
+  return {
+    name: connName,
+    serverAddress: host,
+    serverPort: port,
+    protocol: isAwg ? 'amneziawg' : 'wireguard',
+    network: 'udp',
+    security: isAwg ? 'Amnezia' : 'WG',
+    sni: '',
+    outboundJson: JSON.stringify(outboundJsonObj, null, 4),
+    amneziaConfig: amneziaParams
+  };
+}
+
+// Generate Mihomo config.yaml for AmneziaWG connections
+function generateMihomoConfig(conn, routing) {
+  let am = conn.amneziaConfig || {};
+  let host = conn.serverAddress || '';
+  let port = conn.serverPort || 51820;
+  let clientIp = (am.client_ip || '').split('/')[0];
+  let clientPrivKey = am.client_priv_key || '';
+  let serverPubKey = am.server_pub_key || '';
+  let psk = am.psk || '';
+  const connName = conn.name || 'AmneziaWG';
+
+  // Fallback: extract from conn.outboundContent if keys are missing
+  if ((!clientPrivKey || !serverPubKey || !clientIp) && conn.outboundContent) {
+    try {
+      const clean = stripJsonComments(conn.outboundContent);
+      const parsed = JSON.parse(clean);
+      const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+      const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
+      if (ob && ob.settings) {
+        if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
+        if (!clientIp && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
+          clientIp = String(ob.settings.address[0]).split('/')[0];
+        }
+        if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
+          const peer = ob.settings.peers[0];
+          if (!serverPubKey && peer.publicKey) serverPubKey = peer.publicKey;
+          if (!psk && (peer.preSharedKey || peer.presharedKey)) psk = peer.preSharedKey || peer.presharedKey;
+          if ((!host || !port) && peer.endpoint) {
+            const ep = String(peer.endpoint).trim();
+            const lastColon = ep.lastIndexOf(':');
+            if (lastColon !== -1) {
+              if (!host) host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
+              if (!port) port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!clientIp) clientIp = '10.8.1.2';
+
+  const awgOptionLines = [];
+  awgOptionLines.push(`      version: ${am.version || 2}`);
+  if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
+  if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
+  if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
+  if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
+  if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
+  if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
+  if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
+  if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
+  if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
+  if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
+  if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+  if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+  if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
+  if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
+  if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
+  if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
+
+  let rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
+  const routingId = routing ? routing.id : '';
+  if (routingId === 'routing_except_ru') {
+    rulesYaml = `  - GEOIP,private,DIRECT,no-resolve
+  - GEOSITE,category-gov-ru,DIRECT
+  - GEOSITE,yandex,DIRECT
+  - GEOSITE,vk,DIRECT
+  - GEOSITE,steam,DIRECT
+  - GEOIP,ru,DIRECT
+  - MATCH,PROXY`;
+  }
+
+  const yamlContent = `# Generated by XKeenSwitcher for ${connName}
+mixed-port: 7890
+tproxy-port: 1181
+redir-port: 1182
+routing-mark: 255
+mode: rule
+log-level: info
+ipv6: false
+allow-lan: true
+unified-delay: true
+tcp-concurrent: true
+
+proxies:
+  - name: ${JSON.stringify(connName)}
+    type: wireguard
+    server: ${host}
+    port: ${port}
+    ip: ${clientIp}
+    public-key: ${JSON.stringify(serverPubKey)}
+    private-key: ${JSON.stringify(clientPrivKey)}
+${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
+    remote-dns-resolve: true
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    amnezia-wg-option:
+${awgOptionLines.join('\n')}
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - ${JSON.stringify(connName)}
+
+rules:
+${rulesYaml}
+`;
+
+  return yamlContent;
 }
 
 // Parse Hysteria 2 URL (hysteria2://... or hy2://...)
@@ -980,8 +1345,14 @@ function extractOutboundMetadata(outboundContent) {
         } else if (ob.streamSettings.tlsSettings && ob.streamSettings.tlsSettings.serverName) {
           sni = ob.streamSettings.tlsSettings.serverName;
         }
+      }
+      if (ob.tag === 'amneziawg' || ob.protocol === 'amneziawg') {
+        protocol = 'amneziawg';
+        network = 'udp';
+        security = 'Amnezia';
       } else if (protocol === 'wireguard') {
         network = 'udp';
+        if (!security || security === 'none') security = 'WG';
       }
       if (serverAddress) break;
     }
@@ -1360,6 +1731,30 @@ async function measureProxyHealth(outboundContent, options = {}) {
   });
 }
 
+// Helper: Measure ICMP latency (ping)
+function measureIcmpLatency(host, timeout = 3000) {
+  return new Promise((resolve) => {
+    if (!host) return resolve({ ok: false, error: 'Хост не указан' });
+    const cleanHost = String(host).trim().replace(/^\[|\]$/g, '');
+    if (!cleanHost) return resolve({ ok: false, error: 'Хост не указан' });
+    const isWin = os.platform() === 'win32';
+    const countFlag = isWin ? '-n 1' : '-c 1';
+    const timeoutFlag = isWin ? `-w ${timeout}` : `-W ${Math.ceil(timeout / 1000)}`;
+    const cmd = `ping ${countFlag} ${timeoutFlag} ${cleanHost}`;
+
+    exec(cmd, { timeout: timeout + 500 }, (err, stdout) => {
+      if (err) return resolve({ ok: false, error: 'Узел не отвечает на ICMP ping' });
+      const m = (stdout || '').match(/time[=<]([0-9\.]+)\s*ms/i);
+      const latency = m ? Math.round(parseFloat(m[1])) : null;
+      if (latency !== null) {
+        resolve({ ok: true, latency });
+      } else {
+        resolve({ ok: false, error: 'Не удалось определить время ответа' });
+      }
+    });
+  });
+}
+
 // Helper: Comprehensive connection health check (TCP handshake + real proxy tunnel test)
 async function measureConnectionHealth(conn, options = {}) {
   if (!conn) {
@@ -1367,6 +1762,20 @@ async function measureConnectionHealth(conn, options = {}) {
   }
 
   const timeout = options.timeout || 3500;
+  const isUdp = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || conn.network === 'udp';
+
+  if (isUdp && conn.serverAddress) {
+    const icmpRes = await measureIcmpLatency(conn.serverAddress, Math.min(timeout, 3000));
+    if (icmpRes.ok) {
+      return {
+        ok: true,
+        latency: icmpRes.latency,
+        tcpLatency: icmpRes.latency,
+        status: 'ok',
+        checkType: 'icmp'
+      };
+    }
+  }
 
   // Step 1: TCP handshake to destination host:port
   const tcpRes = await measureTcpLatency(conn.serverAddress, conn.serverPort, Math.min(timeout, 3000));
@@ -1980,6 +2389,7 @@ function loadData() {
             network: c.network || meta.network || 'tcp',
             security: c.security || meta.security || 'none',
             sni: c.sni || meta.sni || '',
+            amneziaConfig: c.amneziaConfig || null,
             countryCode: c.countryCode || null,
             countryName: c.countryName || null,
             isFavorite: Boolean(c.isFavorite),
@@ -2059,36 +2469,88 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
   }
 
   const { outboundPath, routingPath, restartCommand } = data.settings;
-  const fileWriteStatus = { outbound: false, routing: false, error: null };
+  const isAwg = conn.protocol === 'amneziawg' || Boolean(conn.amneziaConfig);
+  const coreInfo = detectActiveProxyCore();
+  let coreSwitched = false;
+  let targetCore = coreInfo.activeCore;
+
+  const fileWriteStatus = { outbound: false, routing: false, mihomo: false, error: null };
   let restartStatus = { executed: false, output: '', error: '' };
 
   try {
-    writeTargetFile(outboundPath, conn.outboundContent);
-    fileWriteStatus.outbound = true;
+    if (isAwg) {
+      // 1. Generate & write Mihomo configuration for AmneziaWG
+      const mihomoYaml = generateMihomoConfig(conn, routing);
+      const mihomoConfigPath = '/opt/etc/mihomo/config.yaml';
+      try {
+        writeTargetFile(mihomoConfigPath, mihomoYaml);
+        fileWriteStatus.mihomo = true;
+      } catch (mErr) {
+        console.error('Error writing mihomo config.yaml:', mErr);
+      }
 
-    writeTargetFile(routingPath, routing.content);
-    fileWriteStatus.routing = true;
+      // Ensure GeoSite.dat exists in mihomo directory
+      try {
+        if (!fs.existsSync('/opt/etc/mihomo/GeoSite.dat') && fs.existsSync('/opt/etc/xray/dat/geosite_v2fly.dat')) {
+          fs.symlinkSync('/opt/etc/xray/dat/geosite_v2fly.dat', '/opt/etc/mihomo/GeoSite.dat');
+        }
+      } catch (e) {}
+
+      // Also write Xray files as fallback
+      writeTargetFile(outboundPath, conn.outboundContent);
+      fileWriteStatus.outbound = true;
+      writeTargetFile(routingPath, routing.content);
+      fileWriteStatus.routing = true;
+
+      // 2. Switch core to Mihomo if not already active
+      if (coreInfo.activeCore !== 'mihomo' && coreInfo.hasMihomo) {
+        await runShellCommand('xkeen -mihomo');
+        coreSwitched = true;
+        targetCore = 'mihomo';
+      }
+    } else {
+      // Standard connection: write Xray files
+      writeTargetFile(outboundPath, conn.outboundContent);
+      fileWriteStatus.outbound = true;
+      writeTargetFile(routingPath, routing.content);
+      fileWriteStatus.routing = true;
+
+      // Switch back to Xray if currently on Mihomo
+      if (coreInfo.activeCore === 'mihomo' && coreInfo.hasXray) {
+        await runShellCommand('xkeen -xray');
+        coreSwitched = true;
+        targetCore = 'xray';
+      }
+    }
   } catch (err) {
     console.error('File write error during activation:', err);
     fileWriteStatus.error = err.message;
   }
 
-  if (restartCommand && restartCommand.trim()) {
-    const resCmd = await runShellCommand(restartCommand.trim());
-    restartStatus.executed = true;
-    restartStatus.output = resCmd.stdout;
-    restartStatus.error = resCmd.stderr || resCmd.error || '';
+  const effectiveRestartCmd = restartCommand && restartCommand.trim()
+    ? restartCommand.trim()
+    : '/opt/etc/init.d/S05xkeen restart';
 
-    const computedStatus = evaluateServiceStatus(resCmd);
-    lastServiceStatus = {
-      status: computedStatus,
-      output: resCmd.stdout,
-      error: resCmd.stderr || resCmd.error || '',
-      code: resCmd.code,
-      timestamp: new Date().toISOString(),
-      command: restartCommand.trim()
-    };
-  }
+  const resCmd = await runShellCommand(effectiveRestartCmd);
+  restartStatus.executed = true;
+  restartStatus.output = resCmd.stdout;
+  restartStatus.error = resCmd.stderr || resCmd.error || '';
+
+  const computedStatus = evaluateServiceStatus(resCmd);
+  const updatedCoreInfo = detectActiveProxyCore();
+  lastServiceStatus = {
+    status: computedStatus,
+    core: updatedCoreInfo.activeCore,
+    coresAvailable: {
+      xray: updatedCoreInfo.hasXray,
+      mihomo: updatedCoreInfo.hasMihomo
+    },
+    output: resCmd.stdout,
+    error: resCmd.stderr || resCmd.error || '',
+    code: resCmd.code,
+    timestamp: new Date().toISOString(),
+    command: effectiveRestartCmd
+  };
 
   if (updateActiveState) {
     data.settings.activeConnectionId = connId;
@@ -2100,7 +2562,9 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
     routing,
     fileWriteStatus,
     restartStatus,
-    serviceStatus: lastServiceStatus
+    serviceStatus: lastServiceStatus,
+    activeCore: updatedCoreInfo.activeCore,
+    coreSwitched
   };
 }
 
@@ -2996,15 +3460,15 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { success, message: 'Журнал авто-резерва очищен' });
   }
 
-  // POST /api/connections/parse-url - Parse VLESS link
-  if (urlParts === '/api/connections/parse-url' && req.method === 'POST') {
+  // POST /api/connections/parse-url (and /api/parse-link) - Parse proxy link (VLESS, AWG vpn://, WG, VMess, etc.)
+  if ((urlParts === '/api/connections/parse-url' || urlParts === '/api/parse-link') && req.method === 'POST') {
     try {
       const body = await parseJsonBody(req);
       const { url } = body;
       if (!url) {
         return sendJson(res, 400, { error: 'Укажите ссылку подключения' });
       }
-      const parsed = parseVlessUrl(url);
+      const parsed = parseProxyUrl(url);
       return sendJson(res, 200, parsed);
     } catch (err) {
       return sendJson(res, 400, { error: err.message || 'Ошибка парсинга ссылки' });
@@ -3025,11 +3489,18 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await parseJsonBody(req);
       let { name, description, routingId, outboundContent, url } = body;
+      let parsedFromUrl = null;
 
-      if (url && !outboundContent) {
-        const parsedFromUrl = parseVlessUrl(url);
-        name = name || parsedFromUrl.name;
-        outboundContent = parsedFromUrl.outboundJson;
+      if (url) {
+        try {
+          parsedFromUrl = parseProxyUrl(url);
+          name = name || parsedFromUrl.name;
+          if (!outboundContent) {
+            outboundContent = parsedFromUrl.outboundJson;
+          }
+        } catch (uErr) {
+          if (!outboundContent) throw uErr;
+        }
       }
 
       if (!name || !outboundContent) {
@@ -3055,11 +3526,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       const meta = extractOutboundMetadata(outboundContent);
+      const effectiveAmneziaConfig = body.amneziaConfig || (parsedFromUrl ? parsedFromUrl.amneziaConfig : null) || null;
+      const isAwg = meta.protocol === 'amneziawg' || (parsedFromUrl && parsedFromUrl.protocol === 'amneziawg') || Boolean(effectiveAmneziaConfig);
+
       let countryCode = null;
       let countryName = null;
-      if (meta.serverAddress) {
+      const hostToGeo = (parsedFromUrl && parsedFromUrl.serverAddress) || meta.serverAddress;
+      if (hostToGeo) {
         try {
-          const geo = await resolveGeoIp(meta.serverAddress);
+          const geo = await resolveGeoIp(hostToGeo);
           if (geo) {
             countryCode = geo.countryCode;
             countryName = geo.countryName;
@@ -3073,12 +3548,13 @@ const server = http.createServer(async (req, res) => {
         description: (description || '').trim(),
         routingId: routingId,
         outboundContent: outboundContent.trim(),
-        serverAddress: meta.serverAddress,
-        serverPort: meta.serverPort,
-        protocol: meta.protocol,
-        network: meta.network,
-        security: meta.security,
+        serverAddress: (parsedFromUrl && parsedFromUrl.serverAddress) || meta.serverAddress,
+        serverPort: (parsedFromUrl && parsedFromUrl.serverPort) || meta.serverPort,
+        protocol: isAwg ? 'amneziawg' : meta.protocol,
+        network: isAwg ? 'udp' : meta.network,
+        security: isAwg ? 'Amnezia' : meta.security,
         sni: meta.sni,
+        amneziaConfig: effectiveAmneziaConfig,
         countryCode: countryCode,
         countryName: countryName,
         groupId: (body.groupId && data.groups.some(g => g.id === body.groupId)) ? body.groupId : 'group_default',
@@ -3149,8 +3625,9 @@ const server = http.createServer(async (req, res) => {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         try {
-          const parsed = parseVlessUrl(line);
+          const parsed = parseProxyUrl(line);
           const meta = extractOutboundMetadata(parsed.outboundJson);
+          const isAwg = parsed.protocol === 'amneziawg' || Boolean(parsed.amneziaConfig);
 
           const newConn = {
             id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
@@ -3161,10 +3638,11 @@ const server = http.createServer(async (req, res) => {
             outboundContent: parsed.outboundJson,
             serverAddress: parsed.serverAddress || meta.serverAddress,
             serverPort: parsed.serverPort || meta.serverPort,
-            protocol: parsed.protocol || meta.protocol,
-            network: parsed.network || meta.network,
-            security: parsed.security || meta.security,
+            protocol: isAwg ? 'amneziawg' : (parsed.protocol || meta.protocol),
+            network: isAwg ? 'udp' : (parsed.network || meta.network),
+            security: isAwg ? 'Amnezia' : (parsed.security || meta.security),
             sni: parsed.sni || meta.sni,
+            amneziaConfig: parsed.amneziaConfig || null,
             countryCode: null,
             countryName: null,
             isFavorite: false,
@@ -3339,6 +3817,18 @@ const server = http.createServer(async (req, res) => {
       conn.network = meta.network;
       conn.security = meta.security;
       conn.sni = meta.sni;
+
+      if (body.amneziaConfig) {
+        conn.amneziaConfig = body.amneziaConfig;
+        conn.protocol = 'amneziawg';
+        conn.network = 'udp';
+        conn.security = 'Amnezia';
+      } else if (conn.amneziaConfig && (meta.protocol === 'wireguard' || meta.protocol === 'amneziawg')) {
+        conn.protocol = 'amneziawg';
+        conn.network = 'udp';
+        conn.security = 'Amnezia';
+      }
+
       conn.updatedAt = new Date().toISOString();
 
       if (hostChanged || !conn.countryCode) {
