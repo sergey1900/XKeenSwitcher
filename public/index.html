@@ -489,30 +489,35 @@
           </div>
         </div>
 
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label>Назначение в группу</label>
+          <div class="radio-toggle-group">
+            <label class="radio-label">
+              <input type="radio" name="batch-group-choice" value="new" checked onchange="toggleBatchGroupMode()">
+              <span>Создать новую группу</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="batch-group-choice" value="existing" onchange="toggleBatchGroupMode()">
+              <span>Существующая группа</span>
+            </label>
+          </div>
+        </div>
+
         <div class="form-row">
-          <div class="form-group flex-2">
-            <label>Назначение в группу</label>
-            <div class="radio-toggle-group">
-              <label class="radio-label">
-                <input type="radio" name="batch-group-choice" value="new" checked onchange="toggleBatchGroupMode()">
-                <span>Создать новую группу</span>
-              </label>
-              <label class="radio-label">
-                <input type="radio" name="batch-group-choice" value="existing" onchange="toggleBatchGroupMode()">
-                <span>Существующая группа</span>
-              </label>
+          <div class="form-group flex-1">
+            <div id="batch-group-new-wrap">
+              <label for="batch-group-new-name">Название группы <span class="req">*</span></label>
+              <input type="text" id="batch-group-new-name" placeholder="Например: Group 1">
             </div>
-            <div id="batch-group-new-wrap" style="margin-top: 8px;">
-              <input type="text" id="batch-group-new-name" placeholder="Название новой группы (например: Group 1)">
-            </div>
-            <div id="batch-group-existing-wrap" class="hidden" style="margin-top: 8px;">
+            <div id="batch-group-existing-wrap" class="hidden">
+              <label for="batch-group-select">Группа <span class="req">*</span></label>
               <select id="batch-group-select" class="custom-select">
                 <!-- Populated via JS -->
               </select>
             </div>
           </div>
 
-          <div class="form-group flex-2">
+          <div class="form-group flex-1">
             <label for="batch-routing-select">Маршрутизация для импорта <span class="req">*</span></label>
             <select id="batch-routing-select" class="custom-select" required>
               <!-- Populated via JS -->

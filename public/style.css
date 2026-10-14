@@ -1878,22 +1878,28 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 .radio-toggle-group {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 22px;
   align-items: center;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .radio-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
+  font-weight: 500;
   color: #e2e8f0;
+  white-space: nowrap;
+  user-select: none;
 }
 
 .radio-label input[type="radio"] {
-  width: auto;
+  width: 17px;
+  height: 17px;
+  margin: 0;
   accent-color: var(--accent-primary);
   cursor: pointer;
 }
