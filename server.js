@@ -1277,8 +1277,8 @@ function generateMihomoConfig(conn, routing) {
     let serverPubKey = am.server_pub_key || '';
     let psk = am.psk || '';
 
-    // Fallback: extract from conn.outboundContent if keys are missing
-    if ((!clientPrivKey || !serverPubKey || !clientIp) && conn.outboundContent) {
+    // Fallback: extract from conn.outboundContent if keys or host/port are missing
+    if (conn.outboundContent) {
       try {
         const clean = stripJsonComments(conn.outboundContent);
         const parsed = JSON.parse(clean);
@@ -1286,19 +1286,21 @@ function generateMihomoConfig(conn, routing) {
         const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
         if (ob && ob.settings) {
           if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
-          if (!clientIp && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
+          if ((!clientIp || clientIp === '10.8.1.2') && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
             clientIp = String(ob.settings.address[0]).split('/')[0];
           }
           if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
             const peer = ob.settings.peers[0];
             if (!serverPubKey && peer.publicKey) serverPubKey = peer.publicKey;
             if (!psk && (peer.preSharedKey || peer.presharedKey)) psk = peer.preSharedKey || peer.presharedKey;
-            if ((!host || !port) && peer.endpoint) {
+            if ((!host || !port || Array.isArray(host) || host === clientIp) && peer.endpoint) {
               const ep = String(peer.endpoint).trim();
               const lastColon = ep.lastIndexOf(':');
               if (lastColon !== -1) {
-                if (!host) host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
-                if (!port) port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+                host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
+                port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+              } else {
+                host = ep.replace(/^\[|\]$/g, '');
               }
             }
           }
@@ -1465,24 +1467,25 @@ function extractOutboundMetadata(outboundContent) {
       if (!ob || ob.tag === 'direct' || ob.tag === 'block') continue;
       if (ob.protocol) protocol = ob.protocol;
       if (ob.settings) {
-        if (ob.settings.address) {
-          serverAddress = ob.settings.address;
-          serverPort = ob.settings.port || null;
-        } else if (ob.settings.vnext && ob.settings.vnext[0]) {
-          serverAddress = ob.settings.vnext[0].address || '';
-          serverPort = ob.settings.vnext[0].port || null;
-        } else if (ob.settings.servers && ob.settings.servers[0]) {
-          serverAddress = ob.settings.servers[0].address || '';
-          serverPort = ob.settings.servers[0].port || null;
-        } else if (ob.settings.peers && ob.settings.peers[0] && ob.settings.peers[0].endpoint) {
+        if (ob.settings.peers && ob.settings.peers[0] && ob.settings.peers[0].endpoint) {
           const ep = String(ob.settings.peers[0].endpoint).trim();
           const lastColon = ep.lastIndexOf(':');
           if (lastColon !== -1) {
             serverAddress = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
             serverPort = parseInt(ep.substring(lastColon + 1), 10) || null;
           } else {
-            serverAddress = ep;
+            serverAddress = ep.replace(/^\[|\]$/g, '');
           }
+        } else if (ob.settings.vnext && ob.settings.vnext[0]) {
+          serverAddress = ob.settings.vnext[0].address || '';
+          serverPort = ob.settings.vnext[0].port || null;
+        } else if (ob.settings.servers && ob.settings.servers[0]) {
+          serverAddress = ob.settings.servers[0].address || '';
+          serverPort = ob.settings.servers[0].port || null;
+        } else if (ob.settings.address) {
+          const addr = Array.isArray(ob.settings.address) ? ob.settings.address[0] : ob.settings.address;
+          serverAddress = String(addr || '').replace(/^\[|\]$/g, '');
+          serverPort = ob.settings.port || null;
         }
       }
       if (ob.streamSettings) {
@@ -2032,7 +2035,8 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
     let serverPubKey = am.server_pub_key || '';
     let psk = am.psk || '';
 
-    if ((!clientPrivKey || !serverPubKey || !clientIp) && conn.outboundContent) {
+    // Fallback: extract from conn.outboundContent if keys or host/port are missing
+    if (conn.outboundContent) {
       try {
         const clean = stripJsonComments(conn.outboundContent);
         const parsed = JSON.parse(clean);
@@ -2040,19 +2044,21 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
         const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
         if (ob && ob.settings) {
           if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
-          if (!clientIp && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
+          if ((!clientIp || clientIp === '10.8.1.2') && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
             clientIp = String(ob.settings.address[0]).split('/')[0];
           }
           if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
             const peer = ob.settings.peers[0];
             if (!serverPubKey && peer.publicKey) serverPubKey = peer.publicKey;
             if (!psk && (peer.preSharedKey || peer.presharedKey)) psk = peer.preSharedKey || peer.presharedKey;
-            if ((!host || !port) && peer.endpoint) {
+            if ((!host || !port || Array.isArray(host) || host === clientIp) && peer.endpoint) {
               const ep = String(peer.endpoint).trim();
               const lastColon = ep.lastIndexOf(':');
               if (lastColon !== -1) {
-                if (!host) host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
-                if (!port) port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+                host = ep.substring(0, lastColon).replace(/^\[|\]$/g, '');
+                port = parseInt(ep.substring(lastColon + 1), 10) || 51820;
+              } else {
+                host = ep.replace(/^\[|\]$/g, '');
               }
             }
           }
@@ -3080,8 +3086,12 @@ function loadData() {
             groupId: (c.groupId && data.groups.some(g => g.id === c.groupId)) ? c.groupId : 'group_default',
             routingId: c.routingId || 'routing_all_vpn',
             outboundContent: c.outboundContent || '',
-            serverAddress: c.serverAddress || meta.serverAddress || '',
-            serverPort: c.serverPort || meta.serverPort || null,
+            serverAddress: (Array.isArray(c.serverAddress) || !c.serverPort || c.protocol === 'wireguard' || c.protocol === 'amneziawg')
+              ? (meta.serverAddress || (Array.isArray(c.serverAddress) ? c.serverAddress[0] : c.serverAddress) || '')
+              : (c.serverAddress || meta.serverAddress || ''),
+            serverPort: (c.protocol === 'wireguard' || c.protocol === 'amneziawg' || !c.serverPort)
+              ? (meta.serverPort || c.serverPort || null)
+              : (c.serverPort || meta.serverPort || null),
             protocol: c.protocol || meta.protocol || 'vless',
             network: c.network || meta.network || 'tcp',
             security: c.security || meta.security || 'none',
@@ -3166,7 +3176,7 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
   }
 
   const { outboundPath, routingPath, restartCommand } = data.settings;
-  const isMihomoRequired = conn.protocol === 'amneziawg' || conn.protocol === 'hysteria2' || conn.protocol === 'hy2' || Boolean(conn.amneziaConfig);
+  const isMihomoRequired = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || conn.protocol === 'hysteria2' || conn.protocol === 'hy2' || Boolean(conn.amneziaConfig);
   const coreInfo = detectActiveProxyCore();
   let coreSwitched = false;
   let targetCore = coreInfo.activeCore;
