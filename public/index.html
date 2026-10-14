@@ -482,7 +482,7 @@
       <form id="form-batch-import" onsubmit="onBatchImportSubmit(event)">
         <div class="form-group">
           <label for="batch-import-text">Список ссылок <span class="req">*</span></label>
-          <textarea id="batch-import-text" class="code-editor-textarea" rows="8" placeholder="vless://...#Server 1&#10;vless://...#Server 2" required oninput="updateBatchImportCounter()"></textarea>
+          <textarea id="batch-import-text" class="batch-import-textarea" rows="8" placeholder="vless://...#Server 1&#10;vless://...#Server 2" required oninput="updateBatchImportCounter()"></textarea>
           <div class="field-help-row">
             <small class="help-text">По одной ссылке на строку (формат <code>vless://</code>). Пустые строки и комментарии игнорируются.</small>
             <span class="badge-counter" id="batch-import-counter">Найдено ссылок: 0</span>

@@ -1730,13 +1730,21 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 /* CONNECTION CARDS & GROUPS */
-.connections-grid, .routings-grid, .connections-subgrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+.connections-grid {
+  display: flex;
+  flex-direction: column;
   gap: 20px;
+  width: 100%;
+  margin-bottom: 30px;
 }
 
-.connections-grid, .routings-grid {
+.connections-subgrid, .routings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.routings-grid {
   margin-bottom: 30px;
 }
 
@@ -1903,6 +1911,29 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   font-weight: 600;
   color: var(--accent-primary);
   white-space: nowrap;
+}
+
+.batch-import-textarea {
+  width: 100%;
+  min-height: 180px;
+  max-height: 360px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  color: #f1f5f9;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.batch-import-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
 }
 
 .conn-card {
@@ -2334,7 +2365,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 /* RESPONSIVENESS */
 @media (max-width: 768px) {
-  .connections-grid, .routings-grid {
+  .connections-subgrid, .routings-grid {
     grid-template-columns: 1fr;
   }
 

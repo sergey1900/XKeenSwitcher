@@ -2985,7 +2985,17 @@ function closeModal(id) {
 
 window.addEventListener('click', (e) => {
   if (e.target.classList.contains('modal-overlay')) {
-    e.target.classList.add('hidden');
+    closeModal(e.target.id);
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const visibleModals = document.querySelectorAll('.modal-overlay:not(.hidden)');
+    if (visibleModals.length > 0) {
+      const topModal = visibleModals[visibleModals.length - 1];
+      closeModal(topModal.id);
+    }
   }
 });
 
