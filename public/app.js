@@ -97,6 +97,7 @@ async function loadData() {
     renderConnections();
     renderRoutings();
     populateRoutingSelects();
+    populateGroupSelects();
     pollFailoverStatus();
     pollAutoFailoverStatus();
   } catch (err) {
@@ -339,6 +340,9 @@ function renderConnectionCardHtml(conn, activeId) {
         </div>
 
         <div class="conn-footer-actions">
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="Переместить или скопировать в другую группу">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
           <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
           </button>
@@ -354,10 +358,45 @@ function renderConnectionCardHtml(conn, activeId) {
   `;
 }
 
+let collapsedGroupIds = new Set();
+try {
+  const saved = localStorage.getItem('xkeen_collapsed_groups');
+  if (saved) {
+    collapsedGroupIds = new Set(JSON.parse(saved));
+  }
+} catch (e) {}
+
+function saveCollapsedGroups() {
+  try {
+    localStorage.setItem('xkeen_collapsed_groups', JSON.stringify([...collapsedGroupIds]));
+  } catch (e) {}
+}
+
+function toggleGroupCollapse(groupId) {
+  if (collapsedGroupIds.has(groupId)) {
+    collapsedGroupIds.delete(groupId);
+  } else {
+    collapsedGroupIds.add(groupId);
+  }
+  saveCollapsedGroups();
+  const card = document.getElementById(`group-card-${groupId}`);
+  const body = document.getElementById(`group-body-${groupId}`);
+  if (card && body) {
+    const isNowCollapsed = collapsedGroupIds.has(groupId);
+    card.classList.toggle('collapsed', isNowCollapsed);
+    body.classList.toggle('hidden', isNowCollapsed);
+    const arrow = card.querySelector('.group-toggle-arrow');
+    if (arrow) arrow.classList.toggle('expanded', !isNowCollapsed);
+  }
+}
+
 function renderConnections() {
   if (!connectionsGrid) return;
   const rawList = appData.connections || [];
   const activeId = appData.settings ? appData.settings.activeConnectionId : null;
+  const groups = (appData.groups && appData.groups.length > 0)
+    ? appData.groups
+    : [{ id: 'group_default', name: 'Общие' }];
 
   const sortSelect = document.getElementById('connections-sort-select');
   if (sortSelect && sortSelect.value !== currentSort) {
@@ -377,31 +416,74 @@ function renderConnections() {
 
   const list = getSortedConnections(rawList, activeId);
   const favorites = list.filter(c => c.isFavorite);
-  const regulars = list.filter(c => !c.isFavorite);
 
+  let html = '';
+
+  // 1. Favorites section at top (if any)
   if (favorites.length > 0) {
-    let html = `
-      <div class="section-group-divider favorites-divider">
-        <span class="star-icon">⭐</span>
-        <span>Избранные подключения</span>
-        <span class="group-count">${favorites.length}</span>
+    html += `
+      <div class="favorites-container">
+        <div class="section-group-divider favorites-divider">
+          <span class="star-icon">⭐</span>
+          <span>Избранные подключения</span>
+          <span class="group-count">${favorites.length}</span>
+        </div>
+        <div class="connections-subgrid">
+          ${favorites.map(c => renderConnectionCardHtml(c, activeId)).join('')}
+        </div>
       </div>
     `;
-    html += favorites.map(c => renderConnectionCardHtml(c, activeId)).join('');
-
-    if (regulars.length > 0) {
-      html += `
-        <div class="section-group-divider">
-          <span>Все подключения</span>
-          <span class="group-count">${regulars.length}</span>
-        </div>
-      `;
-      html += regulars.map(c => renderConnectionCardHtml(c, activeId)).join('');
-    }
-    connectionsGrid.innerHTML = html;
-  } else {
-    connectionsGrid.innerHTML = list.map(c => renderConnectionCardHtml(c, activeId)).join('');
   }
+
+  // 2. Groups Accordions
+  html += `<div class="groups-container">`;
+  groups.forEach(g => {
+    const groupConns = list.filter(c => (c.groupId || 'group_default') === g.id);
+    const isCollapsed = collapsedGroupIds.has(g.id);
+
+    html += `
+      <div class="group-accordion-card ${isCollapsed ? 'collapsed' : ''}" id="group-card-${g.id}">
+        <div class="group-header" onclick="toggleGroupCollapse('${g.id}')">
+          <div class="group-header-left">
+            <span class="group-toggle-arrow ${isCollapsed ? '' : 'expanded'}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </span>
+            <span class="group-icon">📁</span>
+            <span class="group-name">${escapeHtml(g.name)}</span>
+            <span class="group-count-badge">${groupConns.length}</span>
+          </div>
+          <div class="group-actions" onclick="event.stopPropagation()">
+            <button class="btn-group-action" onclick="openAddConnectionModal('${g.id}')" title="Добавить подключение в эту группу">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button class="btn-group-action" onclick="openRenameGroupModal('${g.id}', '${escapeJs(g.name)}')" title="Переименовать группу">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+            ${g.id !== 'group_default' ? `
+              <button class="btn-group-action btn-group-delete" onclick="deleteGroup('${g.id}', '${escapeJs(g.name)}')" title="Удалить группу (подключения переместятся в 'Общие')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            ` : ''}
+          </div>
+        </div>
+        <div class="group-body ${isCollapsed ? 'hidden' : ''}" id="group-body-${g.id}">
+          ${groupConns.length > 0 ? `
+            <div class="connections-subgrid">
+              ${groupConns.map(c => renderConnectionCardHtml(c, activeId)).join('')}
+            </div>
+          ` : `
+            <div class="group-empty-state">
+              <span>В этой группе пока нет подключений</span>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="openAddConnectionModal('${g.id}')">Добавить подключение</button>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+
+  connectionsGrid.innerHTML = html;
 }
 
 // Render Routings Grid
@@ -471,6 +553,42 @@ function populateRoutingSelects() {
 
   const editSel = document.getElementById('edit-conn-routing');
   if (editSel) editSel.innerHTML = optionsHtml;
+
+  const batchSel = document.getElementById('batch-routing-select');
+  if (batchSel) batchSel.innerHTML = optionsHtml;
+}
+
+// Populate group select dropdowns in modals
+function populateGroupSelects(selectedGroupId = null) {
+  const groups = (appData.groups && appData.groups.length > 0)
+    ? appData.groups
+    : [{ id: 'group_default', name: 'Общие' }];
+
+  const optionsHtml = groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+
+  const addGroupSel = document.getElementById('conn-group');
+  if (addGroupSel) {
+    const cur = selectedGroupId || addGroupSel.value || 'group_default';
+    addGroupSel.innerHTML = optionsHtml;
+    addGroupSel.value = groups.some(g => g.id === cur) ? cur : groups[0].id;
+  }
+
+  const editGroupSel = document.getElementById('edit-conn-group');
+  if (editGroupSel) {
+    const cur = selectedGroupId || editGroupSel.value || 'group_default';
+    editGroupSel.innerHTML = optionsHtml;
+    editGroupSel.value = groups.some(g => g.id === cur) ? cur : groups[0].id;
+  }
+
+  const batchGroupSel = document.getElementById('batch-group-select');
+  if (batchGroupSel) {
+    batchGroupSel.innerHTML = optionsHtml;
+  }
+
+  const moveCopySel = document.getElementById('move-copy-target-group');
+  if (moveCopySel) {
+    moveCopySel.innerHTML = optionsHtml;
+  }
 }
 
 // ==============================================================================
@@ -639,10 +757,11 @@ function parseVlessUrlInput(showNotice = true) {
 // ==============================================================================
 
 // Open Add Connection Modal
-function openAddConnectionModal() {
+function openAddConnectionModal(defaultGroupId = '') {
   document.getElementById('form-add-connection').reset();
   document.getElementById('add-meta-preview').classList.add('hidden');
   populateRoutingSelects();
+  populateGroupSelects(defaultGroupId || 'group_default');
   setEditorContent('conn-outbound-json', '{\n    "outbounds": []\n}');
   openModal('modal-add-connection');
 }
@@ -652,6 +771,7 @@ async function onAddConnectionSubmit(e) {
   e.preventDefault();
   const name = document.getElementById('conn-name').value.trim();
   const description = document.getElementById('conn-desc').value.trim();
+  const groupId = document.getElementById('conn-group') ? document.getElementById('conn-group').value : 'group_default';
   const routingId = document.getElementById('conn-routing').value;
   const outboundContent = document.getElementById('conn-outbound-json').value.trim();
 
@@ -664,7 +784,7 @@ async function onAddConnectionSubmit(e) {
     const res = await fetch('/api/connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, routingId, outboundContent })
+      body: JSON.stringify({ name, description, groupId, routingId, outboundContent })
     });
 
     const data = await res.json();
@@ -687,6 +807,9 @@ function openEditConnectionModal(id) {
   document.getElementById('edit-conn-name').value = conn.name;
   document.getElementById('edit-conn-desc').value = conn.description || '';
   populateRoutingSelects();
+  populateGroupSelects();
+  const editGroupSel = document.getElementById('edit-conn-group');
+  if (editGroupSel) editGroupSel.value = conn.groupId || 'group_default';
   document.getElementById('edit-conn-routing').value = conn.routingId || 'routing_all_vpn';
 
   // Preview pills
@@ -728,6 +851,7 @@ async function onEditConnectionSubmit(e) {
   const id = document.getElementById('edit-conn-id').value;
   const name = document.getElementById('edit-conn-name').value.trim();
   const description = document.getElementById('edit-conn-desc').value.trim();
+  const groupId = document.getElementById('edit-conn-group') ? document.getElementById('edit-conn-group').value : 'group_default';
   const routingId = document.getElementById('edit-conn-routing').value;
   const outboundContent = document.getElementById('edit-conn-outbound-json').value.trim();
 
@@ -735,7 +859,7 @@ async function onEditConnectionSubmit(e) {
     const res = await fetch(`/api/connections/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, routingId, outboundContent })
+      body: JSON.stringify({ name, description, groupId, routingId, outboundContent })
     });
 
     const data = await res.json();
@@ -746,6 +870,291 @@ async function onEditConnectionSubmit(e) {
     await loadData();
   } catch (err) {
     showToast(err.message, 'error');
+  }
+}
+
+// ==============================================================================
+// GROUP MANAGEMENT
+// ==============================================================================
+
+// Helper: Calculate default name for new group (e.g. "Group 1", "Group 2")
+function getNextDefaultGroupName() {
+  const groups = appData.groups || [];
+  let index = 1;
+  const existingNames = new Set(groups.map(g => (g.name || '').trim().toLowerCase()));
+  while (existingNames.has(`group ${index}`.toLowerCase()) || existingNames.has(`группа ${index}`.toLowerCase())) {
+    index++;
+  }
+  return `Group ${index}`;
+}
+
+// Open modal to create a new group
+function openCreateGroupModal() {
+  const idInput = document.getElementById('group-edit-id');
+  const titleEl = document.getElementById('group-modal-title');
+  const nameInput = document.getElementById('group-edit-name');
+  if (idInput) idInput.value = '';
+  if (titleEl) titleEl.textContent = 'Новая группа';
+  if (nameInput) nameInput.value = getNextDefaultGroupName();
+  openModal('modal-group-edit');
+  setTimeout(() => {
+    if (nameInput) {
+      nameInput.focus();
+      nameInput.select();
+    }
+  }, 100);
+}
+
+// Open modal to rename an existing group
+function openRenameGroupModal(groupId, currentName) {
+  const idInput = document.getElementById('group-edit-id');
+  const titleEl = document.getElementById('group-modal-title');
+  const nameInput = document.getElementById('group-edit-name');
+  if (idInput) idInput.value = groupId;
+  if (titleEl) titleEl.textContent = 'Переименовать группу';
+  if (nameInput) nameInput.value = currentName || '';
+  openModal('modal-group-edit');
+  setTimeout(() => {
+    if (nameInput) {
+      nameInput.focus();
+      nameInput.select();
+    }
+  }, 100);
+}
+
+// Submit Create or Rename Group
+async function onGroupEditSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('group-edit-id').value;
+  const name = document.getElementById('group-edit-name').value.trim();
+  if (!name) {
+    showToast('Укажите название группы', 'warning');
+    return;
+  }
+
+  try {
+    let res;
+    if (id) {
+      res = await fetch(`/api/groups/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+    } else {
+      res = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+    }
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка сохранения группы');
+
+    showToast(data.message || 'Группа успешно сохранена', 'success');
+    closeModal('modal-group-edit');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// Delete group (connections move to group_default)
+async function deleteGroup(groupId, groupName) {
+  if (groupId === 'group_default') {
+    showToast('Нельзя удалить основную группу', 'warning');
+    return;
+  }
+
+  const confirmed = confirm(`Удалить группу "${groupName}"?\nВсе подключения из неё будут перемещены в "Общие".`);
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/groups/${groupId}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка удаления группы');
+
+    showToast(data.message || 'Группа удалена', 'success');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ==============================================================================
+// MOVE & COPY CONNECTIONS BETWEEN GROUPS
+// ==============================================================================
+
+function openMoveCopyModal(connId) {
+  const conn = (appData.connections || []).find(c => c.id === connId);
+  if (!conn) return;
+
+  document.getElementById('move-copy-conn-id').value = conn.id;
+  document.getElementById('move-copy-conn-name').textContent = conn.name;
+  populateGroupSelects();
+
+  const targetGroupSel = document.getElementById('move-copy-target-group');
+  if (targetGroupSel) {
+    targetGroupSel.value = conn.groupId || 'group_default';
+  }
+
+  const radioMove = document.querySelector('input[name="move-copy-action"][value="move"]');
+  if (radioMove) radioMove.checked = true;
+
+  const newNameInput = document.getElementById('move-copy-new-name');
+  if (newNameInput) newNameInput.value = `${conn.name} (Копия)`;
+
+  toggleMoveCopyAction();
+  openModal('modal-move-copy');
+}
+
+function toggleMoveCopyAction() {
+  const action = document.querySelector('input[name="move-copy-action"]:checked')?.value || 'move';
+  const nameWrap = document.getElementById('move-copy-new-name-wrap');
+  const submitBtn = document.getElementById('btn-move-copy-submit');
+  if (action === 'copy') {
+    if (nameWrap) nameWrap.classList.remove('hidden');
+    if (submitBtn) submitBtn.textContent = 'Копировать';
+  } else {
+    if (nameWrap) nameWrap.classList.add('hidden');
+    if (submitBtn) submitBtn.textContent = 'Переместить';
+  }
+}
+
+async function onMoveCopySubmit(e) {
+  e.preventDefault();
+  const connId = document.getElementById('move-copy-conn-id').value;
+  const action = document.querySelector('input[name="move-copy-action"]:checked')?.value || 'move';
+  const targetGroupId = document.getElementById('move-copy-target-group').value;
+  const newName = (document.getElementById('move-copy-new-name').value || '').trim();
+
+  if (!connId || !targetGroupId) {
+    showToast('Не выбрана целевая группа', 'warning');
+    return;
+  }
+
+  try {
+    let res;
+    if (action === 'copy') {
+      res = await fetch(`/api/connections/${connId}/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetGroupId, newName })
+      });
+    } else {
+      res = await fetch(`/api/connections/${connId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetGroupId })
+      });
+    }
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка обработки подключения');
+
+    showToast(data.message || (action === 'copy' ? 'Подключение скопировано' : 'Подключение перемещено'), 'success');
+    closeModal('modal-move-copy');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ==============================================================================
+// BATCH IMPORT CONNECTIONS
+// ==============================================================================
+
+function openBatchImportModal() {
+  const form = document.getElementById('form-batch-import');
+  if (form) form.reset();
+
+  populateRoutingSelects();
+  populateGroupSelects();
+
+  const newNameInput = document.getElementById('batch-group-new-name');
+  if (newNameInput) newNameInput.value = getNextDefaultGroupName();
+
+  const radioNew = document.querySelector('input[name="batch-group-choice"][value="new"]');
+  if (radioNew) radioNew.checked = true;
+
+  toggleBatchGroupMode();
+  updateBatchImportCounter();
+  openModal('modal-batch-import');
+}
+
+function toggleBatchGroupMode() {
+  const mode = document.querySelector('input[name="batch-group-choice"]:checked')?.value || 'new';
+  const newWrap = document.getElementById('batch-group-new-wrap');
+  const existWrap = document.getElementById('batch-group-existing-wrap');
+  if (newWrap && existWrap) {
+    newWrap.classList.toggle('hidden', mode !== 'new');
+    existWrap.classList.toggle('hidden', mode !== 'existing');
+  }
+}
+
+function updateBatchImportCounter() {
+  const textarea = document.getElementById('batch-import-text');
+  const counter = document.getElementById('batch-import-counter');
+  const submitText = document.getElementById('btn-submit-batch-text');
+  if (!textarea || !counter) return;
+
+  const lines = textarea.value
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
+
+  counter.textContent = `Найдено ссылок: ${lines.length}`;
+  if (submitText) {
+    submitText.textContent = lines.length > 0 ? `Импортировать (${lines.length})` : 'Импортировать';
+  }
+}
+
+async function onBatchImportSubmit(e) {
+  e.preventDefault();
+  const text = document.getElementById('batch-import-text').value.trim();
+  const routingId = document.getElementById('batch-routing-select').value;
+  const mode = document.querySelector('input[name="batch-group-choice"]:checked')?.value || 'new';
+
+  let groupName = '';
+  let groupId = '';
+
+  if (mode === 'new') {
+    groupName = (document.getElementById('batch-group-new-name').value || '').trim();
+    if (!groupName) groupName = getNextDefaultGroupName();
+  } else {
+    groupId = document.getElementById('batch-group-select').value;
+  }
+
+  if (!text) {
+    showToast('Вставьте хотя бы одну ссылку', 'warning');
+    return;
+  }
+
+  const submitBtn = document.getElementById('btn-submit-batch-import');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/connections/batch-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, groupName, groupId, routingId })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка пакетного импорта');
+
+    showToast(data.message || `Импортировано: ${data.count}`, 'success');
+    if (data.errors && data.errors.length > 0) {
+      console.warn('Предупреждения при импорте:', data.errors);
+    }
+    closeModal('modal-batch-import');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 

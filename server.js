@@ -1216,6 +1216,9 @@ function loadData() {
       }
     },
     connections: [],
+    groups: [
+      { id: 'group_default', name: 'Общие', createdAt: new Date().toISOString() }
+    ],
     routings: [
       { ...SYSTEM_ROUTING_ALL_VPN },
       { ...SYSTEM_ROUTING_EXCEPT_RU }
@@ -1249,6 +1252,14 @@ function loadData() {
       }
       if (data.settings.routingPath && !fs.existsSync(data.settings.routingPath) && fs.existsSync(detected.routingPath)) {
         data.settings.routingPath = detected.routingPath;
+      }
+
+      // Load Groups
+      if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
+        data.groups = parsed.groups;
+      }
+      if (!data.groups.some(g => g.id === 'group_default')) {
+        data.groups.unshift({ id: 'group_default', name: 'Общие', createdAt: new Date().toISOString() });
       }
 
       // Load Routings
@@ -1304,6 +1315,7 @@ function loadData() {
             id: c.id,
             name: c.name || 'Подключение',
             description: c.description || '',
+            groupId: (c.groupId && data.groups.some(g => g.id === c.groupId)) ? c.groupId : 'group_default',
             routingId: c.routingId || 'routing_all_vpn',
             outboundContent: c.outboundContent || '',
             serverAddress: c.serverAddress || meta.serverAddress || '',
@@ -1314,6 +1326,7 @@ function loadData() {
             sni: c.sni || meta.sni || '',
             countryCode: c.countryCode || null,
             countryName: c.countryName || null,
+            isFavorite: Boolean(c.isFavorite),
             lastPing: c.lastPing !== undefined ? c.lastPing : null,
             lastPingStatus: c.lastPingStatus || null,
             lastPingError: c.lastPingError || null,
@@ -2405,6 +2418,7 @@ const server = http.createServer(async (req, res) => {
         sni: meta.sni,
         countryCode: countryCode,
         countryName: countryName,
+        groupId: (body.groupId && data.groups.some(g => g.id === body.groupId)) ? body.groupId : 'group_default',
         isFavorite: Boolean(body.isFavorite),
         lastPing: null,
         lastPingStatus: null,
@@ -2418,6 +2432,97 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, { message: 'Подключение успешно добавлено', connection: newConnection });
     } catch (err) {
       return sendJson(res, 400, { error: err.message || 'Некорректный запрос' });
+    }
+  }
+
+  // POST /api/connections/batch-import - Batch import connections from links
+  if (urlParts === '/api/connections/batch-import' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { text, groupName, groupId, routingId } = body;
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return sendJson(res, 400, { error: 'Вставьте хотя бы одну ссылку подключения' });
+      }
+      const data = loadData();
+
+      // Resolve or create target group
+      let targetGroupId = groupId;
+      if (!targetGroupId && groupName && groupName.trim()) {
+        const trimmedName = groupName.trim();
+        let existing = data.groups.find(g => g.name.toLowerCase() === trimmedName.toLowerCase());
+        if (!existing) {
+          existing = {
+            id: 'group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            name: trimmedName,
+            createdAt: new Date().toISOString()
+          };
+          data.groups.push(existing);
+        }
+        targetGroupId = existing.id;
+      }
+      if (!targetGroupId || !data.groups.some(g => g.id === targetGroupId)) {
+        targetGroupId = 'group_default';
+      }
+
+      const effectiveRoutingId = (routingId && data.routings.some(r => r.id === routingId)) ? routingId : 'routing_all_vpn';
+
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
+      if (lines.length === 0) {
+        return sendJson(res, 400, { error: 'Не найдено ссылок для импорта' });
+      }
+
+      let importedCount = 0;
+      const errors = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        try {
+          const parsed = parseVlessUrl(line);
+          const meta = extractOutboundMetadata(parsed.outboundJson);
+
+          const newConn = {
+            id: 'conn_' + (Date.now() + i) + '_' + Math.random().toString(36).substr(2, 4),
+            name: parsed.name,
+            description: '',
+            groupId: targetGroupId,
+            routingId: effectiveRoutingId,
+            outboundContent: parsed.outboundJson,
+            serverAddress: parsed.serverAddress || meta.serverAddress,
+            serverPort: parsed.serverPort || meta.serverPort,
+            protocol: parsed.protocol || meta.protocol,
+            network: parsed.network || meta.network,
+            security: parsed.security || meta.security,
+            sni: parsed.sni || meta.sni,
+            countryCode: null,
+            countryName: null,
+            isFavorite: false,
+            lastPing: null,
+            lastPingStatus: null,
+            lastPingCheckedAt: null,
+            createdAt: new Date().toISOString()
+          };
+
+          data.connections.push(newConn);
+          importedCount++;
+        } catch (err) {
+          errors.push(`Строка ${i + 1}: ${err.message}`);
+        }
+      }
+
+      if (importedCount > 0) {
+        saveData(data);
+        setTimeout(sweepGeoIpForConnections, 1000);
+      }
+
+      return sendJson(res, 200, {
+        message: `Успешно импортировано: ${importedCount} из ${lines.length}`,
+        count: importedCount,
+        groupId: targetGroupId,
+        group: data.groups.find(g => g.id === targetGroupId),
+        errors: errors.length > 0 ? errors : undefined
+      });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка пакетного импорта' });
     }
   }
 
@@ -2440,8 +2545,57 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { message: 'Статус избранного обновлен', isFavorite: conn.isFavorite, connection: conn });
   }
 
+  // POST /api/connections/:id/move - Move connection to another group
+  if (urlParts.startsWith('/api/connections/') && urlParts.endsWith('/move') && req.method === 'POST') {
+    const id = urlParts.replace('/api/connections/', '').replace('/move', '');
+    try {
+      const body = await parseJsonBody(req);
+      const { targetGroupId } = body;
+      const data = loadData();
+      const conn = data.connections.find(c => c.id === id);
+      if (!conn) return sendJson(res, 404, { error: 'Подключение не найдено' });
+      if (!targetGroupId || !data.groups.some(g => g.id === targetGroupId)) {
+        return sendJson(res, 400, { error: 'Целевая группа не найдена' });
+      }
+      conn.groupId = targetGroupId;
+      conn.updatedAt = new Date().toISOString();
+      saveData(data);
+      return sendJson(res, 200, { message: 'Подключение перемещено', connection: conn });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка перемещения подключения' });
+    }
+  }
+
+  // POST /api/connections/:id/copy - Duplicate connection to target group
+  if (urlParts.startsWith('/api/connections/') && urlParts.endsWith('/copy') && req.method === 'POST') {
+    const id = urlParts.replace('/api/connections/', '').replace('/copy', '');
+    try {
+      const body = await parseJsonBody(req);
+      const { targetGroupId, newName } = body;
+      const data = loadData();
+      const conn = data.connections.find(c => c.id === id);
+      if (!conn) return sendJson(res, 404, { error: 'Подключение не найдено' });
+      const destGroupId = targetGroupId && data.groups.some(g => g.id === targetGroupId) ? targetGroupId : (conn.groupId || 'group_default');
+
+      const clonedConn = {
+        ...conn,
+        id: 'conn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        name: (newName || (conn.name + ' (Копия)')).trim(),
+        groupId: destGroupId,
+        isFavorite: false,
+        createdAt: new Date().toISOString()
+      };
+      delete clonedConn.updatedAt;
+      data.connections.push(clonedConn);
+      saveData(data);
+      return sendJson(res, 201, { message: 'Подключение скопировано', connection: clonedConn });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка копирования подключения' });
+    }
+  }
+
   // PUT /api/connections/:id - Update connection
-  if (urlParts.startsWith('/api/connections/') && !urlParts.includes('/activate') && !urlParts.includes('/ping') && !urlParts.includes('/set-routing') && !urlParts.includes('/favorite') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+  if (urlParts.startsWith('/api/connections/') && !urlParts.includes('/activate') && !urlParts.includes('/ping') && !urlParts.includes('/set-routing') && !urlParts.includes('/favorite') && !urlParts.includes('/move') && !urlParts.includes('/copy') && !urlParts.includes('/batch-import') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
     const id = urlParts.replace('/api/connections/', '');
     const data = loadData();
     const conn = data.connections.find(c => c.id === id);
@@ -2452,7 +2606,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const body = await parseJsonBody(req);
-      const { name, description, routingId, outboundContent, isFavorite } = body;
+      const { name, description, groupId, routingId, outboundContent, isFavorite } = body;
 
       if (!name || !outboundContent) {
         return sendJson(res, 400, { error: 'Заполните название и содержимое outbound.json' });
@@ -2466,6 +2620,9 @@ const server = http.createServer(async (req, res) => {
 
       conn.name = name.trim();
       conn.description = (description || '').trim();
+      if (groupId && data.groups.some(g => g.id === groupId)) {
+        conn.groupId = groupId;
+      }
       if (typeof isFavorite !== 'undefined') {
         conn.isFavorite = Boolean(isFavorite);
       }
@@ -2816,6 +2973,90 @@ const server = http.createServer(async (req, res) => {
   if (urlParts === '/api/connections/resolve-geoip' && req.method === 'POST') {
     sweepGeoIpForConnections();
     return sendJson(res, 200, { message: 'Фоновое определение стран запущено' });
+  }
+
+  // --- CONNECTION GROUPS ROUTES ---
+
+  // GET /api/groups - List all groups
+  if (urlParts === '/api/groups' && req.method === 'GET') {
+    const data = loadData();
+    return sendJson(res, 200, { groups: data.groups || [] });
+  }
+
+  // POST /api/groups - Create a new group
+  if (urlParts === '/api/groups' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const name = (body.name || '').trim();
+      if (!name) {
+        return sendJson(res, 400, { error: 'Укажите название группы' });
+      }
+      const data = loadData();
+      const newGroup = {
+        id: 'group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        name: name,
+        collapsed: false,
+        createdAt: new Date().toISOString()
+      };
+      data.groups.push(newGroup);
+      saveData(data);
+      return sendJson(res, 201, { message: 'Группа успешно создана', group: newGroup, groups: data.groups });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка создания группы' });
+    }
+  }
+
+  // PUT /api/groups/:id - Update or rename group
+  if (urlParts.startsWith('/api/groups/') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+    const id = urlParts.replace('/api/groups/', '');
+    try {
+      const body = await parseJsonBody(req);
+      const data = loadData();
+      const group = data.groups.find(g => g.id === id);
+      if (!group) {
+        return sendJson(res, 404, { error: 'Группа не найдена' });
+      }
+      if (body.name && body.name.trim()) {
+        group.name = body.name.trim();
+      }
+      if (typeof body.collapsed !== 'undefined') {
+        group.collapsed = Boolean(body.collapsed);
+      }
+      group.updatedAt = new Date().toISOString();
+      saveData(data);
+      return sendJson(res, 200, { message: 'Группа обновлена', group, groups: data.groups });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка обновления группы' });
+    }
+  }
+
+  // DELETE /api/groups/:id - Delete group (moves its connections to group_default)
+  if (urlParts.startsWith('/api/groups/') && req.method === 'DELETE') {
+    const id = urlParts.replace('/api/groups/', '');
+    if (id === 'group_default') {
+      return sendJson(res, 400, { error: 'Нельзя удалить основную группу' });
+    }
+    const data = loadData();
+    const groupIndex = data.groups.findIndex(g => g.id === id);
+    if (groupIndex === -1) {
+      return sendJson(res, 404, { error: 'Группа не найдена' });
+    }
+
+    let movedCount = 0;
+    data.connections.forEach(c => {
+      if (c.groupId === id) {
+        c.groupId = 'group_default';
+        movedCount++;
+      }
+    });
+
+    data.groups.splice(groupIndex, 1);
+    saveData(data);
+    return sendJson(res, 200, {
+      message: `Группа удалена. Перемещено подключений в "Общие": ${movedCount}`,
+      groups: data.groups,
+      movedCount
+    });
   }
 
   // --- ROUTING CONFIGURATION ROUTES ---

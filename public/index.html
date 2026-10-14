@@ -127,7 +127,15 @@
           </button>
           <button class="btn btn-primary" id="btn-add-connection" onclick="openAddConnectionModal()" title="Добавить подключение">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            <span>Добавить подключение</span>
+            <span>Добавить</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-batch-import" onclick="openBatchImportModal()" title="Импортировать список ссылок (с созданием новой группы)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <span>Импорт</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-create-group" onclick="openCreateGroupModal()" title="Создать новую группу подключений">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+            <span>Группа</span>
           </button>
         </div>
 
@@ -233,7 +241,14 @@
             <input type="text" id="conn-name" placeholder="Например: Мой сервер" required>
           </div>
 
-          <div class="form-group flex-2">
+          <div class="form-group flex-1">
+            <label for="conn-group">Группа</label>
+            <select id="conn-group" class="custom-select">
+              <!-- Populated via JS -->
+            </select>
+          </div>
+
+          <div class="form-group flex-1">
             <label for="conn-routing">Маршрутизация <span class="req">*</span></label>
             <select id="conn-routing" class="custom-select" required>
               <!-- Populated via JS -->
@@ -319,7 +334,14 @@
             <input type="text" id="edit-conn-name" required>
           </div>
 
-          <div class="form-group flex-2">
+          <div class="form-group flex-1">
+            <label for="edit-conn-group">Группа</label>
+            <select id="edit-conn-group" class="custom-select">
+              <!-- Populated via JS -->
+            </select>
+          </div>
+
+          <div class="form-group flex-1">
             <label for="edit-conn-routing">Маршрутизация <span class="req">*</span></label>
             <select id="edit-conn-routing" class="custom-select" required>
               <!-- Populated via JS -->
@@ -441,6 +463,143 @@
             Сохранить маршрутизацию
           </button>
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-routing')">Закрыть</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: BATCH IMPORT CONNECTIONS -->
+  <div class="modal-overlay hidden" id="modal-batch-import">
+    <div class="modal-card glass-card modal-large">
+      <div class="modal-header">
+        <div>
+          <h3>Импорт подключений списком</h3>
+          <p class="modal-subtitle">Вставьте список ссылок для массового создания подключений</p>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-batch-import')">&times;</button>
+      </div>
+
+      <form id="form-batch-import" onsubmit="onBatchImportSubmit(event)">
+        <div class="form-group">
+          <label for="batch-import-text">Список ссылок <span class="req">*</span></label>
+          <textarea id="batch-import-text" class="code-editor-textarea" rows="8" placeholder="vless://...#Server 1&#10;vless://...#Server 2" required oninput="updateBatchImportCounter()"></textarea>
+          <div class="field-help-row">
+            <small class="help-text">По одной ссылке на строку (формат <code>vless://</code>). Пустые строки и комментарии игнорируются.</small>
+            <span class="badge-counter" id="batch-import-counter">Найдено ссылок: 0</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>Назначение в группу</label>
+            <div class="radio-toggle-group">
+              <label class="radio-label">
+                <input type="radio" name="batch-group-choice" value="new" checked onchange="toggleBatchGroupMode()">
+                <span>Создать новую группу</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="batch-group-choice" value="existing" onchange="toggleBatchGroupMode()">
+                <span>Существующая группа</span>
+              </label>
+            </div>
+            <div id="batch-group-new-wrap" style="margin-top: 8px;">
+              <input type="text" id="batch-group-new-name" placeholder="Название новой группы (например: Group 1)">
+            </div>
+            <div id="batch-group-existing-wrap" class="hidden" style="margin-top: 8px;">
+              <select id="batch-group-select" class="custom-select">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group flex-2">
+            <label for="batch-routing-select">Маршрутизация для импорта <span class="req">*</span></label>
+            <select id="batch-routing-select" class="custom-select" required>
+              <!-- Populated via JS -->
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-submit-batch-import">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <span id="btn-submit-batch-text">Импортировать</span>
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-batch-import')">Отмена</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: MOVE OR COPY CONNECTION -->
+  <div class="modal-overlay hidden" id="modal-move-copy">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div>
+          <h3 id="move-copy-title">Управление группой подключения</h3>
+          <p class="modal-subtitle" id="move-copy-conn-name">-</p>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-move-copy')">&times;</button>
+      </div>
+
+      <form id="form-move-copy" onsubmit="onMoveCopySubmit(event)">
+        <input type="hidden" id="move-copy-conn-id">
+
+        <div class="form-group">
+          <label>Действие</label>
+          <div class="radio-toggle-group">
+            <label class="radio-label">
+              <input type="radio" name="move-copy-action" value="move" checked onchange="toggleMoveCopyAction()">
+              <span>Переместить</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="move-copy-action" value="copy" onchange="toggleMoveCopyAction()">
+              <span>Копировать (создать дубликат)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="move-copy-target-group">Целевая группа <span class="req">*</span></label>
+          <select id="move-copy-target-group" class="custom-select" required>
+            <!-- Populated via JS -->
+          </select>
+        </div>
+
+        <div class="form-group hidden" id="move-copy-new-name-wrap">
+          <label for="move-copy-new-name">Название копии</label>
+          <input type="text" id="move-copy-new-name" placeholder="Название копии...">
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-move-copy-submit">Подтвердить</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-move-copy')">Отмена</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CREATE OR RENAME GROUP -->
+  <div class="modal-overlay hidden" id="modal-group-edit">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div>
+          <h3 id="group-modal-title">Новая группа</h3>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('modal-group-edit')">&times;</button>
+      </div>
+
+      <form id="form-group-edit" onsubmit="onGroupEditSubmit(event)">
+        <input type="hidden" id="group-edit-id">
+
+        <div class="form-group">
+          <label for="group-edit-name">Название группы <span class="req">*</span></label>
+          <input type="text" id="group-edit-name" placeholder="Например: Нидерланды или Group 1" required>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-save-group">Сохранить</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-group-edit')">Отмена</button>
         </div>
       </form>
     </div>
