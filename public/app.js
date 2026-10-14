@@ -40,7 +40,7 @@ const toastContainer = document.getElementById('toast-container');
 // ==============================================================================
 // INITIALIZATION
 // ==============================================================================
-document.addEventListener('DOMContentLoaded', () => {
+function initApp() {
   setupCodeEditors();
   loadData();
   startServicePolling();
@@ -75,7 +75,13 @@ document.addEventListener('DOMContentLoaded', () => {
       onBackupFileSelected(e);
     });
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
 // Switch Main Navigation Tabs
 function switchMainTab(tab) {
@@ -112,7 +118,8 @@ async function loadData() {
     pollAutoFailoverStatus();
   } catch (err) {
     console.error('Error fetching data:', err);
-    showToast('Не удалось загрузить данные с роутера', 'error');
+    showToast('Не удалось загрузить данные с роутера (повтор через 2с)...', 'warning');
+    setTimeout(loadData, 2000);
   }
 }
 
@@ -3699,6 +3706,9 @@ function startServicePolling() {
     pollServiceStatus();
     pollFailoverStatus();
     pollAutoFailoverStatus();
+    if (!appData.connections || appData.connections.length === 0) {
+      loadData();
+    }
   }, 8000);
 }
 
