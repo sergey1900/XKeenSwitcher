@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.4.0">
+  <link rel="stylesheet" href="style.css?v=2.4.1">
 </head>
 <body>
   <div class="app-background"></div>
@@ -261,11 +261,11 @@
           <div class="radio-toggle-group">
             <label class="radio-label">
               <input type="radio" name="conn-target-list" value="blacklist" checked onchange="onConnTargetListChange('add')">
-              <span>⚫ Черные списки (по умолчанию)</span>
+              <span>Черные списки (по умолчанию)</span>
             </label>
             <label class="radio-label">
               <input type="radio" name="conn-target-list" value="whitelist" onchange="onConnTargetListChange('add')">
-              <span>⚪ Белые списки</span>
+              <span>Белые списки</span>
             </label>
           </div>
         </div>
@@ -368,11 +368,11 @@
           <div class="radio-toggle-group">
             <label class="radio-label">
               <input type="radio" name="edit-conn-target-list" value="blacklist" checked>
-              <span>⚫ Черные списки</span>
+              <span>Черные списки</span>
             </label>
             <label class="radio-label">
               <input type="radio" name="edit-conn-target-list" value="whitelist">
-              <span>⚪ Белые списки</span>
+              <span>Белые списки</span>
             </label>
           </div>
         </div>
@@ -483,16 +483,18 @@
             <pre class="code-highlight-layer" aria-hidden="true"><code id="routing-content-code"></code></pre>
             <textarea id="routing-content-json" class="code-editor-textarea" rows="14" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           </div>
+        </div>
+
         <div class="form-group" style="margin-top: 14px; margin-bottom: 8px;">
           <label>Использовать по умолчанию</label>
           <div class="checkbox-options-row">
             <label class="checkbox-label">
               <input type="checkbox" id="routing-default-blacklist">
-              <span>⚫ По умолчанию для Черных списков (ЧС)</span>
+              <span>По умолчанию для Черных списков (ЧС)</span>
             </label>
             <label class="checkbox-label">
               <input type="checkbox" id="routing-default-whitelist">
-              <span>⚪ По умолчанию для Белых списков (БС)</span>
+              <span>По умолчанию для Белых списков (БС)</span>
             </label>
           </div>
         </div>
@@ -534,11 +536,11 @@
           <div class="radio-toggle-group">
             <label class="radio-label">
               <input type="radio" name="batch-target-list" value="blacklist" checked onchange="onBatchTargetListChange()">
-              <span>⚫ Черные списки (по умолчанию)</span>
+              <span>Черные списки (по умолчанию)</span>
             </label>
             <label class="radio-label">
               <input type="radio" name="batch-target-list" value="whitelist" onchange="onBatchTargetListChange()">
-              <span>⚪ Белые списки</span>
+              <span>Белые списки</span>
             </label>
           </div>
         </div>
@@ -1310,6 +1312,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.4.0"></script>
+  <script src="app.js?v=2.4.1"></script>
 </body>
 </html>

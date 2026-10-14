@@ -3206,7 +3206,33 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (routing.isSystem) {
-      return sendJson(res, 403, { error: `Системный роутинг "${routing.name}" защищен от редактирования` });
+      try {
+        const body = await parseJsonBody(req);
+        let updated = false;
+        if (typeof body.isDefaultBlacklist !== 'undefined') {
+          if (Boolean(body.isDefaultBlacklist)) {
+            data.settings.defaultRoutingBlacklist = id;
+          } else if (data.settings.defaultRoutingBlacklist === id) {
+            data.settings.defaultRoutingBlacklist = '';
+          }
+          updated = true;
+        }
+        if (typeof body.isDefaultWhitelist !== 'undefined') {
+          if (Boolean(body.isDefaultWhitelist)) {
+            data.settings.defaultRoutingWhitelist = id;
+          } else if (data.settings.defaultRoutingWhitelist === id) {
+            data.settings.defaultRoutingWhitelist = '';
+          }
+          updated = true;
+        }
+        if (updated) {
+          saveData(data);
+          return sendJson(res, 200, { message: 'Настройки маршрутизации по умолчанию сохранены', routing });
+        }
+        return sendJson(res, 403, { error: `Системный роутинг "${routing.name}" защищен от редактирования` });
+      } catch (err) {
+        return sendJson(res, 500, { error: err.message });
+      }
     }
 
     try {

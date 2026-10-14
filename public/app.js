@@ -279,7 +279,7 @@ function renderConnectionCardHtml(conn, activeId) {
 
   const isFav = Boolean(conn.isFavorite);
   const isWhitelist = (conn.targetList === 'whitelist');
-  const targetBadgeHtml = `<button type="button" class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" onclick="toggleConnectionTargetList('${conn.id}', event)" title="Нажмите, чтобы переключить назначение (Черные списки / Белые списки)">${isWhitelist ? '⚪ БС' : '⚫ ЧС'}</button>`;
+  const targetBadgeHtml = `<span class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" title="Назначение: ${isWhitelist ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${isWhitelist ? 'БС' : 'ЧС'}</span>`;
 
   return `
     <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
@@ -514,8 +514,8 @@ function renderRoutings() {
               ${routing.isSystem ? `<span class="routing-system-badge">🔒 Защищен</span>` : ''}
             </div>
             <div class="routing-badges-row">
-              ${isDefBlacklist ? `<span class="routing-default-badge badge-blacklist" title="Маршрутизация по умолчанию для Черных списков (ЧС)">⚫ ЧС по умолчанию</span>` : ''}
-              ${isDefWhitelist ? `<span class="routing-default-badge badge-whitelist" title="Маршрутизация по умолчанию для Белых списков (БС)">⚪ БС по умолчанию</span>` : ''}
+              ${isDefBlacklist ? `<span class="routing-default-badge badge-blacklist" title="Маршрутизация по умолчанию для Черных списков (ЧС)">ЧС по умолчанию</span>` : ''}
+              ${isDefWhitelist ? `<span class="routing-default-badge badge-whitelist" title="Маршрутизация по умолчанию для Белых списков (БС)">БС по умолчанию</span>` : ''}
             </div>
           </div>
 
@@ -529,14 +529,7 @@ function renderRoutings() {
         </div>
 
         <div class="routing-card-footer">
-          <div class="routing-default-actions" title="Назначить эту маршрутизацию по умолчанию">
-            <button type="button" class="btn-routing-default ${isDefBlacklist ? 'active-blacklist' : ''}" onclick="toggleRoutingDefault('${routing.id}', 'blacklist')" title="${isDefBlacklist ? 'Маршрутизация по умолчанию для Черных списков' : 'Сделать по умолчанию для Черных списков (ЧС)'}">
-              ${isDefBlacklist ? '✓ ⚫ ЧС' : '⚫ ЧС'}
-            </button>
-            <button type="button" class="btn-routing-default ${isDefWhitelist ? 'active-whitelist' : ''}" onclick="toggleRoutingDefault('${routing.id}', 'whitelist')" title="${isDefWhitelist ? 'Маршрутизация по умолчанию для Белых списков' : 'Сделать по умолчанию для Белых списков (БС)'}">
-              ${isDefWhitelist ? '✓ ⚪ БС' : '⚪ БС'}
-            </button>
-          </div>
+          <div></div>
           <div class="conn-footer-actions">
             <button class="btn btn-secondary btn-sm btn-icon" onclick="openRoutingModal('${routing.id}')" title="${routing.isSystem ? 'Просмотр конфигурации JSON' : 'Редактировать routing.json'}">
               ${routing.isSystem ? `
@@ -1250,61 +1243,7 @@ async function toggleFavoriteConnection(connId, event) {
   }
 }
 
-// Toggle Target List (blacklist / whitelist) status for Connection
-async function toggleConnectionTargetList(connId, event) {
-  if (event) {
-    event.stopPropagation();
-    event.preventDefault();
-  }
-  const conn = (appData.connections || []).find(c => c.id === connId);
-  if (!conn) return;
 
-  const previousTarget = conn.targetList || 'blacklist';
-  const newTarget = (previousTarget === 'whitelist') ? 'blacklist' : 'whitelist';
-  conn.targetList = newTarget;
-  renderConnections();
-
-  try {
-    const res = await fetch(`/api/connections/${encodeURIComponent(connId)}/target-list`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetList: newTarget })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка смены назначения подключения');
-
-    showToast(data.message || (newTarget === 'whitelist' ? 'Назначено для Белых списков' : 'Назначено для Черных списков'), 'success');
-  } catch (err) {
-    conn.targetList = previousTarget;
-    renderConnections();
-    showToast('Не удалось сменить назначение: ' + err.message, 'error');
-  }
-}
-
-// Toggle Default Routing for Blacklist or Whitelist
-async function toggleRoutingDefault(routingId, type) {
-  try {
-    const res = await fetch(`/api/routings/${encodeURIComponent(routingId)}/set-default`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка назначения маршрутизации по умолчанию');
-
-    if (!appData.settings) appData.settings = {};
-    if (type === 'blacklist') {
-      appData.settings.defaultRoutingBlacklist = routingId;
-    } else {
-      appData.settings.defaultRoutingWhitelist = routingId;
-    }
-
-    renderRoutings();
-    showToast(data.message, 'success');
-  } catch (err) {
-    showToast('Не удалось назначить маршрутизацию: ' + err.message, 'error');
-  }
-}
 
 // Handlers for switching target list radio in add/edit modals
 function onConnTargetListChange(mode) {
@@ -1686,20 +1625,22 @@ function openRoutingModal(id) {
   const chkWhitelist = document.getElementById('routing-default-whitelist');
   if (chkBlacklist) {
     chkBlacklist.checked = isDefBlacklist;
-    chkBlacklist.disabled = Boolean(routing.isSystem);
+    chkBlacklist.disabled = false;
   }
   if (chkWhitelist) {
     chkWhitelist.checked = isDefWhitelist;
-    chkWhitelist.disabled = Boolean(routing.isSystem);
+    chkWhitelist.disabled = false;
   }
 
   const saveBtn = document.getElementById('btn-save-routing');
   const formatBtn = document.getElementById('btn-format-routing');
   if (routing.isSystem) {
-    saveBtn.classList.add('hidden');
+    saveBtn.classList.remove('hidden');
+    saveBtn.textContent = 'Сохранить по умолчанию';
     formatBtn.classList.add('hidden');
   } else {
     saveBtn.classList.remove('hidden');
+    saveBtn.textContent = 'Сохранить маршрутизацию';
     formatBtn.classList.remove('hidden');
   }
 
