@@ -2405,6 +2405,7 @@ const server = http.createServer(async (req, res) => {
         sni: meta.sni,
         countryCode: countryCode,
         countryName: countryName,
+        isFavorite: Boolean(body.isFavorite),
         lastPing: null,
         lastPingStatus: null,
         lastPingCheckedAt: null,
@@ -2420,8 +2421,27 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // POST /api/connections/:id/favorite - Toggle or set favorite status
+  if (urlParts.startsWith('/api/connections/') && urlParts.endsWith('/favorite') && req.method === 'POST') {
+    const id = urlParts.replace('/api/connections/', '').replace('/favorite', '');
+    const data = loadData();
+    const conn = data.connections.find(c => c.id === id);
+    if (!conn) {
+      return sendJson(res, 404, { error: 'Подключение не найдено' });
+    }
+    const body = await parseJsonBody(req).catch(() => ({}));
+    if (typeof body.isFavorite !== 'undefined') {
+      conn.isFavorite = Boolean(body.isFavorite);
+    } else {
+      conn.isFavorite = !conn.isFavorite;
+    }
+    conn.updatedAt = new Date().toISOString();
+    saveData(data);
+    return sendJson(res, 200, { message: 'Статус избранного обновлен', isFavorite: conn.isFavorite, connection: conn });
+  }
+
   // PUT /api/connections/:id - Update connection
-  if (urlParts.startsWith('/api/connections/') && !urlParts.includes('/activate') && !urlParts.includes('/ping') && !urlParts.includes('/set-routing') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
+  if (urlParts.startsWith('/api/connections/') && !urlParts.includes('/activate') && !urlParts.includes('/ping') && !urlParts.includes('/set-routing') && !urlParts.includes('/favorite') && (req.method === 'PUT' || (req.method === 'POST' && req.headers['x-http-method-override'] === 'PUT'))) {
     const id = urlParts.replace('/api/connections/', '');
     const data = loadData();
     const conn = data.connections.find(c => c.id === id);
@@ -2432,7 +2452,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const body = await parseJsonBody(req);
-      const { name, description, routingId, outboundContent } = body;
+      const { name, description, routingId, outboundContent, isFavorite } = body;
 
       if (!name || !outboundContent) {
         return sendJson(res, 400, { error: 'Заполните название и содержимое outbound.json' });
@@ -2446,6 +2466,9 @@ const server = http.createServer(async (req, res) => {
 
       conn.name = name.trim();
       conn.description = (description || '').trim();
+      if (typeof isFavorite !== 'undefined') {
+        conn.isFavorite = Boolean(isFavorite);
+      }
       if (routingId && data.routings.some(r => r.id === routingId)) {
         conn.routingId = routingId;
       }

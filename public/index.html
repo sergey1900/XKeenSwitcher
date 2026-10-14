@@ -213,10 +213,7 @@
         <!-- URL INPUT BOX -->
         <div class="form-group">
           <label for="input-vless-url">Ссылка подключения (VLESS) <span class="req">*</span></label>
-          <div class="url-input-wrap">
-            <input type="text" id="input-vless-url" placeholder="vless://uuid@host:port?type=grpc&security=reality&pbk=...#Name" autocomplete="off" spellcheck="false">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="parseVlessUrlInput()">Распознать</button>
-          </div>
+          <input type="text" id="input-vless-url" placeholder="vless://uuid@host:port?type=grpc&security=reality&pbk=...#Name" autocomplete="off" spellcheck="false">
           <small class="help-text">Поддерживаются ссылки <code>vless://</code> (Reality, gRPC, WebSocket, TLS и др.)</small>
         </div>
 
@@ -254,12 +251,26 @@
           <div class="label-row">
             <label for="conn-outbound-json">Конфигурация <code>outbound.json</code> <span class="req">*</span></label>
             <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="toggleEditorSearch('conn-outbound-json')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Поиск
+              </button>
               <button type="button" class="btn-text-action" onclick="copyEditorContent('conn-outbound-json')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                 Скопировать в буфер
               </button>
               <button type="button" class="btn-text-action" onclick="formatEditorField('conn-outbound-json', 'conn-outbound-status')">Форматировать JSON</button>
               <span class="json-status" id="conn-outbound-status"></span>
+            </div>
+          </div>
+          <div class="editor-search-panel hidden" id="search-panel-conn-outbound-json">
+            <div class="editor-search-inner">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="editor-search-input" id="search-input-conn-outbound-json" placeholder="Поиск в тексте (Enter - далее, Shift+Enter - назад, Esc - закрыть)..." oninput="onEditorSearchInput('conn-outbound-json')" onkeydown="onEditorSearchKeydown('conn-outbound-json', event)">
+              <span class="editor-search-counter" id="search-counter-conn-outbound-json"></span>
+              <button type="button" class="btn-search-nav" onclick="navEditorSearch('conn-outbound-json', -1)" title="Предыдущее (Shift+Enter)">▲</button>
+              <button type="button" class="btn-search-nav" onclick="navEditorSearch('conn-outbound-json', 1)" title="Следующее (Enter)">▼</button>
+              <button type="button" class="btn-search-close" onclick="closeEditorSearch('conn-outbound-json')" title="Закрыть поиск (Esc)">&times;</button>
             </div>
           </div>
           <div class="code-editor-container">
@@ -326,12 +337,26 @@
           <div class="label-row">
             <label for="edit-conn-outbound-json">Содержимое <code>outbound.json</code> <span class="req">*</span></label>
             <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="toggleEditorSearch('edit-conn-outbound-json')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Поиск
+              </button>
               <button type="button" class="btn-text-action" onclick="copyEditorContent('edit-conn-outbound-json')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                 Скопировать в буфер
               </button>
               <button type="button" class="btn-text-action" onclick="formatEditorField('edit-conn-outbound-json', 'edit-conn-outbound-status')">Форматировать JSON</button>
               <span class="json-status" id="edit-conn-outbound-status"></span>
+            </div>
+          </div>
+          <div class="editor-search-panel hidden" id="search-panel-edit-conn-outbound-json">
+            <div class="editor-search-inner">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="editor-search-input" id="search-input-edit-conn-outbound-json" placeholder="Поиск в тексте (Enter - далее, Shift+Enter - назад, Esc - закрыть)..." oninput="onEditorSearchInput('edit-conn-outbound-json')" onkeydown="onEditorSearchKeydown('edit-conn-outbound-json', event)">
+              <span class="editor-search-counter" id="search-counter-edit-conn-outbound-json"></span>
+              <button type="button" class="btn-search-nav" onclick="navEditorSearch('edit-conn-outbound-json', -1)" title="Предыдущее (Shift+Enter)">▲</button>
+              <button type="button" class="btn-search-nav" onclick="navEditorSearch('edit-conn-outbound-json', 1)" title="Следующее (Enter)">▼</button>
+              <button type="button" class="btn-search-close" onclick="closeEditorSearch('edit-conn-outbound-json')" title="Закрыть поиск (Esc)">&times;</button>
             </div>
           </div>
           <div class="code-editor-container">
@@ -382,12 +407,26 @@
           <div class="label-row">
             <label for="routing-content-json">Содержимое <code>routing.json</code> <span class="req">*</span></label>
             <div class="field-actions">
+              <button type="button" class="btn-text-action" onclick="toggleEditorSearch('routing-content-json')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Поиск
+              </button>
               <button type="button" class="btn-text-action" onclick="copyEditorContent('routing-content-json')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                 Скопировать в буфер
               </button>
               <button type="button" class="btn-text-action" id="btn-format-routing" onclick="formatEditorField('routing-content-json', 'routing-content-status')">Форматировать JSON</button>
               <span class="json-status" id="routing-content-status"></span>
+            </div>
+          </div>
+          <div class="editor-search-panel hidden" id="search-panel-routing-content-json">
+            <div class="editor-search-inner">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" class="editor-search-input" id="search-input-routing-content-json" placeholder="Поиск в тексте (Enter - далее, Shift+Enter - назад, Esc - закрыть)..." oninput="onEditorSearchInput('routing-content-json')" onkeydown="onEditorSearchKeydown('routing-content-json', event)">
+              <span class="editor-search-counter" id="search-counter-routing-content-json"></span>
+              <button type="button" class="btn-search-nav" onclick="navEditorSearch('routing-content-json', -1)" title="Предыдущее (Shift+Enter)">▲</button>
+              <button type="button" class="btn-search-nav" onclick="navEditorSearch('routing-content-json', 1)" title="Следующее (Enter)">▼</button>
+              <button type="button" class="btn-search-close" onclick="closeEditorSearch('routing-content-json')" title="Закрыть поиск (Esc)">&times;</button>
             </div>
           </div>
           <div class="code-editor-container">

@@ -208,6 +208,152 @@ function formatNetworkName(net) {
 }
 
 // Render Connections Grid
+function renderConnectionCardHtml(conn, activeId) {
+  const isActive = (conn.id === activeId);
+  const isChecking = pingingConnectionIds.has(conn.id) || isPingingAll;
+
+  // Security & SNI
+  let secBadgeHtml = '';
+  if (conn.security === 'reality') {
+    secBadgeHtml = `<span class="conn-badge badge-sec">Reality</span>`;
+    if (conn.sni) {
+      secBadgeHtml += `<span class="conn-badge badge-sni" title="SNI / ServerName">${escapeHtml(conn.sni)}</span>`;
+    }
+  } else if (conn.security && conn.security !== 'none') {
+    secBadgeHtml = `<span class="conn-badge badge-sec">${escapeHtml(conn.security.toUpperCase())}</span>`;
+    if (conn.sni) {
+      secBadgeHtml += `<span class="conn-badge badge-sni" title="SNI / ServerName">${escapeHtml(conn.sni)}</span>`;
+    }
+  } else {
+    secBadgeHtml = `<span class="conn-badge badge-sec">None</span>`;
+  }
+
+  // Network / Transport
+  let connNetwork = conn.network;
+  if (!connNetwork && conn.outboundContent) {
+    try {
+      const clean = stripComments(conn.outboundContent);
+      const parsed = JSON.parse(clean);
+      const oList = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+      const ob = oList.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
+      if (ob && ob.streamSettings && ob.streamSettings.network) {
+        connNetwork = ob.streamSettings.network;
+      }
+    } catch (e) {}
+  }
+  const netFormatted = formatNetworkName(connNetwork || (conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
+  const netBadgeHtml = `<span class="conn-badge badge-net" title="Транспорт: ${escapeHtml(netFormatted)}">${escapeHtml(netFormatted)}</span>`;
+
+  // Ping status display
+  let pingHtml = '';
+  if (isChecking) {
+    pingHtml = `<span class="ping-badge ping-loading"><span class="spin-icon">⏳</span> Проверка...</span>`;
+  } else if (conn.lastPingStatus === 'ok' && conn.lastPing !== null) {
+    const isProxy = conn.lastPingType === 'proxy';
+    const checkTitle = (isProxy ? 'Сквозной туннель подтверждён' : 'TCP доступен') +
+      (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
+    pingHtml = `<span class="ping-badge ping-ok" title="${escapeHtml(checkTitle)}">● ${conn.lastPing} ms</span>`;
+  } else if (conn.lastPingStatus === 'unreachable') {
+    const errNote = conn.lastPingError ? `\nПричина: ${conn.lastPingError}` : '';
+    const checkTitle = `Недоступен${errNote}` +
+      (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
+    pingHtml = `<span class="ping-badge ping-unreachable" title="${escapeHtml(checkTitle)}">● Недоступен</span>`;
+  } else {
+    pingHtml = `<span class="ping-badge ping-none">Не проверялся</span>`;
+  }
+
+  // Routing selector options (user configs first, protected configs under them)
+  const allRoutings = [
+    ...(appData.routings || []).filter(r => !r.isSystem),
+    ...(appData.routings || []).filter(r => r.isSystem)
+  ];
+  const routingOptionsHtml = allRoutings.map(r => {
+    const sel = (r.id === conn.routingId) ? 'selected' : '';
+    return `<option value="${r.id}" ${sel}>${escapeHtml(r.name)}</option>`;
+  }).join('');
+
+  const flag = getFlagEmoji(conn.countryCode);
+  const countryTitle = conn.countryName ? `${conn.countryName} (${conn.countryCode})` : (conn.countryCode || '');
+  const flagHtml = flag ? `<span class="conn-flag" title="${escapeHtml(countryTitle)}">${flag}</span>` : '';
+
+  const isFav = Boolean(conn.isFavorite);
+
+  return `
+    <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
+      <div>
+        <div class="conn-card-header">
+          <div class="conn-title-wrap">
+            <button type="button" class="btn-star ${isFav ? 'starred' : ''}" onclick="toggleFavoriteConnection('${conn.id}', event)" title="${isFav ? 'Убрать из избранного' : 'Добавить в избранное'}">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="${isFav ? '#f59e0b' : 'none'}" stroke="${isFav ? '#f59e0b' : 'rgba(255,255,255,0.45)'}" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </button>
+            <h3 class="conn-title">${flagHtml ? flagHtml + ' ' : ''}<span>${escapeHtml(conn.name)}</span></h3>
+          </div>
+          ${isActive ? `<span class="active-pill-badge"><span class="status-dot"></span> Активно</span>` : ''}
+        </div>
+
+        <!-- BADGES ROW -->
+        <div class="conn-badges-row">
+          <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
+          <span class="conn-badge badge-proto" title="Протокол">${escapeHtml((conn.protocol || 'vless').toUpperCase())}</span>
+          ${netBadgeHtml}
+          ${secBadgeHtml}
+        </div>
+
+        <!-- ROUTING SELECTOR ROW -->
+        <div class="conn-routing-row" title="Вариант маршрутизации для этого подключения">
+          <span class="conn-routing-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            Роутинг:
+          </span>
+          <select class="conn-routing-select" onchange="changeConnectionRouting('${conn.id}', this.value)">
+            ${routingOptionsHtml}
+          </select>
+        </div>
+
+        <!-- PING AVAILABILITY ROW -->
+        <div class="conn-ping-row">
+          <div class="ping-status-wrap">
+            ${pingHtml}
+          </div>
+          <button class="btn-check-ping" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span>Проверить</span>
+          </button>
+        </div>
+
+        <!-- COMMENT (IF ANY) -->
+        ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
+      </div>
+
+      <!-- FOOTER ACTIONS -->
+      <div class="conn-card-footer">
+        <div>
+          ${!isActive ? `
+            <button class="btn btn-activate" onclick="activateConnection('${conn.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Активировать</span>
+            </button>
+          ` : ''}
+        </div>
+
+        <div class="conn-footer-actions">
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
+          </button>
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditConnectionModal('${conn.id}')" title="Редактировать параметры и outbound.json">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteConnection('${conn.id}', '${escapeJs(conn.name)}')" title="Удалить подключение">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderConnections() {
   if (!connectionsGrid) return;
   const rawList = appData.connections || [];
@@ -230,143 +376,32 @@ function renderConnections() {
   if (emptyConnectionsState) emptyConnectionsState.classList.add('hidden');
 
   const list = getSortedConnections(rawList, activeId);
+  const favorites = list.filter(c => c.isFavorite);
+  const regulars = list.filter(c => !c.isFavorite);
 
-  connectionsGrid.innerHTML = list.map(conn => {
-    const isActive = (conn.id === activeId);
-    const isChecking = pingingConnectionIds.has(conn.id) || isPingingAll;
-
-    // Security & SNI
-    let secBadgeHtml = '';
-    if (conn.security === 'reality') {
-      secBadgeHtml = `<span class="conn-badge badge-sec">Reality</span>`;
-      if (conn.sni) {
-        secBadgeHtml += `<span class="conn-badge badge-sni" title="SNI / ServerName">${escapeHtml(conn.sni)}</span>`;
-      }
-    } else if (conn.security && conn.security !== 'none') {
-      secBadgeHtml = `<span class="conn-badge badge-sec">${escapeHtml(conn.security.toUpperCase())}</span>`;
-      if (conn.sni) {
-        secBadgeHtml += `<span class="conn-badge badge-sni" title="SNI / ServerName">${escapeHtml(conn.sni)}</span>`;
-      }
-    } else {
-      secBadgeHtml = `<span class="conn-badge badge-sec">None</span>`;
-    }
-
-    // Network / Transport
-    let connNetwork = conn.network;
-    if (!connNetwork && conn.outboundContent) {
-      try {
-        const clean = stripComments(conn.outboundContent);
-        const parsed = JSON.parse(clean);
-        const oList = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
-        const ob = oList.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
-        if (ob && ob.streamSettings && ob.streamSettings.network) {
-          connNetwork = ob.streamSettings.network;
-        }
-      } catch (e) {}
-    }
-    const netFormatted = formatNetworkName(connNetwork || (conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
-    const netBadgeHtml = `<span class="conn-badge badge-net" title="Транспорт: ${escapeHtml(netFormatted)}">${escapeHtml(netFormatted)}</span>`;
-
-    // Ping status display
-    let pingHtml = '';
-    if (isChecking) {
-      pingHtml = `<span class="ping-badge ping-loading"><span class="spin-icon">⏳</span> Проверка...</span>`;
-    } else if (conn.lastPingStatus === 'ok' && conn.lastPing !== null) {
-      const isProxy = conn.lastPingType === 'proxy';
-      const checkTitle = (isProxy ? 'Сквозной туннель подтверждён' : 'TCP доступен') +
-        (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
-      pingHtml = `<span class="ping-badge ping-ok" title="${escapeHtml(checkTitle)}">● ${conn.lastPing} ms</span>`;
-    } else if (conn.lastPingStatus === 'unreachable') {
-      const errNote = conn.lastPingError ? `\nПричина: ${conn.lastPingError}` : '';
-      const checkTitle = `Недоступен${errNote}` +
-        (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
-      pingHtml = `<span class="ping-badge ping-unreachable" title="${escapeHtml(checkTitle)}">● Недоступен</span>`;
-    } else {
-      pingHtml = `<span class="ping-badge ping-none">Не проверялся</span>`;
-    }
-
-    // Routing selector options (user configs first, protected configs under them)
-    const allRoutings = [
-      ...(appData.routings || []).filter(r => !r.isSystem),
-      ...(appData.routings || []).filter(r => r.isSystem)
-    ];
-    const routingOptionsHtml = allRoutings.map(r => {
-      const sel = (r.id === conn.routingId) ? 'selected' : '';
-      return `<option value="${r.id}" ${sel}>${escapeHtml(r.name)}</option>`;
-    }).join('');
-
-    const flag = getFlagEmoji(conn.countryCode);
-    const countryTitle = conn.countryName ? `${conn.countryName} (${conn.countryCode})` : (conn.countryCode || '');
-    const flagHtml = flag ? `<span class="conn-flag" title="${escapeHtml(countryTitle)}">${flag}</span>` : '';
-
-    return `
-      <div class="conn-card glass-card ${isActive ? 'active-conn' : ''}" id="card-conn-${conn.id}">
-        <div>
-          <div class="conn-card-header">
-            <h3 class="conn-title">${flagHtml ? flagHtml + ' ' : ''}<span>${escapeHtml(conn.name)}</span></h3>
-            ${isActive ? `<span class="active-pill-badge"><span class="status-dot"></span> Активно</span>` : ''}
-          </div>
-
-          <!-- BADGES ROW -->
-          <div class="conn-badges-row">
-            <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
-            <span class="conn-badge badge-proto" title="Протокол">${escapeHtml((conn.protocol || 'vless').toUpperCase())}</span>
-            ${netBadgeHtml}
-            ${secBadgeHtml}
-          </div>
-
-          <!-- ROUTING SELECTOR ROW -->
-          <div class="conn-routing-row" title="Вариант маршрутизации для этого подключения">
-            <span class="conn-routing-label">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-              Роутинг:
-            </span>
-            <select class="conn-routing-select" onchange="changeConnectionRouting('${conn.id}', this.value)">
-              ${routingOptionsHtml}
-            </select>
-          </div>
-
-          <!-- PING AVAILABILITY ROW -->
-          <div class="conn-ping-row">
-            <div class="ping-status-wrap">
-              ${pingHtml}
-            </div>
-            <button class="btn-check-ping" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-              <span>Проверить</span>
-            </button>
-          </div>
-
-          <!-- COMMENT (IF ANY) -->
-          ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
-        </div>
-
-        <!-- FOOTER ACTIONS -->
-        <div class="conn-card-footer">
-          <div>
-            ${!isActive ? `
-              <button class="btn btn-activate" onclick="activateConnection('${conn.id}')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                <span>Активировать</span>
-              </button>
-            ` : ''}
-          </div>
-
-          <div class="conn-footer-actions">
-            <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
-            </button>
-            <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditConnectionModal('${conn.id}')" title="Редактировать параметры и outbound.json">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-            </button>
-            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteConnection('${conn.id}', '${escapeJs(conn.name)}')" title="Удалить подключение">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
-          </div>
-        </div>
+  if (favorites.length > 0) {
+    let html = `
+      <div class="section-group-divider favorites-divider">
+        <span class="star-icon">⭐</span>
+        <span>Избранные подключения</span>
+        <span class="group-count">${favorites.length}</span>
       </div>
     `;
-  }).join('');
+    html += favorites.map(c => renderConnectionCardHtml(c, activeId)).join('');
+
+    if (regulars.length > 0) {
+      html += `
+        <div class="section-group-divider">
+          <span>Все подключения</span>
+          <span class="group-count">${regulars.length}</span>
+        </div>
+      `;
+      html += regulars.map(c => renderConnectionCardHtml(c, activeId)).join('');
+    }
+    connectionsGrid.innerHTML = html;
+  } else {
+    connectionsGrid.innerHTML = list.map(c => renderConnectionCardHtml(c, activeId)).join('');
+  }
 }
 
 // Render Routings Grid
@@ -569,7 +604,11 @@ function parseVlessUrlInput(showNotice = true) {
       ]
     };
 
-    // Populate Modal Fields (do not prefill connection name as requested)
+    // Populate Modal Fields (autofill connection name from #Name)
+    const nameInput = document.getElementById('conn-name');
+    if (nameInput && name) {
+      nameInput.value = name;
+    }
     document.getElementById('conn-desc').value = '';
     setEditorContent('conn-outbound-json', JSON.stringify(outboundJsonObj, null, 4));
 
@@ -727,6 +766,36 @@ async function changeConnectionRouting(connId, routingId) {
   } catch (err) {
     showToast(err.message, 'error');
     await loadData();
+  }
+}
+
+// Toggle Favorite status for Connection
+async function toggleFavoriteConnection(connId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const conn = (appData.connections || []).find(c => c.id === connId);
+  if (!conn) return;
+
+  const previousState = Boolean(conn.isFavorite);
+  conn.isFavorite = !previousState;
+  renderConnections();
+
+  try {
+    const res = await fetch(`/api/connections/${encodeURIComponent(connId)}/favorite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isFavorite: conn.isFavorite })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка обновления избранного');
+
+    showToast(conn.isFavorite ? 'Добавлено в избранное' : 'Удалено из избранного', 'info');
+  } catch (err) {
+    conn.isFavorite = previousState;
+    renderConnections();
+    showToast('Не удалось обновить статус: ' + err.message, 'error');
   }
 }
 
@@ -2229,8 +2298,13 @@ function setupCodeEditors() {
       code.parentElement.scrollLeft = textarea.scrollLeft;
     });
 
-    // Handle Tab key in textarea
+    // Handle Ctrl+F / Cmd+F key in textarea to open search
     textarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        openEditorSearch(textId);
+        return;
+      }
       if (e.key === 'Tab') {
         e.preventDefault();
         const start = textarea.selectionStart;
@@ -2282,6 +2356,143 @@ function copyEditorContent(textId) {
   }).catch(() => {
     showToast('Не удалось скопировать в буфер', 'warning');
   });
+}
+
+// ==============================================================================
+// CODE EDITOR SEARCH
+// ==============================================================================
+const editorSearchStates = {};
+
+function openEditorSearch(textId) {
+  const panel = document.getElementById(`search-panel-${textId}`);
+  const input = document.getElementById(`search-input-${textId}`);
+  const textarea = document.getElementById(textId);
+  if (!panel || !input || !textarea) return;
+
+  panel.classList.remove('hidden');
+
+  // Prepopulate with selected text if single line and reasonable length
+  const selStart = textarea.selectionStart;
+  const selEnd = textarea.selectionEnd;
+  if (selEnd > selStart && (selEnd - selStart) < 80) {
+    const selected = textarea.value.substring(selStart, selEnd);
+    if (!selected.includes('\n')) {
+      input.value = selected;
+    }
+  }
+
+  input.focus();
+  input.select();
+  onEditorSearchInput(textId);
+}
+
+function closeEditorSearch(textId) {
+  const panel = document.getElementById(`search-panel-${textId}`);
+  if (panel) panel.classList.add('hidden');
+  const textarea = document.getElementById(textId);
+  if (textarea) textarea.focus();
+}
+
+function toggleEditorSearch(textId) {
+  const panel = document.getElementById(`search-panel-${textId}`);
+  if (!panel) return;
+  if (panel.classList.contains('hidden')) {
+    openEditorSearch(textId);
+  } else {
+    closeEditorSearch(textId);
+  }
+}
+
+function onEditorSearchInput(textId) {
+  const input = document.getElementById(`search-input-${textId}`);
+  const counter = document.getElementById(`search-counter-${textId}`);
+  const textarea = document.getElementById(textId);
+  if (!input || !textarea) return;
+
+  const query = input.value;
+  if (!query) {
+    editorSearchStates[textId] = { query: '', matches: [], currentIndex: -1 };
+    if (counter) counter.textContent = '';
+    return;
+  }
+
+  const text = textarea.value;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const matches = [];
+  let idx = 0;
+  while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
+    matches.push({ start: idx, end: idx + query.length });
+    idx += query.length || 1;
+  }
+
+  let currentIdx = -1;
+  if (matches.length > 0) {
+    const curStart = textarea.selectionStart;
+    currentIdx = matches.findIndex(m => m.start >= curStart);
+    if (currentIdx === -1) currentIdx = 0;
+  }
+
+  editorSearchStates[textId] = { query, matches, currentIndex: currentIdx };
+  updateSearchDisplay(textId);
+}
+
+function navEditorSearch(textId, direction) {
+  const state = editorSearchStates[textId];
+  if (!state || !state.matches || state.matches.length === 0) return;
+
+  let newIndex = state.currentIndex + direction;
+  if (newIndex >= state.matches.length) newIndex = 0;
+  if (newIndex < 0) newIndex = state.matches.length - 1;
+  state.currentIndex = newIndex;
+
+  updateSearchDisplay(textId);
+}
+
+function updateSearchDisplay(textId) {
+  const state = editorSearchStates[textId];
+  const counter = document.getElementById(`search-counter-${textId}`);
+  const textarea = document.getElementById(textId);
+  if (!state || !textarea) return;
+
+  if (state.matches.length === 0) {
+    if (counter) counter.textContent = state.query ? '0 / 0' : '';
+    return;
+  }
+
+  if (counter) {
+    counter.textContent = `${state.currentIndex + 1} / ${state.matches.length}`;
+  }
+
+  const match = state.matches[state.currentIndex];
+  if (match) {
+    textarea.focus();
+    textarea.setSelectionRange(match.start, match.end);
+
+    const textBefore = textarea.value.substring(0, match.start);
+    const lineNum = textBefore.split('\n').length - 1;
+    const lineHeight = 19;
+    const targetScroll = Math.max(0, (lineNum - 3) * lineHeight);
+    textarea.scrollTop = targetScroll;
+
+    const pair = editorIds.find(p => p.textId === textId);
+    if (pair) {
+      const codeEl = document.getElementById(pair.codeId);
+      if (codeEl && codeEl.parentElement) {
+        codeEl.parentElement.scrollTop = targetScroll;
+      }
+    }
+  }
+}
+
+function onEditorSearchKeydown(textId, event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeEditorSearch(textId);
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    navEditorSearch(textId, event.shiftKey ? -1 : 1);
+  }
 }
 
 function validateEditorJson(str, statusId) {
@@ -2357,7 +2568,10 @@ function openModal(id) {
 
 function closeModal(id) {
   const el = document.getElementById(id);
-  if (el) el.classList.add('hidden');
+  if (el) {
+    el.classList.add('hidden');
+    el.querySelectorAll('.editor-search-panel').forEach(p => p.classList.add('hidden'));
+  }
 }
 
 window.addEventListener('click', (e) => {
