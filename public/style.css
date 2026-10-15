@@ -5250,5 +5250,267 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   color: #ffffff;
 }
 
+/* ==========================================================================
+   ROUTING BUILDER (STAGE 4)
+   ========================================================================== */
+
+.routing-mode-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.routing-mode-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.routing-mode-tab:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.routing-mode-tab.active {
+  background: rgba(99, 102, 241, 0.25);
+  color: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+}
+
+.routing-builder-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.routing-builder-section::-webkit-scrollbar {
+  width: 6px;
+}
+.routing-builder-section::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.routing-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  transition: border-color var(--transition-fast);
+}
+
+.routing-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.routing-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.routing-card-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.routing-card-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* Pill radio controls */
+.routing-pill-group {
+  display: inline-flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.routing-pill-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.routing-pill-label input[type="radio"] {
+  display: none;
+}
+
+.routing-pill-label:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.routing-pill-label.active-direct,
+.routing-pill-label:has(input[type="radio"]:checked.pill-direct) {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  font-weight: 600;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.routing-pill-label.active-proxy,
+.routing-pill-label:has(input[type="radio"]:checked.pill-proxy) {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+  font-weight: 600;
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.routing-pill-label.active-block,
+.routing-pill-label:has(input[type="radio"]:checked.pill-block) {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-weight: 600;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* System rules checkboxes */
+.routing-checks-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .routing-checks-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.routing-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+}
+
+.routing-check-item input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: #6366f1;
+}
+
+.routing-check-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.routing-check-item-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.routing-check-item-desc {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
+/* Custom lists collapsible */
+.routing-lists-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.routing-list-details {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.routing-list-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-main);
+  user-select: none;
+}
+
+.routing-list-summary:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.routing-list-content {
+  padding: 10px 14px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .routing-list-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.routing-textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xs);
+  color: #e2e8f0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.routing-textarea:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+  outline: none;
+}
+
 
 

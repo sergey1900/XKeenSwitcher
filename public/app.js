@@ -3548,8 +3548,234 @@ async function checkAllPing() {
 }
 
 // ==============================================================================
-// ROUTING ACTIONS
+// ROUTING ACTIONS & VISUAL BUILDER (STAGE 4)
 // ==============================================================================
+
+// Update pill label active classes on radio change
+function updatePillStyles(radioInput) {
+  if (!radioInput) return;
+  const group = radioInput.closest('.routing-pill-group');
+  if (!group) return;
+  const labels = group.querySelectorAll('.routing-pill-label');
+  labels.forEach(lbl => {
+    lbl.classList.remove('active-direct', 'active-proxy', 'active-block');
+    const input = lbl.querySelector('input[type="radio"]');
+    if (input && input.checked) {
+      if (input.value === 'direct') lbl.classList.add('active-direct');
+      else if (input.value === 'proxy') lbl.classList.add('active-proxy');
+      else if (input.value === 'block') lbl.classList.add('active-block');
+    }
+  });
+}
+
+// Switch between Visual Builder and Raw JSON mode
+function switchRoutingMode(mode) {
+  const hiddenMode = document.getElementById('routing-mode');
+  if (hiddenMode) hiddenMode.value = mode;
+
+  const tabBuilder = document.getElementById('tab-routing-builder');
+  const tabJson = document.getElementById('tab-routing-json');
+  const sectionBuilder = document.getElementById('routing-builder-section');
+  const sectionJson = document.getElementById('routing-json-section');
+  const formatBtn = document.getElementById('btn-format-routing');
+
+  if (mode === 'builder') {
+    if (tabBuilder) tabBuilder.classList.add('active');
+    if (tabJson) tabJson.classList.remove('active');
+    if (sectionBuilder) sectionBuilder.classList.remove('hidden');
+    if (sectionJson) sectionJson.classList.add('hidden');
+    if (formatBtn) formatBtn.classList.add('hidden');
+  } else {
+    if (tabBuilder) tabBuilder.classList.remove('active');
+    if (tabJson) tabJson.classList.add('active');
+    if (sectionBuilder) sectionBuilder.classList.add('hidden');
+    if (sectionJson) sectionJson.classList.remove('hidden');
+    if (formatBtn) formatBtn.classList.remove('hidden');
+
+    // Auto-compile current builder settings to JSON editor when switching to Expert mode
+    const currentJson = document.getElementById('routing-content-json')?.value || '';
+    if (!currentJson.trim() || hiddenMode?.dataset?.dirty !== 'true') {
+      const compiled = generateBuilderJson();
+      if (compiled) {
+        setEditorContent('routing-content-json', compiled);
+      }
+    }
+  }
+}
+
+// Collect current builder configuration from form inputs
+function collectBuilderConfig() {
+  const bittorrent = document.querySelector('input[name="builder-bittorrent"]:checked')?.value || 'direct';
+  const quic = document.querySelector('input[name="builder-quic"]:checked')?.value || 'block';
+  const voip = document.querySelector('input[name="builder-voip"]:checked')?.value || 'direct';
+  const defaultAction = document.querySelector('input[name="builder-default-action"]:checked')?.value || 'proxy';
+
+  const bypassRu = Boolean(document.getElementById('builder-bypass-ru')?.checked);
+  const bypassPrivate = Boolean(document.getElementById('builder-bypass-private')?.checked);
+  const blockNetbios = Boolean(document.getElementById('builder-block-netbios')?.checked);
+  const blockAds = Boolean(document.getElementById('builder-block-ads')?.checked);
+
+  const parseLines = (id) => {
+    const val = document.getElementById(id)?.value || '';
+    return val.split('\n').map(s => s.trim()).filter(Boolean);
+  };
+
+  return {
+    defaultAction,
+    bittorrent,
+    quic,
+    voip,
+    bypassRu,
+    bypassPrivate,
+    blockNetbios,
+    blockAds,
+    customProxyDomains: parseLines('builder-custom-proxy-domains'),
+    customProxyIps: parseLines('builder-custom-proxy-ips'),
+    customDirectDomains: parseLines('builder-custom-direct-domains'),
+    customDirectIps: parseLines('builder-custom-direct-ips'),
+    customBlockDomains: parseLines('builder-custom-block-domains'),
+    customBlockIps: parseLines('builder-custom-block-ips')
+  };
+}
+
+// Compile builder config into Xray JSON
+function generateBuilderJson(cfg) {
+  if (!cfg) cfg = collectBuilderConfig();
+  const rules = [];
+  const inbounds = ['redirect', 'tproxy'];
+  const proxyTag = 'vless-reality';
+
+  if (cfg.blockNetbios) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', network: 'udp', port: '135,137,138,139' });
+  }
+  if (cfg.blockAds) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: ['geosite:category-ads-all'] });
+  }
+  if (Array.isArray(cfg.customBlockDomains) && cfg.customBlockDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: cfg.customBlockDomains });
+  }
+  if (Array.isArray(cfg.customBlockIps) && cfg.customBlockIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', ip: cfg.customBlockIps });
+  }
+  if (cfg.quic === 'block') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', network: 'udp', port: '443' });
+  } else if (cfg.quic === 'direct') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', network: 'udp', port: '443' });
+  } else if (cfg.quic === 'proxy') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, network: 'udp', port: '443' });
+  }
+  if (cfg.bittorrent === 'block') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', protocol: ['bittorrent'] });
+  } else if (cfg.bittorrent === 'direct') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', protocol: ['bittorrent'] });
+  } else if (cfg.bittorrent === 'proxy') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, protocol: ['bittorrent'] });
+  }
+  if (cfg.voip === 'direct') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', network: 'udp', port: '3478,3479,5349,19302-19309' });
+  } else if (cfg.voip === 'proxy') {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, network: 'udp', port: '3478,3479,5349,19302-19309' });
+  }
+  if (Array.isArray(cfg.customDirectDomains) && cfg.customDirectDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', domain: cfg.customDirectDomains });
+  }
+  if (Array.isArray(cfg.customDirectIps) && cfg.customDirectIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', ip: cfg.customDirectIps });
+  }
+  if (cfg.bypassRu) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      domain: [
+        'regexp:^([\\w\\-\\.]+\\.)ru$',
+        'regexp:^([\\w\\-\\.]+\\.)su$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
+        'regexp:^([\\w\\-\\.]+\\.)moscow$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$',
+        'ext:geosite_v2fly.dat:category-gov-ru',
+        'ext:geosite_v2fly.dat:yandex',
+        'ext:geosite_v2fly.dat:vk',
+        'ext:geosite_v2fly.dat:steam'
+      ]
+    });
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: ['geoip:private', 'ext:geoip_zkeenip.dat:ru']
+    });
+  } else if (cfg.bypassPrivate) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: ['geoip:private']
+    });
+  }
+  if (Array.isArray(cfg.customProxyDomains) && cfg.customProxyDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, domain: cfg.customProxyDomains });
+  }
+  if (Array.isArray(cfg.customProxyIps) && cfg.customProxyIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cfg.customProxyIps });
+  }
+  rules.push({
+    type: 'field',
+    inboundTag: inbounds,
+    outboundTag: cfg.defaultAction === 'direct' ? 'direct' : proxyTag,
+    network: 'tcp,udp'
+  });
+
+  return JSON.stringify({
+    routing: {
+      domainStrategy: 'IPIfNonMatch',
+      rules
+    }
+  }, null, 2);
+}
+
+// Populate Visual Builder form inputs
+function populateBuilderForm(cfg = {}) {
+  const setRadio = (name, val) => {
+    const radio = document.querySelector(`input[name="${name}"][value="${val}"]`);
+    if (radio) {
+      radio.checked = true;
+      updatePillStyles(radio);
+    }
+  };
+
+  setRadio('builder-bittorrent', cfg.bittorrent || 'direct');
+  setRadio('builder-quic', cfg.quic || 'block');
+  setRadio('builder-voip', cfg.voip || 'direct');
+  setRadio('builder-default-action', cfg.defaultAction || 'proxy');
+
+  const setCheck = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = Boolean(val);
+  };
+
+  setCheck('builder-bypass-ru', cfg.bypassRu !== undefined ? cfg.bypassRu : true);
+  setCheck('builder-bypass-private', cfg.bypassPrivate !== undefined ? cfg.bypassPrivate : true);
+  setCheck('builder-block-netbios', cfg.blockNetbios !== undefined ? cfg.blockNetbios : true);
+  setCheck('builder-block-ads', cfg.blockAds !== undefined ? cfg.blockAds : false);
+
+  const setText = (id, arr) => {
+    const el = document.getElementById(id);
+    if (el) el.value = Array.isArray(arr) ? arr.join('\n') : '';
+  };
+
+  setText('builder-custom-proxy-domains', cfg.customProxyDomains);
+  setText('builder-custom-proxy-ips', cfg.customProxyIps);
+  setText('builder-custom-direct-domains', cfg.customDirectDomains);
+  setText('builder-custom-direct-ips', cfg.customDirectIps);
+  setText('builder-custom-block-domains', cfg.customBlockDomains);
+  setText('builder-custom-block-ips', cfg.customBlockIps);
+}
 
 // Open Add Routing Modal
 function openAddRoutingModal() {
@@ -3562,7 +3788,6 @@ function openAddRoutingModal() {
   document.getElementById('routing-desc').value = '';
   document.getElementById('routing-desc').readOnly = false;
   document.getElementById('btn-save-routing').classList.remove('hidden');
-  document.getElementById('btn-format-routing').classList.remove('hidden');
 
   const chkBlacklist = document.getElementById('routing-default-blacklist');
   const chkWhitelist = document.getElementById('routing-default-whitelist');
@@ -3575,20 +3800,25 @@ function openAddRoutingModal() {
     chkWhitelist.disabled = false;
   }
 
-  const defaultRoutingTemplate = JSON.stringify({
-    routing: {
-      domainStrategy: "IPIfNonMatch",
-      rules: [
-        {
-          type: "field",
-          ip: ["geoip:private"],
-          outboundTag: "direct"
-        }
-      ]
-    }
-  }, null, 2);
+  // Set default builder options (BitTorrent direct, QUIC block, VoIP direct, Bypass RU on)
+  populateBuilderForm({
+    defaultAction: 'proxy',
+    bittorrent: 'direct',
+    quic: 'block',
+    voip: 'direct',
+    bypassRu: true,
+    bypassPrivate: true,
+    blockNetbios: true,
+    blockAds: false
+  });
 
-  setEditorContent('routing-content-json', defaultRoutingTemplate);
+  const hiddenMode = document.getElementById('routing-mode');
+  if (hiddenMode) hiddenMode.dataset.dirty = 'false';
+
+  switchRoutingMode('builder');
+  const initialJson = generateBuilderJson();
+  setEditorContent('routing-content-json', initialJson);
+
   openModal('modal-routing');
 }
 
@@ -3631,15 +3861,20 @@ function openRoutingModal(id) {
   }
 
   const saveBtn = document.getElementById('btn-save-routing');
-  const formatBtn = document.getElementById('btn-format-routing');
   if (routing.isSystem) {
     saveBtn.classList.remove('hidden');
     saveBtn.textContent = 'Сохранить по умолчанию';
-    formatBtn.classList.add('hidden');
   } else {
     saveBtn.classList.remove('hidden');
     saveBtn.textContent = 'Сохранить маршрутизацию';
-    formatBtn.classList.remove('hidden');
+  }
+
+  // Populate Builder or JSON Editor
+  if (routing.builderConfig) {
+    populateBuilderForm(routing.builderConfig);
+    switchRoutingMode('builder');
+  } else {
+    switchRoutingMode('raw');
   }
 
   setEditorContent('routing-content-json', routing.content);
@@ -3652,12 +3887,26 @@ async function onRoutingSubmit(e) {
   const id = document.getElementById('routing-id').value;
   const name = document.getElementById('routing-name').value.trim();
   const description = document.getElementById('routing-desc').value.trim();
-  const content = document.getElementById('routing-content-json').value.trim();
+  const mode = document.getElementById('routing-mode')?.value || 'builder';
   const isDefaultBlacklist = Boolean(document.getElementById('routing-default-blacklist')?.checked);
   const isDefaultWhitelist = Boolean(document.getElementById('routing-default-whitelist')?.checked);
 
-  if (!name || !content) {
-    showToast('Укажите название и содержимое routing.json', 'warning');
+  let builderConfig = null;
+  let content = '';
+
+  if (mode === 'builder') {
+    builderConfig = collectBuilderConfig();
+    content = generateBuilderJson(builderConfig);
+  } else {
+    content = document.getElementById('routing-content-json').value.trim();
+  }
+
+  if (!name) {
+    showToast('Укажите название маршрутизации', 'warning');
+    return;
+  }
+  if (mode === 'raw' && !content) {
+    showToast('Укажите содержимое routing.json', 'warning');
     return;
   }
 
@@ -3672,7 +3921,7 @@ async function onRoutingSubmit(e) {
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, content, isDefaultBlacklist, isDefaultWhitelist })
+      body: JSON.stringify({ name, description, mode, builderConfig, content, isDefaultBlacklist, isDefaultWhitelist })
     });
 
     const data = await res.json();

@@ -47,6 +47,23 @@ const SYSTEM_ROUTING_ALL_VPN = {
   name: 'Всё через VPN',
   description: 'Весь интернет-трафик направляется через активное подключение',
   isSystem: true,
+  mode: 'builder',
+  builderConfig: {
+    defaultAction: 'proxy',
+    bittorrent: 'proxy',
+    quic: 'proxy',
+    voip: 'proxy',
+    bypassRu: false,
+    bypassPrivate: true,
+    blockAds: false,
+    blockNetbios: false,
+    customProxyDomains: [],
+    customDirectDomains: [],
+    customBlockDomains: [],
+    customProxyIps: [],
+    customDirectIps: [],
+    customBlockIps: []
+  },
   content: JSON.stringify({
     routing: {
       domainStrategy: 'IPIfNonMatch',
@@ -70,6 +87,23 @@ const SYSTEM_ROUTING_EXCEPT_RU = {
   name: 'Всё через VPN кроме РФ',
   description: 'Весь трафик через VPN, кроме российских сайтов и IP-адресов (напрямую)',
   isSystem: true,
+  mode: 'builder',
+  builderConfig: {
+    defaultAction: 'proxy',
+    bittorrent: 'direct',
+    quic: 'direct',
+    voip: 'direct',
+    bypassRu: true,
+    bypassPrivate: true,
+    blockAds: false,
+    blockNetbios: true,
+    customProxyDomains: [],
+    customDirectDomains: [],
+    customBlockDomains: [],
+    customProxyIps: [],
+    customDirectIps: [],
+    customBlockIps: []
+  },
   content: JSON.stringify({
     routing: {
       domainStrategy: 'IPIfNonMatch',
@@ -145,6 +179,459 @@ const SYSTEM_ROUTING_EXCEPT_RU = {
   }, null, 2),
   createdAt: '2026-01-01T00:00:00.000Z'
 };
+
+// Extract real proxy outbound tag from connection
+function extractProxyTag(conn) {
+  if (!conn) return 'vless-reality';
+  if (conn.outboundContent) {
+    try {
+      const clean = stripJsonComments(conn.outboundContent);
+      const parsed = JSON.parse(clean);
+      const list = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+      for (const ob of list) {
+        if (!ob || ob.tag === 'direct' || ob.tag === 'block') continue;
+        if (ob.tag) return ob.tag;
+      }
+    } catch (e) {}
+  }
+  if (conn.protocol === 'vless') return 'vless-reality';
+  if (conn.protocol === 'hysteria2' || conn.protocol === 'hy2') return 'hysteria2';
+  if (conn.protocol === 'amneziawg' || conn.protocol === 'wireguard') return 'amneziawg';
+  return 'proxy';
+}
+
+// Universal Xray Routing Compiler
+function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
+  if (!cfg || typeof cfg !== 'object') {
+    return SYSTEM_ROUTING_ALL_VPN.content;
+  }
+  const rules = [];
+  const inbounds = ['redirect', 'tproxy'];
+
+  // 1. NetBIOS dangerous ports
+  if (cfg.blockNetbios) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'block',
+      network: 'udp',
+      port: '135,137,138,139'
+    });
+  }
+
+  // 2. Ad blocking
+  if (cfg.blockAds) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'block',
+      domain: ['geosite:category-ads-all']
+    });
+  }
+
+  // 3. Custom Block domains & IPs
+  if (Array.isArray(cfg.customBlockDomains) && cfg.customBlockDomains.length > 0) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'block',
+      domain: cfg.customBlockDomains.filter(Boolean)
+    });
+  }
+  if (Array.isArray(cfg.customBlockIps) && cfg.customBlockIps.length > 0) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'block',
+      ip: cfg.customBlockIps.filter(Boolean)
+    });
+  }
+
+  // 4. QUIC / HTTP/3 (UDP 443)
+  if (cfg.quic === 'block') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'block',
+      network: 'udp',
+      port: '443'
+    });
+  } else if (cfg.quic === 'direct') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      network: 'udp',
+      port: '443'
+    });
+  } else if (cfg.quic === 'proxy') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      network: 'udp',
+      port: '443'
+    });
+  }
+
+  // 5. BitTorrent (P2P)
+  if (cfg.bittorrent === 'block') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'block',
+      protocol: ['bittorrent']
+    });
+  } else if (cfg.bittorrent === 'direct') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      protocol: ['bittorrent']
+    });
+  } else if (cfg.bittorrent === 'proxy') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      protocol: ['bittorrent']
+    });
+  }
+
+  // 6. VoIP / Calls (WebRTC / STUN)
+  const voipPorts = '3478,3479,5349,19302-19309';
+  if (cfg.voip === 'direct') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      network: 'udp',
+      port: voipPorts
+    });
+  } else if (cfg.voip === 'proxy') {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      network: 'udp',
+      port: voipPorts
+    });
+  }
+
+  // 7. Custom Direct domains & IPs
+  if (Array.isArray(cfg.customDirectDomains) && cfg.customDirectDomains.length > 0) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      domain: cfg.customDirectDomains.filter(Boolean)
+    });
+  }
+  if (Array.isArray(cfg.customDirectIps) && cfg.customDirectIps.length > 0) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: cfg.customDirectIps.filter(Boolean)
+    });
+  }
+
+  // 8. Bypass RU (Domains & IPs)
+  if (cfg.bypassRu) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      domain: [
+        'regexp:^([\\w\\-\\.]+\\.)ru$',
+        'regexp:^([\\w\\-\\.]+\\.)su$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
+        'regexp:^([\\w\\-\\.]+\\.)moscow$',
+        'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$',
+        'ext:geosite_v2fly.dat:category-gov-ru',
+        'ext:geosite_v2fly.dat:yandex',
+        'ext:geosite_v2fly.dat:vk',
+        'ext:geosite_v2fly.dat:steam'
+      ]
+    });
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: [
+        'geoip:private',
+        'ext:geoip_zkeenip.dat:ru'
+      ]
+    });
+  } else if (cfg.bypassPrivate) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: ['geoip:private']
+    });
+  }
+
+  // 9. Custom Proxy domains & IPs
+  if (Array.isArray(cfg.customProxyDomains) && cfg.customProxyDomains.length > 0) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      domain: cfg.customProxyDomains.filter(Boolean)
+    });
+  }
+  if (Array.isArray(cfg.customProxyIps) && cfg.customProxyIps.length > 0) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      ip: cfg.customProxyIps.filter(Boolean)
+    });
+  }
+
+  // 10. Default Fallback
+  const finalTag = (cfg.defaultAction === 'direct') ? 'direct' : proxyTag;
+  rules.push({
+    type: 'field',
+    inboundTag: inbounds,
+    outboundTag: finalTag,
+    network: 'tcp,udp'
+  });
+
+  return JSON.stringify({
+    routing: {
+      domainStrategy: 'IPIfNonMatch',
+      rules
+    }
+  }, null, 2);
+}
+
+// Universal Mihomo Rules Compiler
+function compileMihomoRules(cfg) {
+  if (!cfg || typeof cfg !== 'object') {
+    return '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
+  }
+  const lines = [];
+
+  // 1. Private IPs
+  if (cfg.bypassPrivate || cfg.bypassRu) {
+    lines.push('  - GEOIP,private,DIRECT,no-resolve');
+  }
+
+  // 2. NetBIOS ports
+  if (cfg.blockNetbios) {
+    lines.push('  - DST-PORT,135,REJECT');
+    lines.push('  - DST-PORT,137,REJECT');
+    lines.push('  - DST-PORT,138,REJECT');
+    lines.push('  - DST-PORT,139,REJECT');
+  }
+
+  // 3. Ad blocking
+  if (cfg.blockAds) {
+    lines.push('  - GEOSITE,category-ads-all,REJECT');
+  }
+
+  // 4. Custom Block
+  if (Array.isArray(cfg.customBlockDomains)) {
+    for (const d of cfg.customBlockDomains.filter(Boolean)) {
+      lines.push(`  - DOMAIN-SUFFIX,${d.trim()},REJECT`);
+    }
+  }
+  if (Array.isArray(cfg.customBlockIps)) {
+    for (const ip of cfg.customBlockIps.filter(Boolean)) {
+      const cidr = ip.includes('/') ? ip.trim() : `${ip.trim()}/32`;
+      lines.push(`  - IP-CIDR,${cidr},REJECT,no-resolve`);
+    }
+  }
+
+  // 5. QUIC (UDP 443)
+  if (cfg.quic === 'block') {
+    lines.push('  - DST-PORT,443,REJECT,udp');
+  } else if (cfg.quic === 'direct') {
+    lines.push('  - DST-PORT,443,DIRECT,udp');
+  } else if (cfg.quic === 'proxy') {
+    lines.push('  - DST-PORT,443,PROXY,udp');
+  }
+
+  // 6. BitTorrent
+  if (cfg.bittorrent === 'block') {
+    lines.push('  - GEOSITE,torrent,REJECT');
+    lines.push('  - DST-PORT,6881-6889,REJECT');
+  } else if (cfg.bittorrent === 'direct') {
+    lines.push('  - GEOSITE,torrent,DIRECT');
+    lines.push('  - DST-PORT,6881-6889,DIRECT');
+  } else if (cfg.bittorrent === 'proxy') {
+    lines.push('  - GEOSITE,torrent,PROXY');
+    lines.push('  - DST-PORT,6881-6889,PROXY');
+  }
+
+  // 7. VoIP / Calls (WebRTC, STUN)
+  if (cfg.voip === 'direct') {
+    lines.push('  - DST-PORT,3478,DIRECT,udp');
+    lines.push('  - DST-PORT,3479,DIRECT,udp');
+    lines.push('  - DST-PORT,5349,DIRECT,udp');
+    lines.push('  - DST-PORT,19302-19309,DIRECT,udp');
+  } else if (cfg.voip === 'proxy') {
+    lines.push('  - DST-PORT,3478,PROXY,udp');
+    lines.push('  - DST-PORT,3479,PROXY,udp');
+    lines.push('  - DST-PORT,5349,PROXY,udp');
+    lines.push('  - DST-PORT,19302-19309,PROXY,udp');
+  }
+
+  // 8. Custom Direct
+  if (Array.isArray(cfg.customDirectDomains)) {
+    for (const d of cfg.customDirectDomains.filter(Boolean)) {
+      lines.push(`  - DOMAIN-SUFFIX,${d.trim()},DIRECT`);
+    }
+  }
+  if (Array.isArray(cfg.customDirectIps)) {
+    for (const ip of cfg.customDirectIps.filter(Boolean)) {
+      const cidr = ip.includes('/') ? ip.trim() : `${ip.trim()}/32`;
+      lines.push(`  - IP-CIDR,${cidr},DIRECT,no-resolve`);
+    }
+  }
+
+  // 9. Bypass RU
+  if (cfg.bypassRu) {
+    lines.push('  - GEOSITE,category-gov-ru,DIRECT');
+    lines.push('  - GEOSITE,yandex,DIRECT');
+    lines.push('  - GEOSITE,vk,DIRECT');
+    lines.push('  - GEOSITE,steam,DIRECT');
+    lines.push('  - GEOIP,ru,DIRECT');
+  }
+
+  // 10. Custom Proxy
+  if (Array.isArray(cfg.customProxyDomains)) {
+    for (const d of cfg.customProxyDomains.filter(Boolean)) {
+      lines.push(`  - DOMAIN-SUFFIX,${d.trim()},PROXY`);
+    }
+  }
+  if (Array.isArray(cfg.customProxyIps)) {
+    for (const ip of cfg.customProxyIps.filter(Boolean)) {
+      const cidr = ip.includes('/') ? ip.trim() : `${ip.trim()}/32`;
+      lines.push(`  - IP-CIDR,${cidr},PROXY,no-resolve`);
+    }
+  }
+
+  // 11. Match Default
+  if (cfg.defaultAction === 'direct') {
+    lines.push('  - MATCH,DIRECT');
+  } else {
+    lines.push('  - MATCH,PROXY');
+  }
+
+  return lines.join('\n');
+}
+
+// Convert raw Xray JSON to Mihomo YAML rules for fallback
+function parseRawXrayToMihomoRules(rawJson) {
+  try {
+    const clean = stripJsonComments(rawJson);
+    const parsed = JSON.parse(clean);
+    const rules = (parsed.routing && Array.isArray(parsed.routing.rules)) ? parsed.routing.rules : [];
+    const lines = [];
+
+    for (const r of rules) {
+      if (!r) continue;
+      const tag = r.outboundTag || 'direct';
+      let mihomoTarget = 'DIRECT';
+      if (tag === 'block') mihomoTarget = 'REJECT';
+      else if (tag === 'direct') mihomoTarget = 'DIRECT';
+      else mihomoTarget = 'PROXY';
+
+      if (Array.isArray(r.protocol) && r.protocol.includes('bittorrent')) {
+        lines.push(`  - GEOSITE,torrent,${mihomoTarget}`);
+        lines.push(`  - DST-PORT,6881-6889,${mihomoTarget}`);
+      }
+
+      if (r.port) {
+        const ports = String(r.port).split(',');
+        for (const p of ports) {
+          const pt = p.trim();
+          if (pt) {
+            const proto = r.network === 'udp' ? ',udp' : (r.network === 'tcp' ? ',tcp' : '');
+            lines.push(`  - DST-PORT,${pt},${mihomoTarget}${proto}`);
+          }
+        }
+      }
+
+      if (Array.isArray(r.domain)) {
+        for (const d of r.domain) {
+          if (!d) continue;
+          if (d.startsWith('ext:geosite_v2fly.dat:') || d.startsWith('geosite:')) {
+            const gName = d.split(':').pop();
+            lines.push(`  - GEOSITE,${gName},${mihomoTarget}`);
+          } else if (/ru\$|su\$|moscow\$/i.test(d)) {
+            // Handled
+          } else if (d.startsWith('full:')) {
+            lines.push(`  - DOMAIN,${d.replace('full:', '')},${mihomoTarget}`);
+          } else if (!d.startsWith('regexp:')) {
+            lines.push(`  - DOMAIN-SUFFIX,${d.replace(/^domain:/, '')},${mihomoTarget}`);
+          }
+        }
+      }
+
+      if (Array.isArray(r.ip)) {
+        for (const ip of r.ip) {
+          if (!ip) continue;
+          if (ip === 'geoip:private') {
+            lines.push(`  - GEOIP,private,${mihomoTarget},no-resolve`);
+          } else if (ip === 'geoip:ru' || ip.includes(':ru')) {
+            lines.push(`  - GEOIP,ru,${mihomoTarget}`);
+          } else if (ip.startsWith('geoip:')) {
+            lines.push(`  - GEOIP,${ip.replace('geoip:', '')},${mihomoTarget}`);
+          } else if (/^\d+\.\d+\.\d+\.\d+/.test(ip)) {
+            const cidr = ip.includes('/') ? ip : `${ip}/32`;
+            lines.push(`  - IP-CIDR,${cidr},${mihomoTarget},no-resolve`);
+          }
+        }
+      }
+    }
+
+    if (!lines.some(l => l.includes('GEOIP,private'))) {
+      lines.unshift('  - GEOIP,private,DIRECT,no-resolve');
+    }
+    lines.push('  - MATCH,PROXY');
+    return lines.join('\n');
+  } catch (e) {
+    return '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
+  }
+}
+
+// Dynamic compilation for Xray routing file
+function compileRoutingForXray(routing, conn) {
+  if (!routing) return SYSTEM_ROUTING_ALL_VPN.content;
+  const proxyTag = extractProxyTag(conn);
+  if (routing.builderConfig) {
+    return compileXrayRouting(routing.builderConfig, proxyTag);
+  }
+  if (routing.content) {
+    try {
+      const clean = stripJsonComments(routing.content);
+      const parsed = JSON.parse(clean);
+      if (parsed.routing && Array.isArray(parsed.routing.rules)) {
+        let changed = false;
+        for (const r of parsed.routing.rules) {
+          if (r.outboundTag && r.outboundTag !== 'direct' && r.outboundTag !== 'block') {
+            r.outboundTag = proxyTag;
+            changed = true;
+          }
+        }
+        if (changed) {
+          return JSON.stringify(parsed, null, 2);
+        }
+      }
+    } catch (e) {}
+    return routing.content;
+  }
+  return SYSTEM_ROUTING_ALL_VPN.content;
+}
 
 // Auto-detect existing xray/xkeen config paths on router
 function detectConfigPaths() {
@@ -1431,16 +1918,29 @@ ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
       - 1.0.0.1${awgOptionStr}`;
   }
 
-  let rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
-  const routingId = routing ? routing.id : '';
-  if (routingId === 'routing_except_ru') {
+  let rulesYaml = '';
+  if (routing && routing.builderConfig) {
+    rulesYaml = compileMihomoRules(routing.builderConfig);
+  } else if (routing && routing.id === 'routing_except_ru') {
     rulesYaml = `  - GEOIP,private,DIRECT,no-resolve
+  - DST-PORT,135,REJECT
+  - DST-PORT,137,REJECT
+  - DST-PORT,138,REJECT
+  - DST-PORT,139,REJECT
+  - DST-PORT,6881-6889,DIRECT
   - GEOSITE,category-gov-ru,DIRECT
   - GEOSITE,yandex,DIRECT
   - GEOSITE,vk,DIRECT
   - GEOSITE,steam,DIRECT
   - GEOIP,ru,DIRECT
   - MATCH,PROXY`;
+  } else if (routing && routing.id === 'routing_all_vpn') {
+    rulesYaml = `  - GEOIP,private,DIRECT,no-resolve
+  - MATCH,PROXY`;
+  } else if (routing && routing.content) {
+    rulesYaml = parseRawXrayToMihomoRules(routing.content);
+  } else {
+    rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
   }
 
   const yamlContent = `# Generated by XKeenSwitcher for ${connName}
@@ -3260,6 +3760,8 @@ function loadData() {
         data.routings[sysRoutingIdx].isSystem = true;
         data.routings[sysRoutingIdx].name = 'Всё через VPN';
         data.routings[sysRoutingIdx].id = 'routing_all_vpn';
+        data.routings[sysRoutingIdx].mode = 'builder';
+        data.routings[sysRoutingIdx].builderConfig = { ...SYSTEM_ROUTING_ALL_VPN.builderConfig };
         data.routings[sysRoutingIdx].content = SYSTEM_ROUTING_ALL_VPN.content;
         sysAllVpn = data.routings[sysRoutingIdx];
       }
@@ -3274,6 +3776,8 @@ function loadData() {
         data.routings[sysExceptRuIdx].isSystem = true;
         data.routings[sysExceptRuIdx].name = 'Всё через VPN кроме РФ';
         data.routings[sysExceptRuIdx].id = 'routing_except_ru';
+        data.routings[sysExceptRuIdx].mode = 'builder';
+        data.routings[sysExceptRuIdx].builderConfig = { ...SYSTEM_ROUTING_EXCEPT_RU.builderConfig };
         data.routings[sysExceptRuIdx].description = SYSTEM_ROUTING_EXCEPT_RU.description;
         data.routings[sysExceptRuIdx].content = SYSTEM_ROUTING_EXCEPT_RU.content;
         sysExceptRu = data.routings[sysExceptRuIdx];
@@ -3422,7 +3926,7 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
       // Also write Xray files as fallback
       writeTargetFile(outboundPath, conn.outboundContent);
       fileWriteStatus.outbound = true;
-      writeTargetFile(routingPath, routing.content);
+      writeTargetFile(routingPath, compileRoutingForXray(routing, conn));
       fileWriteStatus.routing = true;
 
       // 2. Switch core to Mihomo if not already active
@@ -3435,7 +3939,7 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
       // Standard connection: write Xray files
       writeTargetFile(outboundPath, conn.outboundContent);
       fileWriteStatus.outbound = true;
-      writeTargetFile(routingPath, routing.content);
+      writeTargetFile(routingPath, compileRoutingForXray(routing, conn));
       fileWriteStatus.routing = true;
 
       // Switch back to Xray if currently on Mihomo
@@ -5079,7 +5583,15 @@ const server = http.createServer(async (req, res) => {
 
       if (data.settings.activeConnectionId === id) {
         const { routingPath, restartCommand } = data.settings;
-        writeTargetFile(routingPath, targetRouting.content);
+        writeTargetFile(routingPath, compileRoutingForXray(targetRouting, conn));
+        const isMihomoRequired = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || conn.protocol === 'hysteria2' || conn.protocol === 'hy2' || Boolean(conn.amneziaConfig);
+        const coreInfo = detectActiveProxyCore();
+        if (isMihomoRequired || coreInfo.activeCore === 'mihomo') {
+          try {
+            const mYaml = generateMihomoConfig(conn, targetRouting);
+            writeTargetFile('/opt/etc/mihomo/config.yaml', mYaml);
+          } catch (e) {}
+        }
         if (restartCommand && restartCommand.trim()) {
           const resCmd = await runShellCommand(restartCommand.trim());
           const computedStatus = evaluateServiceStatus(resCmd);
@@ -5785,14 +6297,41 @@ const server = http.createServer(async (req, res) => {
       const body = await parseJsonBody(req);
       const { name, description, content } = body;
 
-      if (!name || !content) {
-        return sendJson(res, 400, { error: 'Заполните название и содержимое routing.json' });
+      if (!name) {
+        return sendJson(res, 400, { error: 'Укажите название маршрутизации' });
       }
 
-      try {
-        parseJsonWithComments(content);
-      } catch (e) {
-        return sendJson(res, 400, { error: 'Синтаксическая ошибка в routing.json: ' + e.message });
+      let mode = body.mode === 'builder' ? 'builder' : 'raw';
+      let builderConfig = null;
+      let effectiveContent = (content || '').trim();
+
+      if (mode === 'builder' && body.builderConfig) {
+        builderConfig = {
+          defaultAction: body.builderConfig.defaultAction === 'direct' ? 'direct' : 'proxy',
+          bittorrent: ['direct', 'proxy', 'block'].includes(body.builderConfig.bittorrent) ? body.builderConfig.bittorrent : 'direct',
+          quic: ['direct', 'proxy', 'block'].includes(body.builderConfig.quic) ? body.builderConfig.quic : 'block',
+          voip: ['direct', 'proxy'].includes(body.builderConfig.voip) ? body.builderConfig.voip : 'direct',
+          bypassRu: Boolean(body.builderConfig.bypassRu),
+          bypassPrivate: Boolean(body.builderConfig.bypassPrivate),
+          blockAds: Boolean(body.builderConfig.blockAds),
+          blockNetbios: Boolean(body.builderConfig.blockNetbios),
+          customProxyDomains: Array.isArray(body.builderConfig.customProxyDomains) ? body.builderConfig.customProxyDomains.map(s => String(s).trim()).filter(Boolean) : [],
+          customDirectDomains: Array.isArray(body.builderConfig.customDirectDomains) ? body.builderConfig.customDirectDomains.map(s => String(s).trim()).filter(Boolean) : [],
+          customBlockDomains: Array.isArray(body.builderConfig.customBlockDomains) ? body.builderConfig.customBlockDomains.map(s => String(s).trim()).filter(Boolean) : [],
+          customProxyIps: Array.isArray(body.builderConfig.customProxyIps) ? body.builderConfig.customProxyIps.map(s => String(s).trim()).filter(Boolean) : [],
+          customDirectIps: Array.isArray(body.builderConfig.customDirectIps) ? body.builderConfig.customDirectIps.map(s => String(s).trim()).filter(Boolean) : [],
+          customBlockIps: Array.isArray(body.builderConfig.customBlockIps) ? body.builderConfig.customBlockIps.map(s => String(s).trim()).filter(Boolean) : []
+        };
+        effectiveContent = compileXrayRouting(builderConfig, 'vless-reality');
+      } else {
+        if (!effectiveContent) {
+          return sendJson(res, 400, { error: 'Заполните название и содержимое routing.json' });
+        }
+        try {
+          parseJsonWithComments(effectiveContent);
+        } catch (e) {
+          return sendJson(res, 400, { error: 'Синтаксическая ошибка в routing.json: ' + e.message });
+        }
       }
 
       const data = loadData();
@@ -5801,7 +6340,9 @@ const server = http.createServer(async (req, res) => {
         name: name.trim(),
         description: (description || '').trim(),
         isSystem: false,
-        content: content.trim(),
+        mode,
+        builderConfig,
+        content: effectiveContent,
         createdAt: new Date().toISOString()
       };
 
@@ -5899,19 +6440,48 @@ const server = http.createServer(async (req, res) => {
       const body = await parseJsonBody(req);
       const { name, description, content } = body;
 
-      if (!name || !content) {
-        return sendJson(res, 400, { error: 'Заполните название и содержимое routing.json' });
+      if (!name) {
+        return sendJson(res, 400, { error: 'Укажите название маршрутизации' });
       }
 
-      try {
-        parseJsonWithComments(content);
-      } catch (e) {
-        return sendJson(res, 400, { error: 'Синтаксическая ошибка в routing.json: ' + e.message });
+      let mode = body.mode === 'builder' ? 'builder' : (body.mode === 'raw' ? 'raw' : (routing.mode || 'raw'));
+      let builderConfig = null;
+      let effectiveContent = (content || '').trim();
+
+      if (mode === 'builder' && body.builderConfig) {
+        builderConfig = {
+          defaultAction: body.builderConfig.defaultAction === 'direct' ? 'direct' : 'proxy',
+          bittorrent: ['direct', 'proxy', 'block'].includes(body.builderConfig.bittorrent) ? body.builderConfig.bittorrent : 'direct',
+          quic: ['direct', 'proxy', 'block'].includes(body.builderConfig.quic) ? body.builderConfig.quic : 'block',
+          voip: ['direct', 'proxy'].includes(body.builderConfig.voip) ? body.builderConfig.voip : 'direct',
+          bypassRu: Boolean(body.builderConfig.bypassRu),
+          bypassPrivate: Boolean(body.builderConfig.bypassPrivate),
+          blockAds: Boolean(body.builderConfig.blockAds),
+          blockNetbios: Boolean(body.builderConfig.blockNetbios),
+          customProxyDomains: Array.isArray(body.builderConfig.customProxyDomains) ? body.builderConfig.customProxyDomains.map(s => String(s).trim()).filter(Boolean) : [],
+          customDirectDomains: Array.isArray(body.builderConfig.customDirectDomains) ? body.builderConfig.customDirectDomains.map(s => String(s).trim()).filter(Boolean) : [],
+          customBlockDomains: Array.isArray(body.builderConfig.customBlockDomains) ? body.builderConfig.customBlockDomains.map(s => String(s).trim()).filter(Boolean) : [],
+          customProxyIps: Array.isArray(body.builderConfig.customProxyIps) ? body.builderConfig.customProxyIps.map(s => String(s).trim()).filter(Boolean) : [],
+          customDirectIps: Array.isArray(body.builderConfig.customDirectIps) ? body.builderConfig.customDirectIps.map(s => String(s).trim()).filter(Boolean) : [],
+          customBlockIps: Array.isArray(body.builderConfig.customBlockIps) ? body.builderConfig.customBlockIps.map(s => String(s).trim()).filter(Boolean) : []
+        };
+        effectiveContent = compileXrayRouting(builderConfig, 'vless-reality');
+      } else {
+        if (!effectiveContent) {
+          return sendJson(res, 400, { error: 'Заполните название и содержимое routing.json' });
+        }
+        try {
+          parseJsonWithComments(effectiveContent);
+        } catch (e) {
+          return sendJson(res, 400, { error: 'Синтаксическая ошибка в routing.json: ' + e.message });
+        }
       }
 
       routing.name = name.trim();
       routing.description = (description || '').trim();
-      routing.content = content.trim();
+      routing.mode = mode;
+      routing.builderConfig = builderConfig;
+      routing.content = effectiveContent;
       routing.updatedAt = new Date().toISOString();
 
       if (typeof body.isDefaultBlacklist !== 'undefined') {
@@ -5932,7 +6502,15 @@ const server = http.createServer(async (req, res) => {
       const activeConn = data.connections.find(c => c.id === data.settings.activeConnectionId);
       if (activeConn && activeConn.routingId === id) {
         const { routingPath, restartCommand } = data.settings;
-        writeTargetFile(routingPath, routing.content);
+        writeTargetFile(routingPath, compileRoutingForXray(routing, activeConn));
+        const isMihomoRequired = activeConn.protocol === 'wireguard' || activeConn.protocol === 'amneziawg' || activeConn.protocol === 'hysteria2' || activeConn.protocol === 'hy2' || Boolean(activeConn.amneziaConfig);
+        const coreInfo = detectActiveProxyCore();
+        if (isMihomoRequired || coreInfo.activeCore === 'mihomo') {
+          try {
+            const mYaml = generateMihomoConfig(activeConn, routing);
+            writeTargetFile('/opt/etc/mihomo/config.yaml', mYaml);
+          } catch (e) {}
+        }
         if (restartCommand && restartCommand.trim()) {
           const resCmd = await runShellCommand(restartCommand.trim());
           const computedStatus = evaluateServiceStatus(resCmd);
@@ -6108,6 +6686,8 @@ const server = http.createServer(async (req, res) => {
           name: r.name || 'Маршрутизация',
           description: r.description || '',
           isSystem: Boolean(r.isSystem || r.id === 'routing_all_vpn' || r.id === 'routing_except_ru' || r.name === 'Всё через VPN' || r.name === 'Всё через VPN кроме РФ' || r.name === 'Все кроме РФ через VPN'),
+          mode: r.mode || (r.builderConfig ? 'builder' : 'raw'),
+          builderConfig: r.builderConfig || null,
           content: r.content || '',
           createdAt: r.createdAt || new Date().toISOString()
         }));

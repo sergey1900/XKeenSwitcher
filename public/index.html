@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.8">
+  <link rel="stylesheet" href="style.css?v=2.9.9">
 </head>
 <body>
   <div class="app-background"></div>
@@ -528,6 +528,7 @@
 
       <form id="form-routing" onsubmit="onRoutingSubmit(event)">
         <input type="hidden" id="routing-id">
+        <input type="hidden" id="routing-mode" value="builder">
 
         <div class="form-row">
           <div class="form-group flex-1">
@@ -541,8 +542,206 @@
           </div>
         </div>
 
-        <!-- ROUTING JSON EDITOR -->
-        <div class="form-group">
+        <!-- ROUTING MODE TABS -->
+        <div class="routing-mode-tabs" role="tablist">
+          <button type="button" class="routing-mode-tab active" id="tab-routing-builder" onclick="switchRoutingMode('builder')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            Конструктор правил
+          </button>
+          <button type="button" class="routing-mode-tab" id="tab-routing-json" onclick="switchRoutingMode('raw')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Экспертный режим JSON
+          </button>
+        </div>
+
+        <!-- VISUAL BUILDER SECTION -->
+        <div id="routing-builder-section" class="routing-builder-section">
+          <!-- PROTOCOL 1: BITTORRENT -->
+          <div class="routing-card">
+            <div class="routing-card-header">
+              <span class="routing-card-title">🧲 Торренты и P2P (BitTorrent)</span>
+              <div class="routing-pill-group">
+                <label class="routing-pill-label active-direct">
+                  <input type="radio" name="builder-bittorrent" value="direct" class="pill-direct" checked onchange="updatePillStyles(this)">
+                  ⚡ Напрямую
+                </label>
+                <label class="routing-pill-label">
+                  <input type="radio" name="builder-bittorrent" value="proxy" class="pill-proxy" onchange="updatePillStyles(this)">
+                  🛡️ В туннель
+                </label>
+                <label class="routing-pill-label">
+                  <input type="radio" name="builder-bittorrent" value="block" class="pill-block" onchange="updatePillStyles(this)">
+                  🛑 Блокировать
+                </label>
+              </div>
+            </div>
+            <div class="routing-card-hint">
+              Определяет маршрутизацию пирингового трафика. «Напрямую» направляет торренты мимо VPN, защищая сервер от абуз и бана провайдером.
+            </div>
+          </div>
+
+          <!-- PROTOCOL 2: QUIC / HTTP/3 -->
+          <div class="routing-card">
+            <div class="routing-card-header">
+              <span class="routing-card-title">🚀 QUIC / HTTP/3 (UDP 443)</span>
+              <div class="routing-pill-group">
+                <label class="routing-pill-label active-block">
+                  <input type="radio" name="builder-quic" value="block" class="pill-block" checked onchange="updatePillStyles(this)">
+                  🛑 Блокировать
+                </label>
+                <label class="routing-pill-label">
+                  <input type="radio" name="builder-quic" value="proxy" class="pill-proxy" onchange="updatePillStyles(this)">
+                  🛡️ В туннель
+                </label>
+                <label class="routing-pill-label">
+                  <input type="radio" name="builder-quic" value="direct" class="pill-direct" onchange="updatePillStyles(this)">
+                  ⚡ Напрямую
+                </label>
+              </div>
+            </div>
+            <div class="routing-card-hint">
+              Блокировка UDP 443 принуждает браузеры и YouTube использовать классический TCP/TLS через туннель, предотвращая замедление и разрывы видеопотоков.
+            </div>
+          </div>
+
+          <!-- PROTOCOL 4: VOIP / WEBRTC / CALLS -->
+          <div class="routing-card">
+            <div class="routing-card-header">
+              <span class="routing-card-title">📞 Звонки и STUN (VoIP / WebRTC)</span>
+              <div class="routing-pill-group">
+                <label class="routing-pill-label active-direct">
+                  <input type="radio" name="builder-voip" value="direct" class="pill-direct" checked onchange="updatePillStyles(this)">
+                  ⚡ Напрямую
+                </label>
+                <label class="routing-pill-label">
+                  <input type="radio" name="builder-voip" value="proxy" class="pill-proxy" onchange="updatePillStyles(this)">
+                  🛡️ В туннель
+                </label>
+              </div>
+            </div>
+            <div class="routing-card-hint">
+              STUN и голосовые медиа-порты (UDP 3478, 3479, 5349, 19302-19309). «Напрямую» обеспечивает минимальный пинг и четкий звук в Telegram, WhatsApp и играх.
+            </div>
+          </div>
+
+          <!-- SYSTEM RULES -->
+          <div class="routing-card">
+            <span class="routing-card-title">🌐 Системные правила и геолокация</span>
+            <div class="routing-checks-grid">
+              <label class="routing-check-item">
+                <input type="checkbox" id="builder-bypass-ru" checked>
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🇷🇺 Обход РФ (Bypass RU)</span>
+                  <span class="routing-check-item-desc">Сайты .ru/.su, Госуслуги, VK, Яндекc, Steam и IP РФ идут напрямую</span>
+                </div>
+              </label>
+
+              <label class="routing-check-item">
+                <input type="checkbox" id="builder-bypass-private" checked>
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🏠 Локальные сети (RFC1918)</span>
+                  <span class="routing-check-item-desc">Приватные IP-адреса (192.168.x.x, 10.x.x.x, 127.0.0.1) напрямую</span>
+                </div>
+              </label>
+
+              <label class="routing-check-item">
+                <input type="checkbox" id="builder-block-netbios" checked>
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🛡️ Защита NetBIOS</span>
+                  <span class="routing-check-item-desc">Блокировка опасных сетевых портов UDP 135, 137, 138, 139</span>
+                </div>
+              </label>
+
+              <label class="routing-check-item">
+                <input type="checkbox" id="builder-block-ads">
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🚫 Блокировка рекламы</span>
+                  <span class="routing-check-item-desc">Блокировка баннеров и трекеров (geosite:category-ads-all)</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- CUSTOM LISTS (COLLAPSIBLE) -->
+          <div class="routing-card">
+            <span class="routing-card-title" style="margin-bottom: 10px;">📋 Пользовательские списки доменов и IP</span>
+            <div class="routing-lists-group">
+              <details class="routing-list-details">
+                <summary class="routing-list-summary">
+                  <span>🛡️ Направлять в туннель (через VPN)</span>
+                  <span class="badge" style="font-size: 0.72rem; opacity: 0.7;">Развернуть</span>
+                </summary>
+                <div class="routing-list-content">
+                  <div>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (по одному на строку):</label>
+                    <textarea id="builder-custom-proxy-domains" class="routing-textarea" rows="3" placeholder="instagram.com&#10;youtube.com&#10;notion.so"></textarea>
+                  </div>
+                  <div>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (по одному на строку):</label>
+                    <textarea id="builder-custom-proxy-ips" class="routing-textarea" rows="3" placeholder="1.1.1.1&#10;8.8.8.8&#10;104.16.0.0/12"></textarea>
+                  </div>
+                </div>
+              </details>
+
+              <details class="routing-list-details">
+                <summary class="routing-list-summary">
+                  <span>⚡ Направлять напрямую (мимо VPN)</span>
+                  <span class="badge" style="font-size: 0.72rem; opacity: 0.7;">Развернуть</span>
+                </summary>
+                <div class="routing-list-content">
+                  <div>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (по одному на строку):</label>
+                    <textarea id="builder-custom-direct-domains" class="routing-textarea" rows="3" placeholder="kinopoisk.ru&#10;gosuslugi.ru"></textarea>
+                  </div>
+                  <div>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (по одному на строку):</label>
+                    <textarea id="builder-custom-direct-ips" class="routing-textarea" rows="3" placeholder=""></textarea>
+                  </div>
+                </div>
+              </details>
+
+              <details class="routing-list-details">
+                <summary class="routing-list-summary">
+                  <span>🛑 Заблокировать (Reject)</span>
+                  <span class="badge" style="font-size: 0.72rem; opacity: 0.7;">Развернуть</span>
+                </summary>
+                <div class="routing-list-content">
+                  <div>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены:</label>
+                    <textarea id="builder-custom-block-domains" class="routing-textarea" rows="2" placeholder="analytics.google.com"></textarea>
+                  </div>
+                  <div>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR:</label>
+                    <textarea id="builder-custom-block-ips" class="routing-textarea" rows="2" placeholder=""></textarea>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <!-- DEFAULT ACTION (FALLBACK) -->
+          <div class="routing-card">
+            <div class="routing-card-header">
+              <span class="routing-card-title">🎯 Действие по умолчанию (весь остальной трафик)</span>
+              <div class="routing-pill-group">
+                <label class="routing-pill-label active-proxy">
+                  <input type="radio" name="builder-default-action" value="proxy" class="pill-proxy" checked onchange="updatePillStyles(this)">
+                  🛡️ В туннель (VPN)
+                </label>
+                <label class="routing-pill-label">
+                  <input type="radio" name="builder-default-action" value="direct" class="pill-direct" onchange="updatePillStyles(this)">
+                  ⚡ Напрямую
+                </label>
+              </div>
+            </div>
+            <div class="routing-card-hint">
+              Куда направлять трафик, который не подошел ни под одно из указанных выше правил.
+            </div>
+          </div>
+        </div>
+
+        <!-- ROUTING JSON EDITOR (EXPERT MODE) -->
+        <div id="routing-json-section" class="form-group hidden">
           <div class="label-row">
             <label for="routing-content-json">Содержимое <code>routing.json</code> <span class="req">*</span></label>
             <div class="field-actions">
@@ -570,7 +769,7 @@
           </div>
           <div class="code-editor-container">
             <pre class="code-highlight-layer" aria-hidden="true"><code id="routing-content-code"></code></pre>
-            <textarea id="routing-content-json" class="code-editor-textarea" rows="14" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            <textarea id="routing-content-json" class="code-editor-textarea" rows="14" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           </div>
         </div>
 
@@ -1661,6 +1860,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.8"></script>
+  <script src="app.js?v=2.9.9"></script>
 </body>
 </html>
