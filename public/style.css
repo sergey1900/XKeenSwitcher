@@ -4710,16 +4710,47 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   white-space: nowrap;
 }
 
-/* POOL FILTER BTN & ONLY BS STYLES */
+/* POOL TOOLBAR & CONTROLS */
+.pool-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
+}
+
+.pool-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pool-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pool-toolbar .btn-text-action {
+  font-size: 0.76rem;
+  padding: 4px 10px;
+}
+
 .pool-filter-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   cursor: pointer;
   user-select: none;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -4730,12 +4761,12 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .pool-filter-btn:hover {
   background: rgba(255, 255, 255, 0.09);
   color: var(--text-main);
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .pool-filter-btn input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   margin: 0;
   accent-color: #38bdf8;
   cursor: pointer;
@@ -4743,9 +4774,10 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 .pool-filter-btn.active,
 .pool-filter-btn:has(input:checked) {
-  background: rgba(56, 189, 248, 0.15) !important;
-  border-color: rgba(56, 189, 248, 0.45) !important;
+  background: rgba(56, 189, 248, 0.16) !important;
+  border-color: rgba(56, 189, 248, 0.5) !important;
   color: #38bdf8 !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
 }
 
 .pool-connections-list.filter-only-bs .pool-conn-item[data-is-whitelist="0"] {
