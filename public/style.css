@@ -2224,6 +2224,78 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   color: #94a3b8;
 }
 
+/* Inline ping row for active connection inside badges row */
+.conn-ping-row-inline {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-left: 6px !important;
+  flex-shrink: 0 !important;
+}
+
+.conn-ping-row-inline .ping-status-wrap {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.conn-ping-row-inline .ping-badge {
+  height: 20px !important;
+  line-height: 20px !important;
+  padding: 0 6px !important;
+  font-size: 0.67rem !important;
+  border-radius: 4px !important;
+  min-width: auto !important;
+  box-sizing: border-box !important;
+}
+
+.conn-ping-row-inline .btn-check-ping {
+  height: 20px !important;
+  width: 20px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.conn-ping-row-inline .btn-check-ping svg {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+/* Center placement for 'Активно' badge in freed up space */
+.conn-active-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.conn-active-center .active-pill-badge {
+  height: 28px;
+  line-height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}
+
 .conn-summary-controls {
   display: flex;
   flex-direction: row;
@@ -2235,6 +2307,10 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-shrink: 0;
   margin: 0;
   padding: 0;
+}
+
+.conn-summary-controls.is-active-controls {
+  margin-left: auto;
 }
 
 .conn-summary-controls .conn-ping-row {
@@ -2377,30 +2453,28 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   margin-top: 6px;
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   width: 100%;
   box-sizing: border-box;
 }
 
-.conn-collapsible-main {
+/* Row 1: Routing Selector + Group (Favorites) + Action Buttons */
+.conn-collapsible-row {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
 }
 
-.conn-collapsible-main .conn-routing-row {
+.conn-collapsible-row .conn-routing-row {
   margin: 0;
   padding: 0 8px;
   gap: 6px;
   flex: 0 1 auto;
   width: auto;
-  max-width: 480px;
+  max-width: 440px;
   height: 28px;
   box-sizing: border-box;
   background: rgba(0, 0, 0, 0.25);
@@ -2410,7 +2484,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   align-items: center;
 }
 
-.conn-collapsible-main .conn-routing-label {
+.conn-collapsible-row .conn-routing-label {
   font-size: 0.72rem;
   color: var(--text-muted);
   display: inline-flex;
@@ -2421,12 +2495,12 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   line-height: 1;
 }
 
-.conn-collapsible-main .conn-routing-select {
+.conn-collapsible-row .conn-routing-select {
   padding: 0 20px 0 6px;
   font-size: 0.75rem;
   height: 100%;
-  width: 380px;
-  max-width: 420px;
+  width: 320px;
+  max-width: 380px;
   min-width: 180px;
   background: transparent;
   border: none;
@@ -2440,17 +2514,44 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   outline: none;
 }
 
-.conn-collapsible-inner .conn-footer-actions {
+.conn-collapsible-row .conn-origin-footer {
+  margin: 0;
+  padding: 0 8px;
+  height: 28px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.conn-collapsible-row .conn-origin-label {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.conn-collapsible-row .conn-origin-name {
+  color: #f1f5f9;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.conn-collapsible-row .conn-footer-actions {
   gap: 6px;
   display: flex;
   flex-direction: row;
   align-items: center;
-  align-self: center;
   margin-left: auto;
   flex-shrink: 0;
 }
 
-.conn-collapsible-inner .conn-footer-actions .btn-sm {
+.conn-collapsible-row .conn-footer-actions .btn-sm {
   width: 28px !important;
   height: 28px !important;
   padding: 0 !important;
@@ -2462,44 +2563,28 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-shrink: 0 !important;
 }
 
-.conn-collapsible-main .conn-extra-info {
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.conn-collapsible-main .conn-comment {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-style: italic;
-  line-height: 1.25;
-}
-
-.conn-collapsible-main .conn-origin-footer {
-  margin: 0;
-  padding: 0;
-  border: none;
+/* Row 2: Comment (if any) */
+.conn-comment-row {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 0.72rem;
-  line-height: 1.2;
+  color: var(--text-muted);
+  padding: 2px 2px;
 }
 
-.conn-origin-label {
-  color: #94a3b8;
+.conn-comment-label {
+  color: #64748b;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
-.conn-origin-name {
-  color: #f1f5f9;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.conn-comment {
+  color: #94a3b8;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
@@ -2511,18 +2596,20 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
     width: 100%;
     justify-content: space-between;
   }
+  .conn-active-center {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 0;
+  }
   .conn-summary-controls {
     width: 100%;
     justify-content: flex-end;
   }
-  .conn-collapsible-inner {
+  .conn-collapsible-row {
     flex-wrap: wrap;
     gap: 8px;
   }
-  .conn-collapsible-main {
-    width: 100%;
-  }
-  .conn-collapsible-inner .conn-footer-actions {
+  .conn-collapsible-row .conn-footer-actions {
     width: 100%;
     justify-content: flex-end;
   }
