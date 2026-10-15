@@ -349,6 +349,35 @@ function formatNetworkName(net) {
   }
 }
 
+// Collapsible connection cards state & toggling
+let expandedConnectionIds = new Set();
+
+function toggleConnectionExpand(connId, ev) {
+  if (ev) ev.stopPropagation();
+  const cardEls = document.querySelectorAll(`[id="card-conn-${connId}"]`);
+  const willExpand = !expandedConnectionIds.has(connId);
+  if (willExpand) {
+    expandedConnectionIds.add(connId);
+  } else {
+    expandedConnectionIds.delete(connId);
+  }
+  cardEls.forEach(card => {
+    card.classList.toggle('is-expanded', willExpand);
+    const expandBtn = card.querySelector('.btn-card-expand');
+    if (expandBtn) {
+      expandBtn.title = willExpand ? 'Свернуть детали' : 'Развернуть детали';
+      expandBtn.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+    }
+  });
+}
+
+function onCardHeaderClick(connId, ev) {
+  if (ev && ev.target.closest('button, select, input, a, .btn-star, .btn-check-ping, .btn-activate, .conn-routing-select, .btn-card-expand')) {
+    return;
+  }
+  toggleConnectionExpand(connId, ev);
+}
+
 // Render Connections Grid
 function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, parentGroup = null) {
   const isActive = (conn.id === activeId);
@@ -456,87 +485,110 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
     `;
   }
 
+  const isExpanded = expandedConnectionIds.has(conn.id);
+
   return `
-    <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
-      <div class="conn-main-col">
-        <div class="conn-card-header">
-          <div class="conn-title-wrap">
-            <button type="button" class="btn-star ${isFav ? 'starred' : ''}" onclick="toggleFavoriteConnection('${conn.id}', event)" title="${isFav ? 'Убрать из избранного' : 'Добавить в избранное'}">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="${isFav ? '#f59e0b' : 'none'}" stroke="${isFav ? '#f59e0b' : 'rgba(255,255,255,0.45)'}" stroke-width="2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-              </svg>
+    <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''} ${isExpanded ? 'is-expanded' : ''}" id="card-conn-${conn.id}">
+      <!-- CLOSED STATE VISIBLE HEADER -->
+      <div class="conn-header-visible" onclick="onCardHeaderClick('${conn.id}', event)">
+        <div class="conn-summary-main">
+          <div class="conn-card-header">
+            <div class="conn-title-wrap">
+              <button type="button" class="btn-star ${isFav ? 'starred' : ''}" onclick="toggleFavoriteConnection('${conn.id}', event)" title="${isFav ? 'Убрать из избранного' : 'Добавить в избранное'}">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="${isFav ? '#f59e0b' : 'none'}" stroke="${isFav ? '#f59e0b' : 'rgba(255,255,255,0.45)'}" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+              </button>
+              <h3 class="conn-title" title="${escapeHtml(conn.name)}">${flagHtml ? flagHtml + ' ' : ''}<span>${escapeHtml(conn.name)}</span></h3>
+            </div>
+          </div>
+
+          <!-- BADGES ROW: TargetList 1st, Protocol 2nd, Host:Port 3rd -->
+          <div class="conn-badges-row">
+            ${targetBadgeHtml}
+            <span class="conn-badge badge-proto ${protoClass}" title="${protoTitle}">${protoText}</span>
+            <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
+            ${netBadgeHtml}
+            ${secBadgeHtml}
+          </div>
+        </div>
+
+        <div class="conn-summary-controls">
+          <!-- PING AVAILABILITY ROW -->
+          <div class="conn-ping-row">
+            <div class="ping-status-wrap">
+              ${pingHtml}
+            </div>
+            <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <span class="btn-check-ping-text">Проверить</span>
             </button>
-            <h3 class="conn-title" title="${escapeHtml(conn.name)}">${flagHtml ? flagHtml + ' ' : ''}<span>${escapeHtml(conn.name)}</span></h3>
           </div>
-          ${isActive ? `<span class="active-pill-badge"><span class="status-dot"></span> Активно</span>` : ''}
-        </div>
 
-        <!-- BADGES ROW: TargetList 1st, Protocol 2nd, Host:Port 3rd -->
-        <div class="conn-badges-row">
-          ${targetBadgeHtml}
-          <span class="conn-badge badge-proto ${protoClass}" title="${protoTitle}">${protoText}</span>
-          <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
-          ${netBadgeHtml}
-          ${secBadgeHtml}
-        </div>
-      </div>
-
-      <div class="conn-mid-col">
-        <!-- ROUTING SELECTOR ROW -->
-        <div class="conn-routing-row" title="Вариант маршрутизации для этого подключения">
-          <span class="conn-routing-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-            Роутинг:
-          </span>
-          <select class="conn-routing-select" onchange="changeConnectionRouting('${conn.id}', this.value)">
-            ${routingOptionsHtml}
-          </select>
-        </div>
-
-        <!-- PING AVAILABILITY ROW -->
-        <div class="conn-ping-row">
-          <div class="ping-status-wrap">
-            ${pingHtml}
+          <!-- ACTIVATION BUTTON / STATUS -->
+          <div class="conn-activate-wrap">
+            ${isActive ? `
+              <span class="active-pill-badge"><span class="status-dot"></span> Активно</span>
+            ` : `
+              <button class="btn btn-activate" onclick="activateConnection('${conn.id}')" title="Сделать активным подключением">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>Активировать</span>
+              </button>
+            `}
           </div>
-          <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            <span class="btn-check-ping-text">Проверить</span>
+
+          <!-- EXPAND / COLLAPSE BUTTON -->
+          <button type="button" class="btn-card-expand" onclick="toggleConnectionExpand('${conn.id}', event)" title="${isExpanded ? 'Свернуть детали' : 'Развернуть детали'}" aria-expanded="${isExpanded ? 'true' : 'false'}">
+            <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
           </button>
         </div>
       </div>
 
-      <!-- COMMENT (IF ANY) -->
-      ${(conn.description || originFooterHtml) ? `
-        <div class="conn-extra-info">
-          ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
-          ${originFooterHtml}
-        </div>
-      ` : ''}
+      <!-- COLLAPSIBLE DETAILS BODY -->
+      <div class="conn-collapsible-body">
+        <div class="conn-collapsible-inner">
+          <div class="conn-collapsible-top">
+            <!-- ROUTING SELECTOR ROW -->
+            <div class="conn-routing-row" title="Вариант маршрутизации для этого подключения">
+              <span class="conn-routing-label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                Роутинг:
+              </span>
+              <select class="conn-routing-select" onchange="changeConnectionRouting('${conn.id}', this.value)">
+                ${routingOptionsHtml}
+              </select>
+            </div>
 
-      <!-- FOOTER ACTIONS -->
-      <div class="conn-card-footer">
-        <div class="conn-activate-wrap">
-          ${!isActive ? `
-            <button class="btn btn-activate" onclick="activateConnection('${conn.id}')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              <span>Активировать</span>
-            </button>
+            <!-- ACTIONS TOOLBAR -->
+            <div class="conn-footer-actions">
+              <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="${(parentGroup?.isSubscription || (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'))?.isSubscription) ? 'Скопировать в другую группу' : 'Переместить или скопировать в другую группу'}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span class="action-btn-text">Папка</span>
+              </button>
+              <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
+                <span class="action-btn-text">QR</span>
+              </button>
+              <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditConnectionModal('${conn.id}')" title="Редактировать параметры и outbound.json">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <span class="action-btn-text">Изменить</span>
+              </button>
+              <button class="btn btn-danger btn-sm btn-icon" onclick="deleteConnection('${conn.id}', '${escapeJs(conn.name)}')" title="Удалить подключение">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <span class="action-btn-text">Удалить</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- COMMENT (IF ANY) -->
+          ${(conn.description || originFooterHtml) ? `
+            <div class="conn-extra-info">
+              ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
+              ${originFooterHtml}
+            </div>
           ` : ''}
-        </div>
-
-        <div class="conn-footer-actions">
-          <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="${(parentGroup?.isSubscription || (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'))?.isSubscription) ? 'Скопировать в другую группу' : 'Переместить или скопировать в другую группу'}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          </button>
-          <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
-          </button>
-          <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditConnectionModal('${conn.id}')" title="Редактировать параметры и outbound.json">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          </button>
-          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteConnection('${conn.id}', '${escapeJs(conn.name)}')" title="Удалить подключение">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
         </div>
       </div>
     </div>

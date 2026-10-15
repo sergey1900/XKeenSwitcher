@@ -2104,8 +2104,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 20px;
+  padding: 16px 18px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--card-border);
   background: var(--card-bg);
@@ -2135,6 +2134,120 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   box-shadow: 0 0 16px rgba(16, 185, 129, 0.35), 0 0 0 2px #eab308;
 }
 
+/* ==========================================================================
+   COLLAPSIBLE ACCORDION FOR CONNECTION CARDS
+   ========================================================================== */
+.conn-header-visible {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.conn-summary-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.conn-summary-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.conn-summary-controls .conn-ping-row {
+  margin-bottom: 0;
+  padding: 4px 10px;
+}
+
+.btn-card-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.btn-card-expand:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #c7d2fe;
+}
+
+.btn-card-expand .chevron-icon {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.conn-card.is-expanded .btn-card-expand {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #a5b4fc;
+}
+
+.conn-card.is-expanded .btn-card-expand .chevron-icon {
+  transform: rotate(180deg);
+}
+
+/* Collapsible accordion body */
+.conn-collapsible-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.conn-card.is-expanded .conn-collapsible-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.conn-collapsible-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 14px;
+  margin-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conn-collapsible-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.conn-collapsible-top .conn-routing-row {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 220px;
+}
+
+.conn-collapsible-top .conn-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-btn-text {
+  font-size: 0.78rem;
+  margin-left: 4px;
+}
+
 .conn-origin-footer {
   margin-top: 10px;
   padding-top: 8px;
@@ -2162,9 +2275,9 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .conn-card-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .conn-title-wrap {
@@ -3584,13 +3697,12 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .connections-grid.view-mode-compact .conn-card {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 12px;
-  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  min-height: auto;
   border-radius: 9px;
-  gap: 10px;
+  gap: 0;
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: none;
@@ -3619,9 +3731,18 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.28), 0 0 0 1px #eab308;
 }
 
+/* Header visible in compact mode */
+.connections-grid.view-mode-compact .conn-header-visible {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
 /* Left Column: Star, Title, Badges */
-.connections-grid.view-mode-compact .conn-main-col {
-  display: flex;
+.connections-grid.view-mode-compact .conn-summary-main {
+  flex-direction: row;
   align-items: center;
   gap: 10px;
   flex: 1;
@@ -3642,22 +3763,23 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .connections-grid.view-mode-compact .conn-title {
   font-size: 0.88rem;
   font-weight: 600;
-  max-width: 190px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.connections-grid.view-mode-compact .active-pill-badge {
-  display: none;
 }
 
 .connections-grid.view-mode-compact .conn-badges-row {
   margin-bottom: 0;
   gap: 4px;
   flex-wrap: nowrap;
-  overflow: hidden;
+  overflow-x: auto;
+  scrollbar-width: none;
   align-items: center;
+}
+
+.connections-grid.view-mode-compact .conn-badges-row::-webkit-scrollbar {
+  display: none;
 }
 
 .connections-grid.view-mode-compact .conn-badge {
@@ -3674,37 +3796,19 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   color: #94a3b8;
 }
 
-/* Mid Column: Routing & Ping */
-.connections-grid.view-mode-compact .conn-mid-col {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* Right Controls: Ping, Activate, Chevron */
+.connections-grid.view-mode-compact .conn-summary-controls {
+  flex-wrap: nowrap;
   flex-shrink: 0;
+  gap: 8px;
 }
 
-.connections-grid.view-mode-compact .conn-routing-row {
+.connections-grid.view-mode-compact .conn-summary-controls .conn-ping-row {
   margin: 0;
-}
-
-.connections-grid.view-mode-compact .conn-routing-label {
-  display: none;
-}
-
-.connections-grid.view-mode-compact .conn-routing-select {
-  padding: 3px 6px;
-  font-size: 0.74rem;
-  max-width: 120px;
-  height: 28px;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 5px;
-}
-
-.connections-grid.view-mode-compact .conn-ping-row {
-  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
   gap: 6px;
-  display: flex;
-  align-items: center;
 }
 
 .connections-grid.view-mode-compact .ping-badge {
@@ -3730,22 +3834,6 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: none;
 }
 
-/* Extra Info (Comments, Origin) */
-.connections-grid.view-mode-compact .conn-extra-info {
-  display: none;
-}
-
-/* Right Column: Activate & Action Buttons */
-.connections-grid.view-mode-compact .conn-card-footer {
-  margin: 0;
-  padding: 0;
-  border-top: none;
-  gap: 6px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-
 .connections-grid.view-mode-compact .btn-activate {
   padding: 4px 10px;
   font-size: 0.75rem;
@@ -3756,38 +3844,59 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   gap: 4px;
 }
 
+.connections-grid.view-mode-compact .active-pill-badge {
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  border-radius: 12px;
+}
+
+.connections-grid.view-mode-compact .btn-card-expand {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+}
+
+/* Collapsible Inner in Compact Mode */
+.connections-grid.view-mode-compact .conn-collapsible-inner {
+  padding-top: 10px;
+  margin-top: 8px;
+  gap: 10px;
+}
+
+.connections-grid.view-mode-compact .conn-routing-row {
+  margin: 0;
+  padding: 6px 10px;
+}
+
+.connections-grid.view-mode-compact .conn-routing-select {
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  height: 28px;
+}
+
 .connections-grid.view-mode-compact .conn-footer-actions {
-  gap: 3px;
-  display: flex;
-  align-items: center;
+  gap: 4px;
 }
 
 .connections-grid.view-mode-compact .conn-footer-actions .btn-sm {
-  width: 28px;
   height: 28px;
-  padding: 0;
+  padding: 0 8px;
+  font-size: 0.75rem;
   border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
-@media (max-width: 992px) {
-  .connections-grid.view-mode-compact .conn-card {
+@media (max-width: 900px) {
+  .connections-grid.view-mode-compact .conn-header-visible {
     flex-wrap: wrap;
     gap: 8px;
-    padding: 8px 10px;
   }
-  .connections-grid.view-mode-compact .conn-main-col {
+  .connections-grid.view-mode-compact .conn-summary-main {
     width: 100%;
     justify-content: space-between;
   }
-  .connections-grid.view-mode-compact .conn-mid-col {
-    flex: 1;
-    justify-content: flex-start;
-  }
-  .connections-grid.view-mode-compact .conn-card-footer {
-    margin-left: auto;
+  .connections-grid.view-mode-compact .conn-summary-controls {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 
