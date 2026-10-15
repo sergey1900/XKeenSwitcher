@@ -44,6 +44,7 @@ function initApp() {
   setupCodeEditors();
   loadData();
   startServicePolling();
+  initRoutingTextareaSync();
 
   // Setup live VLESS parser on input in add modal
   const urlInput = document.getElementById('input-vless-url');
@@ -3547,9 +3548,87 @@ async function checkAllPing() {
   }
 }
 
-// ==============================================================================
-// ROUTING ACTIONS & VISUAL BUILDER (STAGE 4)
-// ==============================================================================
+// Synchronize textarea heights in routing lists
+let routingSyncInitialized = false;
+function initRoutingTextareaSync() {
+  const pairs = [
+    ['builder-custom-proxy-domains', 'builder-custom-proxy-ips'],
+    ['builder-custom-direct-domains', 'builder-custom-direct-ips'],
+    ['builder-custom-block-domains', 'builder-custom-block-ips']
+  ];
+
+  let foundAny = false;
+
+  pairs.forEach(([id1, id2]) => {
+    const el1 = document.getElementById(id1);
+    const el2 = document.getElementById(id2);
+    if (!el1 || !el2) return;
+    foundAny = true;
+
+    if (el1.dataset.syncBound === 'true') return;
+    el1.dataset.syncBound = 'true';
+    el2.dataset.syncBound = 'true';
+
+    let activeEl = null;
+
+    const onStart = (el) => { activeEl = el; };
+    el1.addEventListener('pointerdown', () => onStart(el1));
+    el2.addEventListener('pointerdown', () => onStart(el2));
+    el1.addEventListener('mousedown', () => onStart(el1));
+    el2.addEventListener('mousedown', () => onStart(el2));
+    window.addEventListener('pointerup', () => { activeEl = null; });
+    window.addEventListener('mouseup', () => { activeEl = null; });
+
+    let isSyncing = false;
+    const syncHeights = (source, target) => {
+      if (isSyncing) return;
+      const h = source.offsetHeight;
+      if (h > 20 && Math.abs(target.offsetHeight - h) > 1) {
+        isSyncing = true;
+        target.style.height = `${h}px`;
+        requestAnimationFrame(() => {
+          isSyncing = false;
+        });
+      }
+    };
+
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver((entries) => {
+        if (isSyncing) return;
+        for (const entry of entries) {
+          if (entry.target === el1 && (activeEl === el1 || !activeEl)) {
+            syncHeights(el1, el2);
+          } else if (entry.target === el2 && (activeEl === el2 || !activeEl)) {
+            syncHeights(el2, el1);
+          }
+        }
+      });
+      ro.observe(el1);
+      ro.observe(el2);
+    }
+  });
+
+  document.querySelectorAll('.routing-list-details').forEach(det => {
+    if (det.dataset.syncBound === 'true') return;
+    det.dataset.syncBound = 'true';
+    det.addEventListener('toggle', () => {
+      if (det.open) {
+        const textareas = det.querySelectorAll('.routing-textarea');
+        if (textareas.length >= 2) {
+          const h = Math.max(textareas[0].offsetHeight, textareas[1].offsetHeight);
+          if (h > 20) {
+            textareas[0].style.height = `${h}px`;
+            textareas[1].style.height = `${h}px`;
+          }
+        }
+      }
+    });
+  });
+
+  if (foundAny) {
+    routingSyncInitialized = true;
+  }
+}
 
 // Update pill label active classes on radio change
 function updatePillStyles(radioInput) {
@@ -3820,6 +3899,7 @@ function openAddRoutingModal() {
   setEditorContent('routing-content-json', initialJson);
 
   openModal('modal-routing');
+  setTimeout(initRoutingTextareaSync, 50);
 }
 
 // Open Edit / View Routing Modal
@@ -3879,6 +3959,7 @@ function openRoutingModal(id) {
 
   setEditorContent('routing-content-json', routing.content);
   openModal('modal-routing');
+  setTimeout(initRoutingTextareaSync, 50);
 }
 
 // Submit Add or Edit Routing
