@@ -4513,10 +4513,10 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 380px;
+  max-height: 520px;
+  min-height: 0;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  overscroll-behavior: contain;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-md);
@@ -4552,6 +4552,8 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   border-radius: var(--radius-sm);
   overflow: hidden;
   transition: border-color var(--transition-fast);
+  flex-shrink: 0;
+  min-height: 0;
 }
 
 .pool-group-block:hover {
@@ -4647,7 +4649,31 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-direction: column;
   gap: 4px;
   width: 100%;
+  max-height: 280px;
+  min-height: 0;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.6) rgba(0, 0, 0, 0.25);
+}
+
+.pool-group-items::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pool-group-items::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+
+.pool-group-items::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.55);
+  border-radius: 4px;
+}
+
+.pool-group-items::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.85);
 }
 
 .pool-group-items.hidden {
@@ -4659,6 +4685,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   background: rgba(255, 255, 255, 0.015);
   width: 100%;
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .group-autoupdate-badge {
@@ -4683,6 +4710,10 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .pool-conn-item:hover {
@@ -4697,6 +4728,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   cursor: pointer;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .pool-conn-checkbox {
@@ -4711,12 +4743,19 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   font-size: 0.88rem;
   font-weight: 600;
   color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.pool-conn-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .pool-conn-right {
@@ -4730,6 +4769,10 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   font-size: 0.74rem;
   font-family: 'JetBrains Mono', monospace;
   color: var(--text-muted);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pool-conn-ping {
