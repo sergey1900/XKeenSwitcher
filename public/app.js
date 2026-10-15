@@ -13,6 +13,7 @@ let appData = {
 
 let currentTab = 'connections'; // 'connections' | 'routings'
 let currentSort = localStorage.getItem('xkeen_connections_sort') || 'default';
+let currentViewMode = localStorage.getItem('xkeen_view_mode') || 'cards';
 let pingingConnectionIds = new Set();
 let pingingGroupIds = new Set();
 let updatingSubscriptionIds = new Set();
@@ -130,6 +131,93 @@ function onSortChange(val) {
     localStorage.setItem('xkeen_connections_sort', val);
   } catch (e) {}
   renderConnections();
+}
+
+// View Mode Handler ('cards' | 'compact')
+function setViewMode(val) {
+  currentViewMode = (val === 'compact') ? 'compact' : 'cards';
+  try {
+    localStorage.setItem('xkeen_view_mode', currentViewMode);
+  } catch (e) {}
+  applyViewModeDom();
+}
+
+function applyViewModeDom() {
+  const grid = document.getElementById('connections-grid');
+  if (grid) {
+    grid.classList.toggle('view-mode-compact', currentViewMode === 'compact');
+  }
+  const btnCards = document.getElementById('btn-view-cards');
+  const btnCompact = document.getElementById('btn-view-compact');
+  if (btnCards) btnCards.classList.toggle('active', currentViewMode === 'cards');
+  if (btnCompact) btnCompact.classList.toggle('active', currentViewMode === 'compact');
+
+  const settingSel = document.getElementById('setting-default-view-mode');
+  if (settingSel && settingSel.value !== currentViewMode) {
+    settingSel.value = currentViewMode;
+  }
+}
+
+// Targeted DOM update for ping results without full-page re-render
+function updateConnectionPingDom(connId) {
+  const conn = (appData.connections || []).find(c => c.id === connId);
+  const cardEls = document.querySelectorAll(`[id="card-conn-${connId}"]`);
+  if (!cardEls || cardEls.length === 0) return;
+
+  const isChecking = pingingConnectionIds.has(connId) || isPingingAll;
+
+  let pingHtml = '';
+  if (isChecking) {
+    pingHtml = `<span class="ping-badge ping-loading"><span class="spin-icon">⏳</span> Проверка...</span>`;
+  } else if (conn && conn.lastPingStatus === 'ok' && conn.lastPing !== null) {
+    const isProxy = conn.lastPingType === 'proxy';
+    const isIcmp = conn.lastPingType === 'icmp';
+    const checkTitle = (isProxy ? 'Сквозной туннель подтверждён' : (isIcmp ? 'ICMP ping доступен' : 'TCP доступен')) +
+      (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
+    pingHtml = `<span class="ping-badge ping-ok" title="${escapeHtml(checkTitle)}">● ${conn.lastPing} ms</span>`;
+  } else if (conn && conn.lastPingStatus === 'unreachable') {
+    const errNote = conn.lastPingError ? `\nПричина: ${conn.lastPingError}` : '';
+    const checkTitle = `Недоступен${errNote}` +
+      (conn.lastPingCheckedAt ? ` • Проверено: ${formatTime(conn.lastPingCheckedAt)}` : '');
+    pingHtml = `<span class="ping-badge ping-unreachable" title="${escapeHtml(checkTitle)}">● Недоступен</span>`;
+  } else {
+    pingHtml = `<span class="ping-badge ping-none">Не проверялся</span>`;
+  }
+
+  cardEls.forEach(card => {
+    const statusWrap = card.querySelector('.ping-status-wrap');
+    if (statusWrap) statusWrap.innerHTML = pingHtml;
+
+    const pingBtn = card.querySelector('.btn-check-ping');
+    if (pingBtn) {
+      pingBtn.disabled = isChecking;
+    }
+  });
+
+  // Update group availability counter in the group header
+  if (conn && conn.groupId) {
+    const groupCard = document.getElementById(`group-card-${conn.groupId}`);
+    if (groupCard) {
+      const gConns = (appData.connections || []).filter(c => (c.groupId || 'group_default') === conn.groupId);
+      const avail = gConns.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
+      const countBadge = groupCard.querySelector('.group-count-badge');
+      if (countBadge) {
+        countBadge.title = `Доступно: ${avail} из ${gConns.length} подключений`;
+        countBadge.innerHTML = `<span class="count-available ${avail > 0 ? 'has-online' : 'no-online'}">● ${avail}</span> / <span class="count-total">${gConns.length}</span>`;
+      }
+    }
+  }
+
+  // Update Favorites counter if connection is favorite
+  if (conn && conn.isFavorite) {
+    const favBadge = document.querySelector('.favorites-divider .group-count');
+    if (favBadge) {
+      const favList = (appData.connections || []).filter(c => c.isFavorite);
+      const favAvail = favList.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
+      favBadge.title = `Доступно: ${favAvail} из ${favList.length} подключений`;
+      favBadge.innerHTML = `<span class="count-available ${favAvail > 0 ? 'has-online' : 'no-online'}">● ${favAvail}</span> / <span class="count-total">${favList.length}</span>`;
+    }
+  }
 }
 
 // Sort connections: available first, then untested, then unreachable
@@ -370,7 +458,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
 
   return `
     <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''}" id="card-conn-${conn.id}">
-      <div>
+      <div class="conn-main-col">
         <div class="conn-card-header">
           <div class="conn-title-wrap">
             <button type="button" class="btn-star ${isFav ? 'starred' : ''}" onclick="toggleFavoriteConnection('${conn.id}', event)" title="${isFav ? 'Убрать из избранного' : 'Добавить в избранное'}">
@@ -378,7 +466,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
               </svg>
             </button>
-            <h3 class="conn-title">${flagHtml ? flagHtml + ' ' : ''}<span>${escapeHtml(conn.name)}</span></h3>
+            <h3 class="conn-title" title="${escapeHtml(conn.name)}">${flagHtml ? flagHtml + ' ' : ''}<span>${escapeHtml(conn.name)}</span></h3>
           </div>
           ${isActive ? `<span class="active-pill-badge"><span class="status-dot"></span> Активно</span>` : ''}
         </div>
@@ -391,7 +479,9 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
           ${netBadgeHtml}
           ${secBadgeHtml}
         </div>
+      </div>
 
+      <div class="conn-mid-col">
         <!-- ROUTING SELECTOR ROW -->
         <div class="conn-routing-row" title="Вариант маршрутизации для этого подключения">
           <span class="conn-routing-label">
@@ -408,22 +498,24 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
           <div class="ping-status-wrap">
             ${pingHtml}
           </div>
-          <button class="btn-check-ping" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
+          <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            <span>Проверить</span>
+            <span class="btn-check-ping-text">Проверить</span>
           </button>
         </div>
-
-        <!-- COMMENT (IF ANY) -->
-        ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
-
-        <!-- FAVORITES ORIGIN FOOTER -->
-        ${originFooterHtml}
       </div>
+
+      <!-- COMMENT (IF ANY) -->
+      ${(conn.description || originFooterHtml) ? `
+        <div class="conn-extra-info">
+          ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
+          ${originFooterHtml}
+        </div>
+      ` : ''}
 
       <!-- FOOTER ACTIONS -->
       <div class="conn-card-footer">
-        <div>
+        <div class="conn-activate-wrap">
           ${!isActive ? `
             <button class="btn btn-activate" onclick="activateConnection('${conn.id}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -710,6 +802,7 @@ function renderConnections() {
   html += `</div>`;
 
   connectionsGrid.innerHTML = html;
+  applyViewModeDom();
 }
 
 // Render Routings Grid
@@ -2406,7 +2499,7 @@ async function pingFavoritesConnections(event) {
   try {
     for (const conn of favList) {
       pingingConnectionIds.add(conn.id);
-      renderConnections();
+      updateConnectionPingDom(conn.id);
       try {
         const res = await fetch(`/api/connections/${conn.id}/ping`, { method: 'POST' });
         if (res.ok) {
@@ -2433,7 +2526,7 @@ async function pingFavoritesConnections(event) {
         conn.lastPingCheckedAt = new Date().toISOString();
       } finally {
         pingingConnectionIds.delete(conn.id);
-        renderConnections();
+        updateConnectionPingDom(conn.id);
       }
     }
     showToast('Проверка избранных подключений завершена', 'success');
@@ -2471,7 +2564,7 @@ async function pingGroupConnections(groupId, event) {
   try {
     for (const conn of groupConns) {
       pingingConnectionIds.add(conn.id);
-      renderConnections();
+      updateConnectionPingDom(conn.id);
       try {
         const res = await fetch(`/api/connections/${conn.id}/ping`, { method: 'POST' });
         if (res.ok) {
@@ -2498,7 +2591,7 @@ async function pingGroupConnections(groupId, event) {
         conn.lastPingCheckedAt = new Date().toISOString();
       } finally {
         pingingConnectionIds.delete(conn.id);
-        renderConnections();
+        updateConnectionPingDom(conn.id);
       }
     }
     showToast('Проверка группы завершена', 'success');
@@ -3342,7 +3435,10 @@ async function checkConnectionPing(id) {
     showToast(err.message, 'error');
   } finally {
     pingingConnectionIds.delete(id);
-    renderConnections();
+    updateConnectionPingDom(id);
+    if (currentSort === 'ping') {
+      renderConnections();
+    }
   }
 }
 
@@ -3373,7 +3469,7 @@ async function checkAllPing() {
       const conn = list[i];
       if (btnText) btnText.innerHTML = `<span class="spin-icon">⏳</span> Проверка ${i + 1}/${list.length}...`;
       pingingConnectionIds.add(conn.id);
-      renderConnections();
+      updateConnectionPingDom(conn.id);
 
       try {
         const res = await fetch(`/api/connections/${conn.id}/ping`, { method: 'POST' });
@@ -3401,7 +3497,7 @@ async function checkAllPing() {
         conn.lastPingCheckedAt = new Date().toISOString();
       } finally {
         pingingConnectionIds.delete(conn.id);
-        renderConnections();
+        updateConnectionPingDom(conn.id);
       }
     }
 
@@ -3931,6 +4027,8 @@ function openSettingsModal() {
   document.getElementById('setting-panel-port').value = s.port || 3000;
   const pingTimeoutEl = document.getElementById('setting-ping-timeout');
   if (pingTimeoutEl) pingTimeoutEl.value = s.pingTimeout || 3500;
+  const viewModeEl = document.getElementById('setting-default-view-mode');
+  if (viewModeEl) viewModeEl.value = currentViewMode;
   switchSettingsTab('general');
   openModal('settings-modal');
 }
@@ -3946,6 +4044,10 @@ async function onSettingsSubmit(e) {
   const port = parseInt(document.getElementById('setting-panel-port').value, 10);
   const pingTimeoutEl = document.getElementById('setting-ping-timeout');
   const pingTimeout = pingTimeoutEl ? (parseInt(pingTimeoutEl.value, 10) || 3500) : 3500;
+  const viewModeEl = document.getElementById('setting-default-view-mode');
+  if (viewModeEl && viewModeEl.value) {
+    setViewMode(viewModeEl.value);
+  }
 
   try {
     const res = await fetch('/api/settings', {

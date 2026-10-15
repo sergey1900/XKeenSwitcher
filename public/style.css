@@ -3525,6 +3525,272 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   padding: 8px;
 }
 
+/* SECTION CONTROLS RIGHT (SORT + VIEW TOGGLE) */
+.section-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+/* VIEW MODE TOGGLE BUTTONS */
+.view-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 2px;
+  height: 38px;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.btn-view-toggle {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+
+.btn-view-toggle:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-view-toggle.active {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* ==============================================================================
+   COMPACT MODE STYLES (.view-mode-compact)
+   ============================================================================== */
+.connections-grid.view-mode-compact .connections-subgrid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.connections-grid.view-mode-compact .conn-card {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  min-height: 46px;
+  border-radius: 9px;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.connections-grid.view-mode-compact .conn-card:hover {
+  transform: none;
+  background: rgba(30, 41, 59, 0.72);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.connections-grid.view-mode-compact .conn-card.active-conn {
+  border-color: rgba(16, 185, 129, 0.75);
+  background: linear-gradient(90deg, rgba(6, 78, 59, 0.32) 0%, rgba(15, 23, 42, 0.75) 100%);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+}
+
+.connections-grid.view-mode-compact .conn-card.is-favorite {
+  border: 1.5px solid #eab308 !important;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.18);
+}
+
+.connections-grid.view-mode-compact .conn-card.is-favorite.active-conn {
+  border: 1.5px solid #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.28), 0 0 0 1px #eab308;
+}
+
+/* Left Column: Star, Title, Badges */
+.connections-grid.view-mode-compact .conn-main-col {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.connections-grid.view-mode-compact .conn-card-header {
+  margin-bottom: 0;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.connections-grid.view-mode-compact .conn-title-wrap {
+  gap: 6px;
+}
+
+.connections-grid.view-mode-compact .conn-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connections-grid.view-mode-compact .active-pill-badge {
+  display: none;
+}
+
+.connections-grid.view-mode-compact .conn-badges-row {
+  margin-bottom: 0;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  align-items: center;
+}
+
+.connections-grid.view-mode-compact .conn-badge {
+  padding: 2px 6px;
+  font-size: 0.67rem;
+  line-height: 1.2;
+}
+
+.connections-grid.view-mode-compact .conn-badge.badge-host {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #94a3b8;
+}
+
+/* Mid Column: Routing & Ping */
+.connections-grid.view-mode-compact .conn-mid-col {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.connections-grid.view-mode-compact .conn-routing-row {
+  margin: 0;
+}
+
+.connections-grid.view-mode-compact .conn-routing-label {
+  display: none;
+}
+
+.connections-grid.view-mode-compact .conn-routing-select {
+  padding: 3px 6px;
+  font-size: 0.74rem;
+  max-width: 120px;
+  height: 28px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+}
+
+.connections-grid.view-mode-compact .conn-ping-row {
+  margin: 0;
+  gap: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.connections-grid.view-mode-compact .ping-badge {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  min-width: 76px;
+  text-align: center;
+}
+
+.connections-grid.view-mode-compact .btn-check-ping {
+  padding: 4px 6px;
+  height: 28px;
+  width: 28px;
+  border-radius: 5px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.connections-grid.view-mode-compact .btn-check-ping .btn-check-ping-text {
+  display: none;
+}
+
+/* Extra Info (Comments, Origin) */
+.connections-grid.view-mode-compact .conn-extra-info {
+  display: none;
+}
+
+/* Right Column: Activate & Action Buttons */
+.connections-grid.view-mode-compact .conn-card-footer {
+  margin: 0;
+  padding: 0;
+  border-top: none;
+  gap: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.connections-grid.view-mode-compact .btn-activate {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  height: 28px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.connections-grid.view-mode-compact .conn-footer-actions {
+  gap: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.connections-grid.view-mode-compact .conn-footer-actions .btn-sm {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 992px) {
+  .connections-grid.view-mode-compact .conn-card {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .connections-grid.view-mode-compact .conn-main-col {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .connections-grid.view-mode-compact .conn-mid-col {
+    flex: 1;
+    justify-content: flex-start;
+  }
+  .connections-grid.view-mode-compact .conn-card-footer {
+    margin-left: auto;
+  }
+}
+
 /* SECTION HEADER ACTIONS (LEFT ALIGNED) */
 .section-title-row.section-title-actions-left {
   display: flex;
