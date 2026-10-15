@@ -4376,6 +4376,7 @@ async function populateFailoverForm() {
       savedPool = [fo.backupConnectionId];
     }
     poolContainer.innerHTML = buildPoolListHtml('fo', savedPool);
+    initPoolFilterBs('fo');
   }
 
   const intervalInput = document.getElementById('fo-interval');
@@ -4773,6 +4774,7 @@ async function populateAutoFailoverForm() {
       ? af.poolConnectionIds
       : conns.map(c => c.id);
     poolContainer.innerHTML = buildPoolListHtml('af', savedPool);
+    initPoolFilterBs('af');
   }
 
   // Auto Return
@@ -4805,26 +4807,40 @@ function buildPoolListHtml(prefix, savedPool) {
   let poolHtml = '';
 
   groups.forEach(g => {
+    const isGroupWl = (g.targetList === 'whitelist');
     const gConns = conns.filter(c => c.groupId === g.id);
     if (gConns.length === 0) return;
 
     const groupTargetVal = g.isSubscription ? `sub:${g.id}` : `group:${g.id}`;
     const isGroupChecked = savedPool.includes(groupTargetVal) || (gConns.length > 0 && gConns.every(c => savedPool.includes(c.id)));
 
+    const wlCount = gConns.filter(c => c.targetList === 'whitelist' || isGroupWl).length;
+    const hasWl = isGroupWl || (wlCount > 0);
+
     const connsHtml = gConns.map(c => {
+      const isWl = (c.targetList === 'whitelist') || isGroupWl;
       const isChecked = savedPool.includes(c.id) || savedPool.includes(groupTargetVal);
       const flag = getFlagEmoji(c.countryCode);
       const flagHtml = flag ? `<span class="conn-flag">${flag}</span>` : '';
       const pingText = c.lastPing ? `${c.lastPing} ms` : (c.lastPingStatus === 'unreachable' ? 'Недоступен' : '–');
       const pingClass = c.lastPing ? 'ok' : '';
 
+      const targetBadge = (c.targetList === 'whitelist')
+        ? '<span class="group-target-badge bs pool-target-badge" title="Белые списки">БС</span>'
+        : (c.targetList === 'blacklist'
+          ? '<span class="group-target-badge cs pool-target-badge" title="Черные списки">ЧС</span>'
+          : (c.targetList === 'mixed'
+            ? '<span class="group-target-badge sm pool-target-badge" title="Смешанное">СМ</span>'
+            : ''));
+
       return `
-        <div class="pool-conn-item" onclick="togglePoolConnItem('${prefix}', '${c.id}')">
+        <div class="pool-conn-item" data-is-whitelist="${isWl ? '1' : '0'}" onclick="togglePoolConnItem('${prefix}', '${c.id}')">
           <div class="pool-conn-left">
             <input type="checkbox" class="pool-conn-checkbox" data-group-id="${g.id}" id="${prefix}-pool-conn-${c.id}" value="${c.id}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()">
             <label class="pool-conn-name" for="${prefix}-pool-conn-${c.id}" onclick="event.stopPropagation()">
               ${flagHtml}
               <span>${escapeHtml(c.name)}</span>
+              ${targetBadge}
             </label>
           </div>
           <div class="pool-conn-right">
@@ -4835,8 +4851,16 @@ function buildPoolListHtml(prefix, savedPool) {
       `;
     }).join('');
 
+    const groupTargetBadge = isGroupWl
+      ? '<span class="group-target-badge bs" style="font-size:0.65rem; padding:1px 5px; margin-left:6px;" title="Группа: Белые списки">БС</span>'
+      : (g.targetList === 'blacklist'
+        ? '<span class="group-target-badge cs" style="font-size:0.65rem; padding:1px 5px; margin-left:6px;" title="Группа: Черные списки">ЧС</span>'
+        : (g.targetList === 'mixed'
+          ? '<span class="group-target-badge sm" style="font-size:0.65rem; padding:1px 5px; margin-left:6px;" title="Смешанная группа">СМ</span>'
+          : ''));
+
     poolHtml += `
-      <div class="pool-group-block collapsed" id="${prefix}-pool-group-block-${g.id}" data-group-id="${g.id}">
+      <div class="pool-group-block collapsed" id="${prefix}-pool-group-block-${g.id}" data-group-id="${g.id}" data-has-whitelist="${hasWl ? '1' : '0'}" data-is-whitelist="${isGroupWl ? '1' : '0'}">
         <div class="pool-group-header" onclick="togglePoolGroupCollapse('${prefix}', '${g.id}', event)">
           <div class="pool-group-left">
             <span class="pool-group-arrow collapsed" id="${prefix}-pool-group-arrow-${g.id}">▼</span>
@@ -4844,7 +4868,9 @@ function buildPoolListHtml(prefix, savedPool) {
             <label class="pool-group-label" for="${prefix}-pool-group-${g.id}" onclick="event.stopPropagation()">
               <span class="pool-group-icon">${g.isSubscription ? '🌐' : '📂'}</span>
               <strong>${escapeHtml(g.name)}</strong>
-              <span class="pool-group-count">(${gConns.length} серв.)</span>
+              ${groupTargetBadge}
+              <span class="pool-group-count pool-count-all">(${gConns.length} серв.)</span>
+              <span class="pool-group-count pool-count-bs" style="display:none; color:#38bdf8;">(${wlCount} БС)</span>
             </label>
           </div>
           <div class="pool-group-actions" onclick="event.stopPropagation()">
@@ -4861,6 +4887,78 @@ function buildPoolListHtml(prefix, savedPool) {
   });
 
   return poolHtml;
+}
+
+function initPoolFilterBs(prefix) {
+  const checkbox = document.getElementById(`${prefix}-filter-bs`);
+  const textEl = document.getElementById(`${prefix}-filter-bs-text`);
+  const labelEl = document.getElementById(`${prefix}-filter-bs-label`);
+
+  const conns = (appData && appData.connections) || [];
+  const groups = (appData && appData.groups) || [];
+  const bsCount = conns.filter(c => {
+    const g = groups.find(grp => grp.id === c.groupId);
+    return c.targetList === 'whitelist' || (g && g.targetList === 'whitelist');
+  }).length;
+
+  if (textEl) {
+    textEl.textContent = `🛡️ Только БС (${bsCount})`;
+  }
+
+  const savedState = localStorage.getItem(`xkeen_${prefix}_filter_bs`);
+  if (checkbox) {
+    if (savedState !== null) {
+      checkbox.checked = (savedState === '1');
+    }
+    if (labelEl) {
+      labelEl.classList.toggle('active', checkbox.checked);
+    }
+    onPoolFilterBsChange(prefix, false);
+  }
+}
+
+function onPoolFilterBsChange(prefix, save = true) {
+  const checkbox = document.getElementById(`${prefix}-filter-bs`);
+  const labelEl = document.getElementById(`${prefix}-filter-bs-label`);
+  const isOnlyBs = !!(checkbox && checkbox.checked);
+
+  if (labelEl) {
+    labelEl.classList.toggle('active', isOnlyBs);
+  }
+  if (save) {
+    localStorage.setItem(`xkeen_${prefix}_filter_bs`, isOnlyBs ? '1' : '0');
+  }
+
+  const container = document.getElementById(`${prefix}-pool-container`);
+  if (!container) return;
+
+  container.classList.toggle('filter-only-bs', isOnlyBs);
+
+  container.querySelectorAll('.pool-count-all').forEach(el => {
+    el.style.display = isOnlyBs ? 'none' : 'inline';
+  });
+  container.querySelectorAll('.pool-count-bs').forEach(el => {
+    el.style.display = isOnlyBs ? 'inline' : 'none';
+  });
+
+  const emptyNoticeId = `${prefix}-pool-empty-notice`;
+  let emptyNotice = document.getElementById(emptyNoticeId);
+  const visibleGroups = container.querySelectorAll(isOnlyBs ? '.pool-group-block[data-has-whitelist="1"]' : '.pool-group-block');
+
+  if (visibleGroups.length === 0) {
+    if (!emptyNotice) {
+      emptyNotice = document.createElement('div');
+      emptyNotice.id = emptyNoticeId;
+      emptyNotice.className = 'pool-empty-notice';
+      emptyNotice.style.cssText = 'padding:24px 16px; text-align:center; color:var(--text-muted); font-size:0.88rem;';
+      emptyNotice.innerHTML = '🛡️ Нет подключений или групп с отметкой <strong>«Белые списки (БС)»</strong>.<br><small style="opacity:0.75; display:block; margin-top:6px;">Снимите фильтр «Только БС» или укажите тип «БС» в карточке подключения.</small>';
+      container.appendChild(emptyNotice);
+    } else {
+      emptyNotice.style.display = 'block';
+    }
+  } else if (emptyNotice) {
+    emptyNotice.style.display = 'none';
+  }
 }
 
 function togglePoolConnItem(prefixOrConnId, connId) {
@@ -4960,7 +5058,12 @@ function onPoolGroupCheckboxChange(prefixOrGroupId, groupIdOrEvent, event) {
     ev = event;
   }
   const isChecked = ev && ev.target ? ev.target.checked : false;
-  const childCbs = document.querySelectorAll(`#${p}-pool-group-items-${gid} .pool-conn-checkbox`);
+  const container = document.getElementById(`${p}-pool-container`);
+  const isOnlyBs = container && container.classList.contains('filter-only-bs');
+  const selector = isOnlyBs
+    ? `#${p}-pool-group-items-${gid} .pool-conn-item[data-is-whitelist="1"] .pool-conn-checkbox`
+    : `#${p}-pool-group-items-${gid} .pool-conn-checkbox`;
+  const childCbs = document.querySelectorAll(selector);
   childCbs.forEach(cb => { cb.checked = isChecked; });
 }
 
@@ -4974,9 +5077,14 @@ function toggleGroupPoolConns(prefixOrGroupId, groupIdOrSelect, select) {
     sel = select;
   }
   const groupCb = document.getElementById(`${p}-pool-group-${gid}`);
-  if (groupCb) groupCb.checked = sel;
-  const childCbs = document.querySelectorAll(`#${p}-pool-group-items-${gid} .pool-conn-checkbox`);
-  childCbs.forEach(cb => { cb.checked = sel; });
+  if (groupCb) groupCb.checked = !!sel;
+  const container = document.getElementById(`${p}-pool-container`);
+  const isOnlyBs = container && container.classList.contains('filter-only-bs');
+  const selector = isOnlyBs
+    ? `#${p}-pool-group-items-${gid} .pool-conn-item[data-is-whitelist="1"] .pool-conn-checkbox`
+    : `#${p}-pool-group-items-${gid} .pool-conn-checkbox`;
+  const childCbs = document.querySelectorAll(selector);
+  childCbs.forEach(cb => { cb.checked = !!sel; });
 }
 
 function toggleAllPool(prefixOrSelect, select) {
@@ -4986,8 +5094,16 @@ function toggleAllPool(prefixOrSelect, select) {
     p = prefixOrSelect;
     sel = select;
   }
-  const checkboxes = document.querySelectorAll(`#${p}-pool-container input[type="checkbox"]`);
-  checkboxes.forEach(cb => { cb.checked = sel; });
+  const container = document.getElementById(`${p}-pool-container`);
+  if (!container) return;
+  const isOnlyBs = container.classList.contains('filter-only-bs');
+  if (isOnlyBs) {
+    container.querySelectorAll('.pool-conn-item[data-is-whitelist="1"] .pool-conn-checkbox').forEach(cb => { cb.checked = !!sel; });
+    container.querySelectorAll('.pool-group-block[data-has-whitelist="1"] .pool-group-checkbox').forEach(cb => { cb.checked = !!sel; });
+  } else {
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(cb => { cb.checked = !!sel; });
+  }
 }
 
 function toggleAllFoPool(select) { toggleAllPool('fo', select); }

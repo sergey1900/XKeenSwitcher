@@ -4710,6 +4710,60 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   white-space: nowrap;
 }
 
+/* POOL FILTER BTN & ONLY BS STYLES */
+.pool-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.pool-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.pool-filter-btn input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.pool-filter-btn.active,
+.pool-filter-btn:has(input:checked) {
+  background: rgba(56, 189, 248, 0.15) !important;
+  border-color: rgba(56, 189, 248, 0.45) !important;
+  color: #38bdf8 !important;
+}
+
+.pool-connections-list.filter-only-bs .pool-conn-item[data-is-whitelist="0"] {
+  display: none !important;
+}
+
+.pool-connections-list.filter-only-bs .pool-group-block[data-has-whitelist="0"] {
+  display: none !important;
+}
+
+.pool-target-badge {
+  font-size: 0.65rem !important;
+  font-weight: 800 !important;
+  padding: 1px 5px !important;
+  margin-left: 2px !important;
+  flex-shrink: 0 !important;
+}
+
 .pool-conn-item {
   display: flex;
   align-items: center;
