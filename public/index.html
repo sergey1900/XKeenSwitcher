@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.8.6">
+  <link rel="stylesheet" href="style.css?v=2.8.7">
 </head>
 <body>
   <div class="app-background"></div>
@@ -160,15 +160,6 @@
               <option value="newest">Сначала новые</option>
               <option value="oldest">Сначала старые</option>
             </select>
-          </div>
-
-          <div class="view-mode-toggle" title="Режим отображения подключений">
-            <button type="button" class="btn-view-toggle active" id="btn-view-cards" onclick="setViewMode('cards')" title="Вид: Сетка карточек">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-            </button>
-            <button type="button" class="btn-view-toggle" id="btn-view-compact" onclick="setViewMode('compact')" title="Вид: Компактный список">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-            </button>
           </div>
         </div>
       </div>
@@ -1077,15 +1068,6 @@
             <small class="help-text">Время ожидания ответа узла в миллисекундах (по умолчанию: 3500 мс / 3.5 сек). После истечения подключение считается недоступным.</small>
           </div>
 
-          <div class="form-group">
-            <label for="setting-default-view-mode">Вид списка подключений по умолчанию</label>
-            <select id="setting-default-view-mode">
-              <option value="cards">Сетка карточек (стандартный)</option>
-              <option value="compact">Компактный список (строчный)</option>
-            </select>
-            <small class="help-text">Выберите предпочтительный вид отображения списка узлов на главном экране.</small>
-          </div>
-
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="closeModal('settings-modal')">Отмена</button>
             <button type="submit" class="btn btn-primary">Сохранить настройки</button>
@@ -1632,6 +1614,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.8.6"></script>
+  <script src="app.js?v=2.8.7"></script>
 </body>
 </html>

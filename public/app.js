@@ -13,7 +13,6 @@ let appData = {
 
 let currentTab = 'connections'; // 'connections' | 'routings'
 let currentSort = localStorage.getItem('xkeen_connections_sort') || 'default';
-let currentViewMode = localStorage.getItem('xkeen_view_mode') || 'cards';
 let pingingConnectionIds = new Set();
 let pingingGroupIds = new Set();
 let updatingSubscriptionIds = new Set();
@@ -131,31 +130,6 @@ function onSortChange(val) {
     localStorage.setItem('xkeen_connections_sort', val);
   } catch (e) {}
   renderConnections();
-}
-
-// View Mode Handler ('cards' | 'compact')
-function setViewMode(val) {
-  currentViewMode = (val === 'compact') ? 'compact' : 'cards';
-  try {
-    localStorage.setItem('xkeen_view_mode', currentViewMode);
-  } catch (e) {}
-  applyViewModeDom();
-}
-
-function applyViewModeDom() {
-  const grid = document.getElementById('connections-grid');
-  if (grid) {
-    grid.classList.toggle('view-mode-compact', currentViewMode === 'compact');
-  }
-  const btnCards = document.getElementById('btn-view-cards');
-  const btnCompact = document.getElementById('btn-view-compact');
-  if (btnCards) btnCards.classList.toggle('active', currentViewMode === 'cards');
-  if (btnCompact) btnCompact.classList.toggle('active', currentViewMode === 'compact');
-
-  const settingSel = document.getElementById('setting-default-view-mode');
-  if (settingSel && settingSel.value !== currentViewMode) {
-    settingSel.value = currentViewMode;
-  }
 }
 
 // Targeted DOM update for ping results without full-page re-render
@@ -850,7 +824,6 @@ function renderConnections() {
   html += `</div>`;
 
   connectionsGrid.innerHTML = html;
-  applyViewModeDom();
 }
 
 // Render Routings Grid
@@ -4075,8 +4048,6 @@ function openSettingsModal() {
   document.getElementById('setting-panel-port').value = s.port || 3000;
   const pingTimeoutEl = document.getElementById('setting-ping-timeout');
   if (pingTimeoutEl) pingTimeoutEl.value = s.pingTimeout || 3500;
-  const viewModeEl = document.getElementById('setting-default-view-mode');
-  if (viewModeEl) viewModeEl.value = currentViewMode;
   switchSettingsTab('general');
   openModal('settings-modal');
 }
@@ -4092,10 +4063,6 @@ async function onSettingsSubmit(e) {
   const port = parseInt(document.getElementById('setting-panel-port').value, 10);
   const pingTimeoutEl = document.getElementById('setting-ping-timeout');
   const pingTimeout = pingTimeoutEl ? (parseInt(pingTimeoutEl.value, 10) || 3500) : 3500;
-  const viewModeEl = document.getElementById('setting-default-view-mode');
-  if (viewModeEl && viewModeEl.value) {
-    setViewMode(viewModeEl.value);
-  }
 
   try {
     const res = await fetch('/api/settings', {
