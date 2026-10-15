@@ -6597,12 +6597,17 @@ const server = http.createServer(async (req, res) => {
     const data = loadData();
     const nowStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
+    const groups = data.groups || [];
+    const subsCount = groups.filter(g => g.isSubscription).length;
+    const regularGroupsCount = groups.filter(g => !g.isSubscription).length;
+
     const backupPayload = {
       app: 'XKeenSwitcher',
       version: appVersion,
       exportedAt: new Date().toISOString(),
       settings: data.settings,
       connections: data.connections,
+      groups: groups,
       routings: data.routings
     };
 
@@ -6610,7 +6615,7 @@ const server = http.createServer(async (req, res) => {
       { filename: 'backup.json', content: JSON.stringify(backupPayload, null, 2) },
       {
         filename: 'README.txt',
-        content: `XKeenSwitcher 2.0 Резервная копия\nСоздана: ${new Date().toLocaleString()}\nПодключений: ${data.connections.length}\nРоутингов: ${data.routings.length}\nВерсия: ${appVersion}\n`
+        content: `XKeenSwitcher 2.0 Резервная копия\nСоздана: ${new Date().toLocaleString()}\nПодключений: ${data.connections.length}\nГрупп: ${regularGroupsCount}\nПодписок: ${subsCount}\nРоутингов: ${data.routings.length}\nВерсия: ${appVersion}\n`
       }
     ];
 
@@ -6703,6 +6708,7 @@ const server = http.createServer(async (req, res) => {
       const currentData = loadData();
       let restoredConnections = [];
       let restoredRoutings = [];
+      let restoredGroups = [];
 
       // Restore Routings
       if (Array.isArray(restoreData.routings)) {
@@ -6734,6 +6740,29 @@ const server = http.createServer(async (req, res) => {
         restoredRoutings[sysExceptRuIdx] = { ...SYSTEM_ROUTING_EXCEPT_RU };
       }
 
+      // Restore Groups & Subscriptions
+      if (Array.isArray(restoreData.groups) && restoreData.groups.length > 0) {
+        restoredGroups = restoreData.groups.map(g => ({
+          id: g.id || ('group_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+          name: g.name || 'Группа',
+          isSubscription: Boolean(g.isSubscription),
+          subscriptionUrl: g.subscriptionUrl || '',
+          targetList: (g.targetList === 'whitelist' || g.targetList === 'blacklist') ? g.targetList : 'mixed',
+          hideUnreachable: (typeof g.hideUnreachable !== 'undefined') ? Boolean(g.hideUnreachable) : true,
+          autoUpdateHours: (typeof g.autoUpdateHours !== 'undefined') ? Math.max(0, parseInt(g.autoUpdateHours, 10) || 0) : 0,
+          routingId: g.routingId || null,
+          lastUpdated: g.lastUpdated || null,
+          userInfo: g.userInfo || null,
+          collapsed: Boolean(g.collapsed),
+          createdAt: g.createdAt || new Date().toISOString()
+        }));
+      } else if (Array.isArray(currentData.groups) && currentData.groups.length > 0) {
+        restoredGroups = currentData.groups;
+      }
+      if (!restoredGroups.some(g => g.id === 'group_default')) {
+        restoredGroups.unshift({ id: 'group_default', name: 'Общие', targetList: 'mixed', hideUnreachable: true, createdAt: new Date().toISOString() });
+      }
+
       // Restore Connections (or migrate from profiles)
       const rawConnList = Array.isArray(restoreData.connections) ? restoreData.connections
         : (Array.isArray(restoreData.profiles) ? restoreData.profiles : []);
@@ -6744,10 +6773,16 @@ const server = http.createServer(async (req, res) => {
         if (!restoredRoutings.some(r => r.id === targetRoutingId)) {
           targetRoutingId = 'routing_all_vpn';
         }
+        const validGroup = restoredGroups.some(g => g.id === c.groupId) ? c.groupId : 'group_default';
+        const validTargetList = (c.targetList === 'whitelist' || c.targetList === 'blacklist') ? c.targetList : 'mixed';
+
         return {
           id: c.id || ('conn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
           name: c.name || 'Подключение',
           description: c.description || '',
+          groupId: validGroup,
+          targetList: validTargetList,
+          inFavorites: Boolean(c.inFavorites),
           routingId: targetRoutingId,
           outboundContent: c.outboundContent || '',
           serverAddress: c.serverAddress || meta.serverAddress || '',
@@ -6756,6 +6791,8 @@ const server = http.createServer(async (req, res) => {
           network: c.network || meta.network || 'tcp',
           security: c.security || meta.security || 'none',
           sni: c.sni || meta.sni || '',
+          countryCode: c.countryCode || '',
+          countryName: c.countryName || '',
           lastPing: null,
           lastPingStatus: null,
           lastPingCheckedAt: null,
@@ -6763,10 +6800,18 @@ const server = http.createServer(async (req, res) => {
         };
       });
 
-      // Restore Settings
+      // Restore Settings with safe fallback for nested objects
       const newSettings = {
         ...currentData.settings,
-        ...(restoreData.settings || {})
+        ...(restoreData.settings || {}),
+        failover: {
+          ...currentData.settings.failover,
+          ...((restoreData.settings && restoreData.settings.failover) || {})
+        },
+        autoFailover: {
+          ...currentData.settings.autoFailover,
+          ...((restoreData.settings && restoreData.settings.autoFailover) || {})
+        }
       };
 
       // Validate activeConnectionId
@@ -6777,6 +6822,7 @@ const server = http.createServer(async (req, res) => {
       const mergedData = {
         settings: newSettings,
         connections: restoredConnections,
+        groups: restoredGroups,
         routings: restoredRoutings
       };
 
@@ -6791,9 +6837,10 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, {
         success: true,
-        message: `Резервная копия успешно восстановлена: ${restoredConnections.length} подключений, ${restoredRoutings.length} роутингов`,
+        message: `Резервная копия успешно восстановлена: ${restoredConnections.length} подключений, ${restoredGroups.length} групп/подписок, ${restoredRoutings.length} роутингов`,
         counts: {
           connections: restoredConnections.length,
+          groups: restoredGroups.length,
           routings: restoredRoutings.length
         }
       });
