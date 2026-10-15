@@ -770,6 +770,7 @@ function renderConnections() {
             <span class="group-name">${escapeHtml(g.name)}</span>
             ${groupTargetBadgeHtml}
             ${subInfoHtml}
+            ${isSub && g.autoUpdateHours > 0 ? `<span class="group-autoupdate-badge" title="Автообновление каждые ${g.autoUpdateHours} ч">🔄 ${g.autoUpdateHours}ч</span>` : ''}
             <span class="group-count-badge" title="Доступно: ${availableCount} из ${totalCount} подключений"><span class="count-available ${availableCount > 0 ? 'has-online' : 'no-online'}">● ${availableCount}</span> / <span class="count-total">${totalCount}</span></span>
           </div>
           <div class="group-actions" onclick="event.stopPropagation()">
@@ -2682,6 +2683,9 @@ function openAddSubscriptionModal() {
   const subHideUnreachEl = document.getElementById('sub-hide-unreachable');
   if (subHideUnreachEl) subHideUnreachEl.checked = true;
 
+  const subAutoUpdateEl = document.getElementById('sub-autoupdate');
+  if (subAutoUpdateEl) subAutoUpdateEl.value = '24';
+
   populateRoutingSelects();
   const subRoutingSel = document.getElementById('sub-routing');
   if (subRoutingSel && appData.settings?.defaultRoutingBlacklist) {
@@ -2724,6 +2728,9 @@ function openEditSubscriptionModal(groupId, event) {
   const subHideUnreachEl = document.getElementById('sub-hide-unreachable');
   if (subHideUnreachEl) subHideUnreachEl.checked = (group.hideUnreachable !== false);
 
+  const subAutoUpdateEl = document.getElementById('sub-autoupdate');
+  if (subAutoUpdateEl) subAutoUpdateEl.value = String(group.autoUpdateHours ?? 0);
+
   populateRoutingSelects();
   const subRoutingSel = document.getElementById('sub-routing');
   if (subRoutingSel) {
@@ -2765,6 +2772,7 @@ async function onSubscriptionSubmit(e) {
   const targetList = document.querySelector('input[name="sub-target-list"]:checked')?.value || 'mixed';
   const routingId = document.getElementById('sub-routing').value;
   const hideUnreachable = Boolean(document.getElementById('sub-hide-unreachable')?.checked);
+  const autoUpdateHours = parseInt(document.getElementById('sub-autoupdate')?.value, 10) || 0;
   const submitBtn = document.getElementById('btn-submit-sub');
   const submitText = document.getElementById('btn-submit-sub-text');
 
@@ -2785,7 +2793,7 @@ async function onSubscriptionSubmit(e) {
       const res = await fetch(`/api/subscriptions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, applyRoutingToConnections, hideUnreachable })
+        body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, applyRoutingToConnections, hideUnreachable, autoUpdateHours })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка сохранения параметров подписки');
@@ -2810,7 +2818,7 @@ async function onSubscriptionSubmit(e) {
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, name, targetList, routingId, hideUnreachable })
+        body: JSON.stringify({ url, name, targetList, routingId, hideUnreachable, autoUpdateHours })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');
@@ -4264,22 +4272,73 @@ async function clearFailoverHistoryUI() {
   }
 }
 
+function buildFailoverOptions(connections, groups, isBackupSelect = false) {
+  let html = '<option value="">-- Выберите профиль или группу/подписку --</option>';
+
+  // 1. Подписки
+  const subs = (groups || []).filter(g => g.isSubscription);
+  if (subs.length > 0) {
+    html += '<optgroup label="🌐 Подписки целиком (с автотестом узлов перед переключением)">';
+    subs.forEach(s => {
+      const count = connections.filter(c => c.groupId === s.id).length;
+      const typeStr = s.targetList === 'whitelist' ? ' [БС]' : (s.targetList === 'blacklist' ? ' [ЧС]' : ' [СМ]');
+      html += `<option value="sub:${escapeHtml(s.id)}">🌐 Подписка «${escapeHtml(s.name)}»${typeStr} (${count} серв.)</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  // 2. Группы
+  const nonSubs = (groups || []).filter(g => !g.isSubscription);
+  if (nonSubs.length > 0) {
+    html += '<optgroup label="📂 Группы подключений целиком">';
+    nonSubs.forEach(g => {
+      const count = connections.filter(c => c.groupId === g.id).length;
+      html += `<option value="group:${escapeHtml(g.id)}">📂 Группа «${escapeHtml(g.name)}» (${count} серв.)</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  // 3. Одиночные подключения (Белые списки)
+  const wlConns = connections.filter(c => c.targetList === 'whitelist');
+  if (wlConns.length > 0) {
+    html += `<optgroup label="⚡ Одиночные профили (Белые списки${isBackupSelect ? ' — рекомендуются для резерва' : ''})">`;
+    wlConns.forEach(c => {
+      const isAct = (c.id === appData.activeConnectionId) ? ' [Активно]' : '';
+      const flag = getFlagEmoji(c.countryCode);
+      const flagPrefix = flag ? `${flag} ` : '';
+      const pingStr = c.lastPing ? ` • ${c.lastPing} ms` : '';
+      html += `<option value="${escapeHtml(c.id)}">${flagPrefix}${escapeHtml(c.name)}${isAct}${pingStr} (${escapeHtml(c.serverAddress || '')})</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  // 4. Одиночные подключения (Черные списки / СМ)
+  const otherConns = connections.filter(c => c.targetList !== 'whitelist');
+  if (otherConns.length > 0) {
+    html += '<optgroup label="⚡ Одиночные профили (Черные списки / СМ)">';
+    otherConns.forEach(c => {
+      const isAct = (c.id === appData.activeConnectionId) ? ' [Активно]' : '';
+      const flag = getFlagEmoji(c.countryCode);
+      const flagPrefix = flag ? `${flag} ` : '';
+      const pingStr = c.lastPing ? ` • ${c.lastPing} ms` : '';
+      html += `<option value="${escapeHtml(c.id)}">${flagPrefix}${escapeHtml(c.name)}${isAct}${pingStr} (${escapeHtml(c.serverAddress || '')})</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  return html;
+}
+
 async function populateFailoverForm() {
   const primarySelect = document.getElementById('fo-primary-conn');
   const backupSelect = document.getElementById('fo-backup-conn');
   if (!primarySelect || !backupSelect) return;
 
   const connections = (appData && appData.connections) || [];
-  const optionsHtml = '<option value="">-- Выберите подключение --</option>' +
-    connections.map(c => {
-      const isAct = (c.id === appData.activeConnectionId) ? ' [Активно]' : '';
-      const flag = getFlagEmoji(c.countryCode);
-      const flagPrefix = flag ? `${flag} ` : '';
-      return `<option value="${escapeHtml(c.id)}">${flagPrefix}${escapeHtml(c.name)}${isAct} (${escapeHtml(c.serverAddress || '')})</option>`;
-    }).join('');
+  const groups = (appData && appData.groups) || [];
 
-  primarySelect.innerHTML = optionsHtml;
-  backupSelect.innerHTML = optionsHtml;
+  primarySelect.innerHTML = buildFailoverOptions(connections, groups, false);
+  backupSelect.innerHTML = buildFailoverOptions(connections, groups, true);
 
   try {
     const res = await fetch('/api/failover');
@@ -4693,36 +4752,72 @@ async function populateAutoFailoverForm() {
     }
   }
 
-  // Pool container
+  // Pool container (organized by Group / Subscription)
   const poolContainer = document.getElementById('af-pool-container');
   if (poolContainer) {
     const savedPool = Array.isArray(af.poolConnectionIds) && af.poolConnectionIds.length > 0
       ? af.poolConnectionIds
       : conns.map(c => c.id);
 
-    poolContainer.innerHTML = conns.map(c => {
-      const isChecked = savedPool.includes(c.id);
-      const flag = getFlagEmoji(c.countryCode);
-      const flagHtml = flag ? `<span class="conn-flag">${flag}</span>` : '';
-      const pingText = c.lastPing ? `${c.lastPing} ms` : (c.lastPingStatus === 'unreachable' ? 'Недоступен' : '–');
-      const pingClass = c.lastPing ? 'ok' : '';
+    const groups = appData.groups || [];
+    let poolHtml = '';
 
-      return `
-        <div class="pool-conn-item" onclick="togglePoolConnItem('${c.id}')">
-          <div class="pool-conn-left">
-            <input type="checkbox" class="pool-conn-checkbox" id="af-pool-conn-${c.id}" value="${c.id}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()">
-            <label class="pool-conn-name" for="af-pool-conn-${c.id}" onclick="event.stopPropagation()">
-              ${flagHtml}
-              <span>${escapeHtml(c.name)}</span>
-            </label>
+    groups.forEach(g => {
+      const gConns = conns.filter(c => c.groupId === g.id);
+      if (gConns.length === 0) return;
+
+      const groupTargetVal = g.isSubscription ? `sub:${g.id}` : `group:${g.id}`;
+      const isGroupChecked = savedPool.includes(groupTargetVal) || (gConns.length > 0 && gConns.every(c => savedPool.includes(c.id)));
+
+      const connsHtml = gConns.map(c => {
+        const isChecked = savedPool.includes(c.id) || savedPool.includes(groupTargetVal);
+        const flag = getFlagEmoji(c.countryCode);
+        const flagHtml = flag ? `<span class="conn-flag">${flag}</span>` : '';
+        const pingText = c.lastPing ? `${c.lastPing} ms` : (c.lastPingStatus === 'unreachable' ? 'Недоступен' : '–');
+        const pingClass = c.lastPing ? 'ok' : '';
+
+        return `
+          <div class="pool-conn-item" onclick="togglePoolConnItem('${c.id}')">
+            <div class="pool-conn-left">
+              <input type="checkbox" class="pool-conn-checkbox" data-group-id="${g.id}" id="af-pool-conn-${c.id}" value="${c.id}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()">
+              <label class="pool-conn-name" for="af-pool-conn-${c.id}" onclick="event.stopPropagation()">
+                ${flagHtml}
+                <span>${escapeHtml(c.name)}</span>
+              </label>
+            </div>
+            <div class="pool-conn-right">
+              <span class="pool-conn-host">${escapeHtml(c.serverAddress)}</span>
+              <span class="pool-conn-ping ${pingClass}">${pingText}</span>
+            </div>
           </div>
-          <div class="pool-conn-right">
-            <span class="pool-conn-host">${escapeHtml(c.serverAddress)}</span>
-            <span class="pool-conn-ping ${pingClass}">${pingText}</span>
+        `;
+      }).join('');
+
+      poolHtml += `
+        <div class="pool-group-block">
+          <div class="pool-group-header">
+            <div class="pool-group-left">
+              <input type="checkbox" class="pool-group-checkbox" id="af-pool-group-${g.id}" value="${groupTargetVal}" ${isGroupChecked ? 'checked' : ''} onchange="onPoolGroupCheckboxChange('${g.id}', event)">
+              <label class="pool-group-label" for="af-pool-group-${g.id}">
+                <span class="pool-group-icon">${g.isSubscription ? '🌐' : '📂'}</span>
+                <strong>${escapeHtml(g.name)}</strong>
+                <span class="pool-group-count">(${gConns.length} серв.)</span>
+              </label>
+            </div>
+            <div class="pool-group-actions">
+              <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${g.id}', true)">Все</button>
+              <span style="opacity:0.3;">|</span>
+              <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${g.id}', false)">Снять</button>
+            </div>
+          </div>
+          <div class="pool-group-items" id="pool-group-items-${g.id}">
+            ${connsHtml}
           </div>
         </div>
       `;
-    }).join('');
+    });
+
+    poolContainer.innerHTML = poolHtml;
   }
 
   // Auto Return
@@ -4755,8 +4850,21 @@ function togglePoolConnItem(connId) {
   }
 }
 
+function onPoolGroupCheckboxChange(groupId, event) {
+  const isChecked = event.target.checked;
+  const childCbs = document.querySelectorAll(`#pool-group-items-${groupId} .pool-conn-checkbox`);
+  childCbs.forEach(cb => { cb.checked = isChecked; });
+}
+
+function toggleGroupPoolConns(groupId, select) {
+  const groupCb = document.getElementById(`af-pool-group-${groupId}`);
+  if (groupCb) groupCb.checked = select;
+  const childCbs = document.querySelectorAll(`#pool-group-items-${groupId} .pool-conn-checkbox`);
+  childCbs.forEach(cb => { cb.checked = select; });
+}
+
 function toggleAllPool(select) {
-  const checkboxes = document.querySelectorAll('#af-pool-container .pool-conn-checkbox');
+  const checkboxes = document.querySelectorAll('#af-pool-container input[type="checkbox"]');
   checkboxes.forEach(cb => { cb.checked = select; });
 }
 
@@ -4813,7 +4921,7 @@ async function onAutoFailoverFormSubmit(e) {
   const specificPrimaryId = document.getElementById('af-specific-primary-conn').value;
   const autoReturn = document.getElementById('af-auto-return').checked;
 
-  const poolCheckboxes = document.querySelectorAll('#af-pool-container .pool-conn-checkbox:checked');
+  const poolCheckboxes = document.querySelectorAll('#af-pool-container input[type="checkbox"]:checked');
   const poolConnectionIds = Array.from(poolCheckboxes).map(cb => cb.value);
 
   if (enabled && poolConnectionIds.length === 0) {

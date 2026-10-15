@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.1">
+  <link rel="stylesheet" href="style.css?v=2.9.2">
 </head>
 <body>
   <div class="app-background"></div>
@@ -743,6 +743,18 @@
           </label>
         </div>
 
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label for="sub-autoupdate">Автообновление подписки по расписанию</label>
+          <select id="sub-autoupdate" class="custom-select">
+            <option value="0">Отключено (только вручную)</option>
+            <option value="6">Каждые 6 часов</option>
+            <option value="12">Каждые 12 часов</option>
+            <option value="24" selected>Каждые 24 часа (раз в сутки)</option>
+            <option value="48">Каждые 48 часов (раз в 2 дня)</option>
+          </select>
+          <small class="help-text">Роутер будет в фоне по расписанию проверять и скачивать свежие ссылки без прерывания связи.</small>
+        </div>
+
         <div class="form-group hidden" id="sub-edit-options" style="margin-top: 10px; margin-bottom: 14px;">
           <div class="checkbox-options-row">
             <label class="checkbox-label" title="Применить выбранный роутинг ко всем подключениям подписки">
@@ -1338,18 +1350,18 @@
           <!-- CONNECTIONS SELECTION -->
           <div class="form-row">
             <div class="form-group flex-1">
-              <label for="fo-primary-conn">Основное подключение (Обычный режим)</label>
+              <label for="fo-primary-conn">Основное подключение / группа (Обычный режим)</label>
               <select id="fo-primary-conn" class="form-control" onchange="onFailoverConnSelectChange()" required>
                 <!-- Populated via JS -->
               </select>
-              <small class="help-text">Ваш стандартный быстрый VLESS-профиль со стандартным роутингом.</small>
+              <small class="help-text">Ваш стандартный быстрый профиль или группа со стандартным роутингом.</small>
             </div>
             <div class="form-group flex-1">
-              <label for="fo-backup-conn">Резервное подключение (Для Белых Списков)</label>
+              <label for="fo-backup-conn">Резерв (профиль, группа или подписка с автотестом)</label>
               <select id="fo-backup-conn" class="form-control" onchange="onFailoverConnSelectChange()" required>
                 <!-- Populated via JS -->
               </select>
-              <small class="help-text">Профиль для обхода БС с привязанным к нему специальным БС-роутингом.</small>
+              <small class="help-text">При выборе группы или подписки роутер перед переключением протестирует узлы и активирует самый быстрый доступный.</small>
             </div>
           </div>
 
@@ -1614,6 +1626,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.1"></script>
+  <script src="app.js?v=2.9.2"></script>
 </body>
 </html>

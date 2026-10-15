@@ -2625,6 +2625,101 @@ async function measureConnectionHealth(conn, options = {}) {
   };
 }
 
+// Helper: Test candidate connections in parallel batches
+async function testCandidateConnections(candidateConns, options = {}) {
+  if (!Array.isArray(candidateConns) || candidateConns.length === 0) {
+    return [];
+  }
+  const timeout = options.timeout || 2500;
+  const canaryUrl = options.canaryUrl;
+  const batchSize = Math.min(8, Math.max(3, options.batchSize || 6));
+  const alive = [];
+
+  for (let i = 0; i < candidateConns.length; i += batchSize) {
+    const batch = candidateConns.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map(async (conn) => {
+      try {
+        const res = await measureConnectionHealth(conn, { timeout, canaryUrl });
+        return { conn, res };
+      } catch (err) {
+        return { conn, res: { ok: false, error: err.message } };
+      }
+    }));
+
+    for (const item of results) {
+      if (item && item.res && item.res.ok) {
+        alive.push({
+          conn: item.conn,
+          latency: (typeof item.res.latency === 'number' && item.res.latency > 0) ? item.res.latency : 999,
+          checkType: item.res.checkType || 'unknown'
+        });
+      }
+    }
+  }
+
+  return alive;
+}
+
+// Helper: Resolve Failover target (single connection, group, or subscription)
+function resolveFailoverTarget(data, targetId) {
+  if (!targetId || typeof targetId !== 'string') return null;
+  const trimmed = targetId.trim();
+  if (trimmed.startsWith('group:') || trimmed.startsWith('sub:')) {
+    const gid = trimmed.replace(/^(group:|sub:)/, '');
+    const grp = (data.groups || []).find(g => g.id === gid);
+    if (!grp) return null;
+    const conns = (data.connections || []).filter(c => c.groupId === gid);
+    return {
+      type: grp.isSubscription ? 'subscription' : 'group',
+      id: trimmed,
+      groupId: gid,
+      group: grp,
+      name: `${grp.isSubscription ? 'Подписка' : 'Группа'} «${grp.name}»`,
+      conns
+    };
+  }
+  const conn = (data.connections || []).find(c => c.id === trimmed);
+  if (!conn) return null;
+  return {
+    type: 'connection',
+    id: trimmed,
+    conn,
+    name: conn.name,
+    conns: [conn]
+  };
+}
+
+// Helper: Resolve full list of connections in AutoFailover pool
+function resolveAutoFailoverPool(data, af) {
+  const poolTargets = Array.isArray(af.poolConnectionIds) && af.poolConnectionIds.length > 0
+    ? af.poolConnectionIds
+    : data.connections.map(c => c.id);
+
+  const poolConns = [];
+  const seen = new Set();
+
+  for (const target of poolTargets) {
+    if (typeof target !== 'string') continue;
+    const trimmed = target.trim();
+    if (trimmed.startsWith('group:') || trimmed.startsWith('sub:')) {
+      const gid = trimmed.replace(/^(group:|sub:)/, '');
+      for (const c of data.connections) {
+        if (c.groupId === gid && !seen.has(c.id)) {
+          seen.add(c.id);
+          poolConns.push(c);
+        }
+      }
+    } else {
+      const c = data.connections.find(conn => conn.id === trimmed);
+      if (c && !seen.has(c.id)) {
+        seen.add(c.id);
+        poolConns.push(c);
+      }
+    }
+  }
+  return poolConns;
+}
+
 // Helper: Sleep
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -3482,12 +3577,12 @@ async function failoverTick() {
     return;
   }
 
-  const primaryConn = data.connections.find(c => c.id === fo.primaryConnectionId);
-  const backupConn = data.connections.find(c => c.id === fo.backupConnectionId);
+  const primaryTarget = resolveFailoverTarget(data, fo.primaryConnectionId);
+  const backupTarget = resolveFailoverTarget(data, fo.backupConnectionId);
 
-  if (!primaryConn || !backupConn) {
+  if (!primaryTarget || !backupTarget || primaryTarget.conns.length === 0 || backupTarget.conns.length === 0) {
     fo.enabled = false;
-    fo.lastLog = 'Режим БС отключен: выбранные подключения не найдены в списке';
+    fo.lastLog = 'Режим БС отключен: выбранные профили/группы не найдены или пусты';
     saveData(data);
     return;
   }
@@ -3522,15 +3617,24 @@ async function failoverTick() {
       return;
     }
 
-    // Step 2: State-based checks
-    const isCurrentlyOnBackup = (currentActiveId === fo.backupConnectionId);
+    // Step 2: Determine if currently on backup
+    let isCurrentlyOnBackup = false;
+    if (backupTarget.type === 'connection') {
+      isCurrentlyOnBackup = (currentActiveId === backupTarget.conn.id);
+    } else {
+      isCurrentlyOnBackup = (fo.state === 'backup' && fo.activeBackupId && currentActiveId === fo.activeBackupId) ||
+                            backupTarget.conns.some(c => c.id === currentActiveId);
+    }
 
     if (!isCurrentlyOnBackup) {
       // Normal state (Primary active): check if Primary VLESS / foreign internet works
-      const primPing = await measureConnectionHealth(primaryConn, { timeout: 3500, canaryUrl: fo.canaryUrl });
+      let activePrimaryConn = primaryTarget.type === 'connection'
+        ? primaryTarget.conn
+        : (primaryTarget.conns.find(c => c.id === currentActiveId) || primaryTarget.conns[0]);
+
+      const primPing = await measureConnectionHealth(activePrimaryConn, { timeout: 3500, canaryUrl: fo.canaryUrl });
       let healthy = primPing.ok;
 
-      // If TCP socket opened but proxy check was skipped, also test Canary URL
       if (healthy && fo.canaryUrl && primPing.checkType !== 'proxy') {
         const canaryRes = await checkCanary(fo.canaryUrl, 3500);
         healthy = canaryRes.ok;
@@ -3539,55 +3643,99 @@ async function failoverTick() {
       if (!healthy) {
         fo.consecutiveFails = (fo.consecutiveFails || 0) + 1;
         fo.consecutiveSuccesses = 0;
-        fo.lastLog = `Основной VLESS не отвечает (${fo.consecutiveFails}/${fo.failThreshold || 3})`;
+        fo.lastLog = `Основной профиль «${activePrimaryConn.name}» не отвечает (${fo.consecutiveFails}/${fo.failThreshold || 3})`;
 
         if (fo.consecutiveFails >= (fo.failThreshold || 3)) {
-          console.log(`[Failover] Activating backup connection: ${backupConn.name}`);
+          // Pre-test candidate connections from backup target
+          const candidates = backupTarget.conns.filter(c => c.id !== currentActiveId);
+          if (candidates.length === 0) {
+            fo.lastLog = `Сбой основного, но в резерве «${backupTarget.name}» нет других подключений`;
+            saveData(data);
+            return;
+          }
+
+          console.log(`[Failover] Тестирование кандидатов резерва «${backupTarget.name}» (${candidates.length} шт.)...`);
+          const alive = await testCandidateConnections(candidates, { timeout: 2500, canaryUrl: fo.canaryUrl });
+
+          if (alive.length === 0) {
+            fo.lastLog = `Сбой основного! Все серверы в резерве «${backupTarget.name}» (${candidates.length}) недоступны!`;
+            saveData(data);
+            return;
+          }
+
+          // Pick best alive connection (lowest latency)
+          alive.sort((a, b) => a.latency - b.latency);
+          const selected = alive[0];
+          const backupConn = selected.conn;
+
+          console.log(`[Failover] Activating backup: "${backupConn.name}" (${selected.latency} ms) from ${backupTarget.name}`);
           fo.state = 'backup';
+          fo.activeBackupId = backupConn.id;
           fo.consecutiveFails = 0;
           fo.lastSwitchAt = new Date().toISOString();
-          fo.lastLog = `Блокировка БС! Переключено на "${backupConn.name}"`;
+          fo.lastLog = `Блокировка БС! Переключено на «${backupConn.name}» (${selected.latency} ms) [${backupTarget.name}]`;
 
           appendFailoverHistory({
             event: 'switch_to_backup',
             title: 'Переключение на БС (Резерв)',
-            fromName: primaryConn.name,
+            fromName: activePrimaryConn.name,
             toName: backupConn.name,
-            reason: `Зафиксировано сбоев проверок подряд: ${fo.failThreshold || 3}. Домашний интернет в РФ доступен.`
+            reason: `Сбоев подряд: ${fo.failThreshold || 3}. Протестировано резервов: ${candidates.length}, выбран «${backupConn.name}» (пинг: ${selected.latency} ms, источник: ${backupTarget.name}).`
           });
 
-          await activateConnectionInternal(fo.backupConnectionId, data, true);
+          await activateConnectionInternal(backupConn.id, data, true);
           failoverCooldownUntil = Date.now() + 60000;
         }
       } else {
         fo.state = 'normal';
         fo.consecutiveFails = 0;
+        fo.activeBackupId = null;
         fo.lastLog = `Основное подключение стабильно (${primPing.latency} ms)`;
       }
     } else {
       // Backup state: probe if Primary connection is unblocked
-      const primPing = await measureConnectionHealth(primaryConn, { timeout: 3500, canaryUrl: fo.canaryUrl });
+      let healthyPrim = false;
+      let primLatency = null;
+      let targetRecoverConn = null;
 
-      if (primPing.ok) {
+      if (primaryTarget.type === 'connection') {
+        const primPing = await measureConnectionHealth(primaryTarget.conn, { timeout: 3500, canaryUrl: fo.canaryUrl });
+        healthyPrim = primPing.ok;
+        primLatency = primPing.latency;
+        targetRecoverConn = primaryTarget.conn;
+      } else {
+        // Primary is group/subscription - test candidates!
+        const alivePrim = await testCandidateConnections(primaryTarget.conns, { timeout: 2500, canaryUrl: fo.canaryUrl });
+        if (alivePrim.length > 0) {
+          alivePrim.sort((a, b) => a.latency - b.latency);
+          healthyPrim = true;
+          primLatency = alivePrim[0].latency;
+          targetRecoverConn = alivePrim[0].conn;
+        }
+      }
+
+      if (healthyPrim && targetRecoverConn) {
         fo.consecutiveSuccesses = (fo.consecutiveSuccesses || 0) + 1;
-        fo.lastLog = `Основной сервер отвечает (${fo.consecutiveSuccesses}/${fo.recoveryThreshold || 3}, пинг ${primPing.latency} ms)`;
+        fo.lastLog = `Основной сервер отвечает (${fo.consecutiveSuccesses}/${fo.recoveryThreshold || 3}, пинг ${primLatency} ms)`;
 
         if (fo.consecutiveSuccesses >= (fo.recoveryThreshold || 3)) {
-          console.log(`[Failover] Primary unblocked! Switching back to: ${primaryConn.name}`);
+          console.log(`[Failover] Primary unblocked! Switching back to: ${targetRecoverConn.name}`);
           fo.state = 'normal';
+          fo.activeBackupId = null;
           fo.consecutiveSuccesses = 0;
           fo.lastSwitchAt = new Date().toISOString();
-          fo.lastLog = `БС отключены! Возврат на основной профиль "${primaryConn.name}"`;
+          fo.lastLog = `БС отключены! Возврат на основной профиль «${targetRecoverConn.name}»`;
 
+          const currentConn = data.connections.find(c => c.id === currentActiveId);
           appendFailoverHistory({
             event: 'switch_to_primary',
             title: 'Возврат на основной VLESS',
-            fromName: backupConn.name,
-            toName: primaryConn.name,
+            fromName: currentConn ? currentConn.name : 'Резерв',
+            toName: targetRecoverConn.name,
             reason: `Основной сервер ответил успешно ${fo.recoveryThreshold || 3} раз(а) подряд (блокировка зарубежных серверов снята).`
           });
 
-          await activateConnectionInternal(fo.primaryConnectionId, data, true);
+          await activateConnectionInternal(targetRecoverConn.id, data, true);
           failoverCooldownUntil = Date.now() + 60000;
         }
       } else {
@@ -3727,26 +3875,18 @@ async function autoFailoverTick() {
         af.lastLog = `Основное подключение не отвечает (${af.consecutiveFails}/${af.failThreshold || 3})`;
 
         if (af.consecutiveFails >= (af.failThreshold || 3)) {
-          // Поиск кандидатов из пула
-          let poolIds = (Array.isArray(af.poolConnectionIds) && af.poolConnectionIds.length > 0)
-            ? af.poolConnectionIds
-            : data.connections.map(c => c.id);
-
-          const candidateConns = data.connections.filter(c => c.id !== primaryId && poolIds.includes(c.id));
+          // Поиск кандидатов из пула (с поддержкой групп и подписок)
+          const allPoolConns = resolveAutoFailoverPool(data, af);
+          const candidateConns = allPoolConns.filter(c => c.id !== primaryId);
           if (candidateConns.length === 0) {
             af.lastLog = 'Сбой основного, но в пуле резерва нет других подключений';
             saveData(data);
             return;
           }
 
-          // Опрос кандидатов с измерением реальной доступности туннеля
-          const alive = [];
-          for (const c of candidateConns) {
-            const res = await measureConnectionHealth(c, { timeout: 2500, canaryUrl: af.canaryUrl });
-            if (res.ok) {
-              alive.push({ conn: c, latency: res.latency });
-            }
-          }
+          // Быстрый параллельный опрос кандидатов с измерением реальной доступности туннеля
+          console.log(`[AutoFailover] Тестирование кандидатов пула (${candidateConns.length} шт.)...`);
+          const alive = await testCandidateConnections(candidateConns, { timeout: 2500, canaryUrl: af.canaryUrl });
 
           if (alive.length === 0) {
             af.lastLog = `Сбой основного! Все серверы из пула (${candidateConns.length}) также недоступны`;
@@ -4023,6 +4163,66 @@ async function syncSubscriptionById(id) {
     updated: updatedCount,
     removed: removedCount
   };
+}
+
+// ==============================================================================
+// SUBSCRIPTION AUTO-UPDATE SCHEDULER
+// ==============================================================================
+let subscriptionSchedulerTimer = null;
+let subscriptionSchedulerRunning = false;
+
+function startSubscriptionScheduler() {
+  if (subscriptionSchedulerTimer) clearInterval(subscriptionSchedulerTimer);
+  subscriptionSchedulerTimer = setInterval(subscriptionSchedulerTick, 120000); // Check every 2 minutes
+  console.log('[SubScheduler] Планировщик автообновления подписок запущен (проверка каждые 2 мин)');
+  setTimeout(subscriptionSchedulerTick, 30000); // Check after 30 sec on startup
+}
+
+async function subscriptionSchedulerTick() {
+  if (subscriptionSchedulerRunning) return;
+  subscriptionSchedulerRunning = true;
+
+  try {
+    const data = loadData();
+    const subs = (data.groups || []).filter(g => g.isSubscription && g.subscriptionUrl && (g.autoUpdateHours > 0));
+    const now = Date.now();
+
+    for (const sub of subs) {
+      const intervalMs = sub.autoUpdateHours * 3600 * 1000;
+      const lastUpdate = sub.lastUpdated ? new Date(sub.lastUpdated).getTime() : 0;
+
+      if (!lastUpdate || (now - lastUpdate >= intervalMs)) {
+        console.log(`[SubScheduler] Фоновое обновление подписки «${sub.name}» (интервал ${sub.autoUpdateHours} ч)...`);
+        try {
+          const res = await syncSubscriptionById(sub.id);
+          console.log(`[SubScheduler] Подписка «${sub.name}» успешно обновлена (+${res.added}, обн: ${res.updated}, удал: ${res.removed}, всего: ${res.total})`);
+
+          const freshData = loadData();
+          const targetSub = freshData.groups.find(g => g.id === sub.id);
+          if (targetSub) {
+            targetSub.lastAutoUpdateAt = new Date().toISOString();
+            targetSub.lastAutoUpdateStatus = 'ok';
+            targetSub.lastAutoUpdateLog = `Обновлено: +${res.added}, обн: ${res.updated}, удал: ${res.removed}`;
+            saveData(freshData);
+          }
+        } catch (err) {
+          console.error(`[SubScheduler] Ошибка обновления подписки «${sub.name}»:`, err.message);
+          const freshData = loadData();
+          const targetSub = freshData.groups.find(g => g.id === sub.id);
+          if (targetSub) {
+            targetSub.lastAutoUpdateAt = new Date().toISOString();
+            targetSub.lastAutoUpdateStatus = 'error';
+            targetSub.lastAutoUpdateLog = `Ошибка: ${err.message}`;
+            saveData(freshData);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[SubScheduler] Error in scheduler tick:', err);
+  } finally {
+    subscriptionSchedulerRunning = false;
+  }
 }
 
 // Initialize data and port
@@ -5309,6 +5509,7 @@ const server = http.createServer(async (req, res) => {
       const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(url.trim());
 
       const hideUnreachable = (typeof body.hideUnreachable !== 'undefined') ? Boolean(body.hideUnreachable) : true;
+      const autoUpdateHours = (typeof body.autoUpdateHours !== 'undefined') ? Math.max(0, parseInt(body.autoUpdateHours, 10) || 0) : 0;
       const subGroup = {
         id: 'group_sub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         name: subName,
@@ -5316,6 +5517,7 @@ const server = http.createServer(async (req, res) => {
         subscriptionUrl: url.trim(),
         targetList: targetList,
         hideUnreachable: hideUnreachable,
+        autoUpdateHours: autoUpdateHours,
         routingId: effectiveRoutingId,
         lastUpdated: new Date().toISOString(),
         userInfo: userInfo || null,
@@ -5474,6 +5676,10 @@ const server = http.createServer(async (req, res) => {
         group.hideUnreachable = Boolean(body.hideUnreachable);
       }
 
+      if (typeof body.autoUpdateHours !== 'undefined') {
+        group.autoUpdateHours = Math.max(0, parseInt(body.autoUpdateHours, 10) || 0);
+      }
+
       group.updatedAt = new Date().toISOString();
       saveData(data);
 
@@ -5509,6 +5715,24 @@ const server = http.createServer(async (req, res) => {
     });
 
     data.groups.splice(groupIndex, 1);
+
+    // Clean up failover references to this subscription
+    if (data.settings && data.settings.failover) {
+      if (data.settings.failover.primaryConnectionId === `sub:${id}` || data.settings.failover.primaryConnectionId === `group:${id}`) {
+        data.settings.failover.primaryConnectionId = '';
+        data.settings.failover.enabled = false;
+        data.settings.failover.lastLog = `Подписка "${subName}" удалена. Режим БС отключен.`;
+      }
+      if (data.settings.failover.backupConnectionId === `sub:${id}` || data.settings.failover.backupConnectionId === `group:${id}`) {
+        data.settings.failover.backupConnectionId = '';
+        data.settings.failover.enabled = false;
+        data.settings.failover.lastLog = `Резервная подписка "${subName}" удалена. Режим БС отключен.`;
+      }
+    }
+    if (data.settings && data.settings.autoFailover && Array.isArray(data.settings.autoFailover.poolConnectionIds)) {
+      data.settings.autoFailover.poolConnectionIds = data.settings.autoFailover.poolConnectionIds.filter(pid => pid !== `sub:${id}` && pid !== `group:${id}`);
+    }
+
     saveData(data);
 
     return sendJson(res, 200, {
@@ -6262,6 +6486,7 @@ server.listen(PORT, HOST, () => {
   console.log(`===================================================`);
   startFailoverWatchdog();
   startAutoFailoverWatchdog();
+  startSubscriptionScheduler();
   setTimeout(sweepGeoIpForConnections, 2000);
   setTimeout(autoRepairOutdatedSubscriptions, 3000);
 });
