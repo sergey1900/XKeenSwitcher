@@ -4794,23 +4794,24 @@ async function populateAutoFailoverForm() {
       }).join('');
 
       poolHtml += `
-        <div class="pool-group-block">
-          <div class="pool-group-header">
+        <div class="pool-group-block collapsed" id="pool-group-block-${g.id}" data-group-id="${g.id}">
+          <div class="pool-group-header" onclick="togglePoolGroupCollapse('${g.id}', event)">
             <div class="pool-group-left">
-              <input type="checkbox" class="pool-group-checkbox" id="af-pool-group-${g.id}" value="${groupTargetVal}" ${isGroupChecked ? 'checked' : ''} onchange="onPoolGroupCheckboxChange('${g.id}', event)">
-              <label class="pool-group-label" for="af-pool-group-${g.id}">
+              <span class="pool-group-arrow collapsed" id="pool-group-arrow-${g.id}">▼</span>
+              <input type="checkbox" class="pool-group-checkbox" id="af-pool-group-${g.id}" value="${groupTargetVal}" ${isGroupChecked ? 'checked' : ''} onchange="onPoolGroupCheckboxChange('${g.id}', event)" onclick="event.stopPropagation()">
+              <label class="pool-group-label" for="af-pool-group-${g.id}" onclick="event.stopPropagation()">
                 <span class="pool-group-icon">${g.isSubscription ? '🌐' : '📂'}</span>
                 <strong>${escapeHtml(g.name)}</strong>
                 <span class="pool-group-count">(${gConns.length} серв.)</span>
               </label>
             </div>
-            <div class="pool-group-actions">
+            <div class="pool-group-actions" onclick="event.stopPropagation()">
               <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${g.id}', true)">Все</button>
               <span style="opacity:0.3;">|</span>
               <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${g.id}', false)">Снять</button>
             </div>
           </div>
-          <div class="pool-group-items" id="pool-group-items-${g.id}">
+          <div class="pool-group-items hidden" id="pool-group-items-${g.id}">
             ${connsHtml}
           </div>
         </div>
@@ -4848,6 +4849,64 @@ function togglePoolConnItem(connId) {
   if (cb) {
     cb.checked = !cb.checked;
   }
+}
+
+function togglePoolGroupCollapse(groupId, event) {
+  if (event && event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON')) {
+    return;
+  }
+  const block = document.getElementById(`pool-group-block-${groupId}`);
+  const items = document.getElementById(`pool-group-items-${groupId}`);
+  const arrow = document.getElementById(`pool-group-arrow-${groupId}`);
+  if (!items) return;
+  const isHidden = items.classList.contains('hidden');
+  if (isHidden) {
+    items.classList.remove('hidden');
+    if (block) block.classList.remove('collapsed');
+    if (arrow) {
+      arrow.classList.remove('collapsed');
+      arrow.classList.add('expanded');
+    }
+  } else {
+    items.classList.add('hidden');
+    if (block) block.classList.add('collapsed');
+    if (arrow) {
+      arrow.classList.add('collapsed');
+      arrow.classList.remove('expanded');
+    }
+  }
+}
+
+function toggleAllPoolGroupsCollapse(collapse) {
+  const blocks = document.querySelectorAll('.pool-group-block');
+  blocks.forEach(block => {
+    const gid = block.dataset.groupId;
+    const items = document.getElementById(`pool-group-items-${gid}`);
+    const arrow = document.getElementById(`pool-group-arrow-${gid}`);
+    if (items) {
+      if (collapse) {
+        items.classList.add('hidden');
+      } else {
+        items.classList.remove('hidden');
+      }
+    }
+    if (block) {
+      if (collapse) {
+        block.classList.add('collapsed');
+      } else {
+        block.classList.remove('collapsed');
+      }
+    }
+    if (arrow) {
+      if (collapse) {
+        arrow.classList.add('collapsed');
+        arrow.classList.remove('expanded');
+      } else {
+        arrow.classList.remove('collapsed');
+        arrow.classList.add('expanded');
+      }
+    }
+  });
 }
 
 function onPoolGroupCheckboxChange(groupId, event) {

@@ -4513,19 +4513,49 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 340px;
-  overflow-y: auto;
+  max-height: 380px;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-md);
   padding: 8px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.5) rgba(0, 0, 0, 0.2);
+}
+
+.pool-connections-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.pool-connections-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.pool-connections-list::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.45);
+  border-radius: 4px;
+}
+
+.pool-connections-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.7);
 }
 
 .pool-group-block {
+  width: 100%;
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.pool-group-block:hover {
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .pool-group-header {
@@ -4535,13 +4565,43 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pool-group-header:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pool-group-block.collapsed .pool-group-header {
+  border-bottom: none;
 }
 
 .pool-group-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  flex: 1;
+}
+
+.pool-group-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+  transform: rotate(0deg);
+  flex-shrink: 0;
+}
+
+.pool-group-arrow.collapsed {
+  transform: rotate(-90deg);
 }
 
 .pool-group-checkbox {
@@ -4559,12 +4619,18 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   cursor: pointer;
   font-size: 0.88rem;
   color: #f1f5f9;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pool-group-count {
   font-size: 0.74rem;
   color: var(--text-muted);
   font-weight: normal;
+  flex-shrink: 0;
 }
 
 .pool-group-actions {
@@ -4572,6 +4638,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   align-items: center;
   gap: 6px;
   font-size: 0.76rem;
+  flex-shrink: 0;
 }
 
 .pool-group-items {
@@ -4579,12 +4646,19 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pool-group-items.hidden {
+  display: none !important;
 }
 
 .pool-group-items .pool-conn-item {
-  padding: 6px 10px;
-  margin-left: 10px;
+  padding: 6px 12px 6px 26px;
   background: rgba(255, 255, 255, 0.015);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .group-autoupdate-badge {
