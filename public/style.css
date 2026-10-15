@@ -2163,9 +2163,8 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  flex: 0 1 auto;
+  flex: 1;
   min-width: 0;
-  max-width: calc(100% - 180px);
 }
 
 .conn-summary-main .conn-card-header {
@@ -2239,103 +2238,6 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   color: #94a3b8;
 }
 
-/* Inline ping row for active connection inside badges row */
-.conn-ping-row-inline {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 4px !important;
-  margin-left: 6px !important;
-  flex-shrink: 0 !important;
-  height: 22px !important;
-}
-
-.conn-ping-row-inline .ping-status-wrap {
-  display: inline-flex !important;
-  align-items: center !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-.conn-ping-row-inline .ping-badge {
-  height: 22px !important;
-  line-height: 22px !important;
-  padding: 0 7px !important;
-  font-size: 0.72rem !important;
-  border-radius: 5px !important;
-  min-width: auto !important;
-  box-sizing: border-box !important;
-  white-space: nowrap !important;
-  display: inline-flex !important;
-  align-items: center !important;
-}
-
-.conn-ping-row-inline .btn-check-ping {
-  height: 22px !important;
-  width: 22px !important;
-  min-width: 22px !important;
-  max-width: 22px !important;
-  padding: 0 !important;
-  border-radius: 5px !important;
-  box-sizing: border-box !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  overflow: hidden !important;
-}
-
-.conn-ping-row-inline .btn-check-ping .btn-check-ping-text,
-.conn-summary-controls .btn-check-ping .btn-check-ping-text {
-  display: none !important;
-}
-
-.conn-ping-row-inline .btn-check-ping svg {
-  width: 11px !important;
-  height: 11px !important;
-  flex-shrink: 0 !important;
-}
-
-/* Center placement for 'Активно' badge in freed up space */
-.conn-active-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-  padding: 0 16px;
-}
-
-.conn-active-center .active-pill-badge {
-  height: 28px;
-  line-height: 28px;
-  padding: 0 14px;
-  border-radius: 6px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  background: rgba(16, 185, 129, 0.16);
-  border: 1px solid rgba(16, 185, 129, 0.45);
-  color: #34d399;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
-  white-space: nowrap;
-}
-
-.active-pill-badge .status-dot,
-.conn-active-center .active-pill-badge .status-dot {
-  width: 8px !important;
-  height: 8px !important;
-  border-radius: 50% !important;
-  background-color: #10b981 !important;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.9) !important;
-  display: inline-block !important;
-  flex-shrink: 0 !important;
-  animation: pulse-green 2s infinite !important;
-}
-
 .conn-summary-controls {
   display: flex;
   flex-direction: row;
@@ -2345,12 +2247,8 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   justify-content: flex-end;
   gap: 8px;
   flex-shrink: 0;
-  margin: 0;
-  padding: 0;
-}
-
-.conn-summary-controls.is-active-controls {
   margin-left: auto;
+  padding: 0;
 }
 
 .conn-summary-controls .conn-ping-row {
@@ -2361,13 +2259,17 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: inline-flex !important;
   align-items: center !important;
   gap: 6px !important;
+  flex-shrink: 0 !important;
 }
 
 .conn-summary-controls .ping-status-wrap {
   display: inline-flex !important;
   align-items: center !important;
+  justify-content: flex-end !important;
   margin: 0 !important;
   padding: 0 !important;
+  width: 95px !important;
+  flex-shrink: 0 !important;
 }
 
 .conn-summary-controls .ping-badge {
@@ -2380,33 +2282,47 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  min-width: 68px !important;
+  width: 100% !important;
+  white-space: nowrap !important;
+  text-align: center !important;
 }
 
 .conn-summary-controls .btn-check-ping {
   padding: 0 !important;
   height: 28px !important;
   width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
   border-radius: 5px !important;
   box-sizing: border-box !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+  flex-shrink: 0 !important;
 }
 
 .conn-summary-controls .btn-check-ping .btn-check-ping-text {
   display: none !important;
 }
 
+.conn-summary-controls .btn-check-ping svg {
+  width: 12px !important;
+  height: 12px !important;
+}
+
 .conn-summary-controls .conn-activate-wrap {
   display: inline-flex !important;
   align-items: center !important;
+  justify-content: center !important;
+  width: 116px !important;
+  flex-shrink: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
 }
 
 .conn-summary-controls .btn-activate {
-  padding: 0 10px !important;
+  width: 100% !important;
+  padding: 0 8px !important;
   font-size: 0.75rem !important;
   height: 28px !important;
   line-height: 28px !important;
@@ -2417,24 +2333,46 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   justify-content: center !important;
   gap: 4px !important;
   margin: 0 !important;
+  white-space: nowrap !important;
 }
 
 .conn-summary-controls .active-pill-badge {
-  padding: 0 8px !important;
-  font-size: 0.74rem !important;
   height: 28px !important;
   line-height: 28px !important;
-  border-radius: 5px !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
   box-sizing: border-box !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+  gap: 6px !important;
+  font-size: 0.76rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  background: rgba(16, 185, 129, 0.16) !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  color: #34d399 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25) !important;
+  white-space: nowrap !important;
   margin: 0 !important;
+}
+
+.active-pill-badge .status-dot {
+  width: 7px !important;
+  height: 7px !important;
+  border-radius: 50% !important;
+  background-color: #10b981 !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.9) !important;
+  display: inline-block !important;
+  flex-shrink: 0 !important;
+  animation: pulse-green 2s infinite !important;
 }
 
 .conn-summary-controls .btn-card-expand {
   width: 28px !important;
   height: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
   padding: 0 !important;
   border-radius: 5px !important;
   background: rgba(255, 255, 255, 0.05);
@@ -2442,7 +2380,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   color: var(--text-muted);
   cursor: pointer;
   transition: all var(--transition-fast);
-  flex-shrink: 0;
+  flex-shrink: 0 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -2641,11 +2579,6 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   .conn-summary-main {
     width: 100%;
     justify-content: space-between;
-  }
-  .conn-active-center {
-    width: 100%;
-    justify-content: flex-start;
-    padding: 0;
   }
   .conn-summary-controls {
     width: 100%;

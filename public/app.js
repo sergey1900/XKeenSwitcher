@@ -484,46 +484,31 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
             <span class="conn-badge badge-host" title="Хост:Порт">${escapeHtml(conn.serverAddress || '-')}:${conn.serverPort || '-'}</span>
             ${netBadgeHtml}
             ${secBadgeHtml}
-            ${isActive ? `
-              <div class="conn-ping-row conn-ping-row-inline">
-                <div class="ping-status-wrap">
-                  ${pingHtml}
-                </div>
-                <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                </button>
-              </div>
-            ` : ''}
           </div>
         </div>
 
-        ${isActive ? `
-          <div class="conn-active-center">
-            <span class="active-pill-badge"><span class="status-dot green"></span> Активно</span>
-          </div>
-        ` : ''}
-
-        <div class="conn-summary-controls ${isActive ? 'is-active-controls' : ''}">
-          ${!isActive ? `
-            <!-- PING AVAILABILITY ROW -->
-            <div class="conn-ping-row">
-              <div class="ping-status-wrap">
-                ${pingHtml}
-              </div>
-              <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                <span class="btn-check-ping-text">Проверить</span>
-              </button>
+        <div class="conn-summary-controls">
+          <!-- PING AVAILABILITY ROW (Result on left, Button on right) -->
+          <div class="conn-ping-row">
+            <div class="ping-status-wrap">
+              ${pingHtml}
             </div>
+            <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </button>
+          </div>
 
-            <!-- ACTIVATION BUTTON -->
-            <div class="conn-activate-wrap">
+          <!-- ACTIVATION BUTTON / ACTIVE BADGE (CENTERED IN SLOT) -->
+          <div class="conn-activate-wrap">
+            ${isActive ? `
+              <span class="active-pill-badge"><span class="status-dot green"></span> Активно</span>
+            ` : `
               <button class="btn btn-activate" onclick="activateConnection('${conn.id}')" title="Сделать активным подключением">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 <span>Активировать</span>
               </button>
-            </div>
-          ` : ''}
+            `}
+          </div>
 
           <!-- EXPAND / COLLAPSE BUTTON -->
           <button type="button" class="btn-card-expand" onclick="toggleConnectionExpand('${conn.id}', event)" title="${isExpanded ? 'Свернуть детали' : 'Развернуть детали'}" aria-expanded="${isExpanded ? 'true' : 'false'}">
