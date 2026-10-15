@@ -2329,37 +2329,47 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 .conn-collapsible-top {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   flex-wrap: nowrap;
 }
 
 .conn-collapsible-top .conn-routing-row {
   margin-bottom: 0;
-  padding: 4px 8px;
-  gap: 6px;
+  padding: 0 10px;
+  gap: 8px;
   flex: 0 1 auto;
-  max-width: 220px;
-  background: rgba(0, 0, 0, 0.2);
+  width: auto;
+  max-width: 520px;
+  height: 32px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .conn-collapsible-top .conn-routing-label {
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .conn-collapsible-top .conn-routing-select {
-  padding: 3px 6px;
-  font-size: 0.76rem;
-  height: 28px;
-  max-width: 140px;
-  min-width: 90px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  height: 26px;
+  width: 400px;
+  max-width: 440px;
+  min-width: 200px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
@@ -2370,21 +2380,24 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 .conn-collapsible-top .conn-footer-actions {
   display: flex;
+  flex-direction: row;
   align-items: center;
+  align-self: center;
   gap: 6px;
   flex-shrink: 0;
   margin-left: auto;
 }
 
 .conn-collapsible-top .conn-footer-actions .btn-sm {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
 }
 
 .conn-origin-footer {
@@ -4050,18 +4063,28 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 .connections-grid.view-mode-compact .conn-collapsible-top {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  width: 100%;
   flex-wrap: nowrap;
 }
 
 .connections-grid.view-mode-compact .conn-routing-row {
   margin: 0;
-  padding: 4px 8px;
-  max-width: 210px;
-  gap: 5px;
+  padding: 0 8px;
+  width: auto;
+  max-width: 480px;
+  height: 28px;
+  box-sizing: border-box;
+  gap: 6px;
   flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .connections-grid.view-mode-compact .conn-routing-label {
@@ -4071,34 +4094,44 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .connections-grid.view-mode-compact .conn-routing-select {
   padding: 2px 6px;
-  font-size: 0.74rem;
-  height: 26px;
-  max-width: 130px;
-  min-width: 80px;
+  font-size: 0.75rem;
+  height: 22px;
+  width: 380px;
+  max-width: 420px;
+  min-width: 180px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
   text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .connections-grid.view-mode-compact .conn-footer-actions {
-  gap: 4px;
+  gap: 6px;
   display: flex;
+  flex-direction: row;
   align-items: center;
+  align-self: center;
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .connections-grid.view-mode-compact .conn-footer-actions .btn-sm {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border-radius: 5px !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
 }
 
 @media (max-width: 900px) {
