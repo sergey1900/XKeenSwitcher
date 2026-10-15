@@ -491,7 +491,6 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
                 </div>
                 <button class="btn-check-ping" id="btn-ping-${conn.id}" onclick="checkConnectionPing('${conn.id}')" ${isChecking ? 'disabled' : ''} title="Проверить доступность подключения">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                  <span class="btn-check-ping-text">Проверить</span>
                 </button>
               </div>
             ` : ''}
@@ -500,7 +499,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
 
         ${isActive ? `
           <div class="conn-active-center">
-            <span class="active-pill-badge"><span class="status-dot"></span> Активно</span>
+            <span class="active-pill-badge"><span class="status-dot green"></span> Активно</span>
           </div>
         ` : ''}
 

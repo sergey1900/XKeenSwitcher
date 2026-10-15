@@ -2163,8 +2163,9 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: calc(100% - 180px);
 }
 
 .conn-summary-main .conn-card-header {
@@ -2211,16 +2212,30 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .conn-badge {
-  padding: 2px 6px;
-  font-size: 0.67rem;
-  line-height: 1.2;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 2px 7px !important;
+  border-radius: 5px !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  height: 22px !important;
+}
+
+.conn-badge.badge-host,
+.conn-badge.badge-sni {
+  max-width: 150px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
 .conn-badge.badge-host {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: #94a3b8;
 }
 
@@ -2231,6 +2246,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   gap: 4px !important;
   margin-left: 6px !important;
   flex-shrink: 0 !important;
+  height: 22px !important;
 }
 
 .conn-ping-row-inline .ping-status-wrap {
@@ -2241,29 +2257,41 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .conn-ping-row-inline .ping-badge {
-  height: 20px !important;
-  line-height: 20px !important;
-  padding: 0 6px !important;
-  font-size: 0.67rem !important;
-  border-radius: 4px !important;
+  height: 22px !important;
+  line-height: 22px !important;
+  padding: 0 7px !important;
+  font-size: 0.72rem !important;
+  border-radius: 5px !important;
   min-width: auto !important;
   box-sizing: border-box !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
 }
 
 .conn-ping-row-inline .btn-check-ping {
-  height: 20px !important;
-  width: 20px !important;
+  height: 22px !important;
+  width: 22px !important;
+  min-width: 22px !important;
+  max-width: 22px !important;
   padding: 0 !important;
-  border-radius: 4px !important;
+  border-radius: 5px !important;
   box-sizing: border-box !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+  overflow: hidden !important;
+}
+
+.conn-ping-row-inline .btn-check-ping .btn-check-ping-text,
+.conn-summary-controls .btn-check-ping .btn-check-ping-text {
+  display: none !important;
 }
 
 .conn-ping-row-inline .btn-check-ping svg {
-  width: 10px !important;
-  height: 10px !important;
+  width: 11px !important;
+  height: 11px !important;
+  flex-shrink: 0 !important;
 }
 
 /* Center placement for 'Активно' badge in freed up space */
@@ -2273,7 +2301,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   justify-content: center;
   flex: 1;
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 16px;
 }
 
 .conn-active-center .active-pill-badge {
@@ -2285,15 +2313,27 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-size: 0.76rem;
+  gap: 7px;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.3px;
-  background: rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.16);
   border: 1px solid rgba(16, 185, 129, 0.45);
   color: #34d399;
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
   white-space: nowrap;
+}
+
+.active-pill-badge .status-dot,
+.conn-active-center .active-pill-badge .status-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background-color: #10b981 !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.9) !important;
+  display: inline-block !important;
+  flex-shrink: 0 !important;
+  animation: pulse-green 2s infinite !important;
 }
 
 .conn-summary-controls {
