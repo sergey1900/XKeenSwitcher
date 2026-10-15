@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.4">
+  <link rel="stylesheet" href="style.css?v=2.9.5">
 </head>
 <body>
   <div class="app-background"></div>
@@ -1354,18 +1354,39 @@
           <!-- CONNECTIONS SELECTION -->
           <div class="form-row">
             <div class="form-group flex-1">
-              <label for="fo-primary-conn">Основное подключение / группа (Обычный режим)</label>
-              <select id="fo-primary-conn" class="form-control" onchange="onFailoverConnSelectChange()" required>
+              <label for="fo-primary-conn">Основное подключение / группа (Обычный режим) <span class="req">*</span></label>
+              <select id="fo-primary-conn" class="form-control" onchange="onFailoverPrimarySelectChange()" required>
                 <!-- Populated via JS -->
               </select>
               <small class="help-text">Ваш стандартный быстрый профиль или группа со стандартным роутингом.</small>
             </div>
             <div class="form-group flex-1">
-              <label for="fo-backup-conn">Резерв (профиль, группа или подписка с автотестом)</label>
-              <select id="fo-backup-conn" class="form-control" onchange="onFailoverConnSelectChange()" required>
-                <!-- Populated via JS -->
+              <label for="fo-strategy">Стратегия выбора резерва БС</label>
+              <select id="fo-strategy" class="form-control">
+                <option value="lowest_ping">⚡ Самый быстрый по пингу (рекомендуется)</option>
+                <option value="priority_order">📋 По порядку списка (сверху вниз)</option>
               </select>
-              <small class="help-text">При выборе группы или подписки роутер перед переключением протестирует узлы и активирует самый быстрый доступный.</small>
+              <small class="help-text">Как выбирать рабочий узел из пула резерва БС при блокировке основного.</small>
+            </div>
+          </div>
+
+          <!-- BACKUP POOL CHECKBOXES -->
+          <div class="form-group">
+            <div class="label-row pool-header-label-row">
+              <label style="margin:0;">Пул резервных подключений (Белые списки) <span class="req">*</span></label>
+              <div class="field-actions" style="display:flex; gap:8px;">
+                <button type="button" class="btn-text-action" onclick="toggleAllFoPool(true)">Выбрать все</button>
+                <span style="opacity:0.3;">|</span>
+                <button type="button" class="btn-text-action" onclick="toggleAllFoPool(false)">Снять все</button>
+                <span style="opacity:0.3;">|</span>
+                <button type="button" class="btn-text-action" onclick="toggleAllFoPoolGroupsCollapse(false)">Развернуть все</button>
+                <span style="opacity:0.3;">|</span>
+                <button type="button" class="btn-text-action" onclick="toggleAllFoPoolGroupsCollapse(true)">Свернуть все</button>
+              </div>
+            </div>
+            <p class="help-text" style="margin-bottom:8px;">Отметьте БС-профили или группы/подписки, на которые разрешено переключаться при блокировках. Перед переключением роутер протестирует узлы и активирует доступный.</p>
+            <div class="pool-connections-list" id="fo-pool-container">
+              <!-- Populated via JS -->
             </div>
           </div>
 
@@ -1630,6 +1651,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.4"></script>
+  <script src="app.js?v=2.9.5"></script>
 </body>
 </html>

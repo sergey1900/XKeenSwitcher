@@ -4119,7 +4119,7 @@ function renderFailoverStatus(fo) {
 
   if (!badge || !statusText) return;
 
-  if (!fo || !fo.enabled || !fo.primaryConnectionId || !fo.backupConnectionId) {
+  if (!fo || !fo.enabled || !fo.primaryConnectionId || (!fo.backupConnectionId && (!fo.backupPoolConnectionIds || fo.backupPoolConnectionIds.length === 0))) {
     badge.classList.add('hidden');
   } else {
     badge.classList.remove('hidden');
@@ -4331,14 +4331,12 @@ function buildFailoverOptions(connections, groups, isBackupSelect = false) {
 
 async function populateFailoverForm() {
   const primarySelect = document.getElementById('fo-primary-conn');
-  const backupSelect = document.getElementById('fo-backup-conn');
-  if (!primarySelect || !backupSelect) return;
+  if (!primarySelect) return;
 
   const connections = (appData && appData.connections) || [];
   const groups = (appData && appData.groups) || [];
 
   primarySelect.innerHTML = buildFailoverOptions(connections, groups, false);
-  backupSelect.innerHTML = buildFailoverOptions(connections, groups, true);
 
   try {
     const res = await fetch('/api/failover');
@@ -4347,7 +4345,7 @@ async function populateFailoverForm() {
     }
   } catch (e) {}
 
-  const fo = failoverState || {};
+  const fo = (failoverState && failoverState.failover) || failoverState || {};
 
   const enabledInput = document.getElementById('fo-enabled');
   if (enabledInput) {
@@ -4355,14 +4353,29 @@ async function populateFailoverForm() {
     updateFailoverToggleUI(!!fo.enabled);
   }
 
+  // Strategy
+  const strategySelect = document.getElementById('fo-strategy');
+  if (strategySelect) {
+    strategySelect.value = fo.strategy || 'lowest_ping';
+  }
+
+  // Primary
   if (fo.primaryConnectionId) {
     primarySelect.value = fo.primaryConnectionId;
   } else if (appData && appData.activeConnectionId) {
     primarySelect.value = appData.activeConnectionId;
   }
 
-  if (fo.backupConnectionId) {
-    backupSelect.value = fo.backupConnectionId;
+  // Pool container for Failover (Белые списки)
+  const poolContainer = document.getElementById('fo-pool-container');
+  if (poolContainer) {
+    let savedPool = [];
+    if (Array.isArray(fo.backupPoolConnectionIds) && fo.backupPoolConnectionIds.length > 0) {
+      savedPool = fo.backupPoolConnectionIds;
+    } else if (fo.backupConnectionId) {
+      savedPool = [fo.backupConnectionId];
+    }
+    poolContainer.innerHTML = buildPoolListHtml('fo', savedPool);
   }
 
   const intervalInput = document.getElementById('fo-interval');
@@ -4402,31 +4415,26 @@ async function onFailoverToggleClick() {
   const enabled = toggle.checked;
 
   const primarySelect = document.getElementById('fo-primary-conn');
-  const backupSelect = document.getElementById('fo-backup-conn');
   const primaryConnId = (primarySelect && primarySelect.value) || (failoverState && failoverState.primaryConnectionId) || (appData && appData.activeConnectionId) || '';
-  const backupConnId = (backupSelect && backupSelect.value) || (failoverState && failoverState.backupConnectionId) || '';
+
+  const poolCheckboxes = document.querySelectorAll('#fo-pool-container input[type="checkbox"]:checked');
+  let backupPool = Array.from(poolCheckboxes).map(cb => cb.value);
+  if (backupPool.length === 0 && failoverState && Array.isArray(failoverState.backupPoolConnectionIds) && failoverState.backupPoolConnectionIds.length > 0) {
+    backupPool = failoverState.backupPoolConnectionIds;
+  }
+  if (backupPool.length === 0 && failoverState && failoverState.backupConnectionId) {
+    backupPool = [failoverState.backupConnectionId];
+  }
 
   if (enabled) {
-    if (!backupConnId || !primaryConnId || primaryConnId === backupConnId) {
+    if (backupPool.length === 0 || !primaryConnId) {
       toggle.checked = false;
       updateFailoverToggleUI(false);
 
-      if (!backupConnId) {
-        showToast('Не выбрано резервное подключение (для Белых Списков)!', 'warning');
-        if (backupSelect) {
-          backupSelect.focus();
-          backupSelect.classList.add('input-error-highlight');
-          setTimeout(() => backupSelect.classList.remove('input-error-highlight'), 2500);
-        }
-      } else if (!primaryConnId) {
-        showToast('Не выбрано основное подключение!', 'warning');
-        if (primarySelect) {
-          primarySelect.focus();
-          primarySelect.classList.add('input-error-highlight');
-          setTimeout(() => primarySelect.classList.remove('input-error-highlight'), 2500);
-        }
+      if (backupPool.length === 0) {
+        showToast('Не выбраны резервные подключения (для Белых Списков)!', 'warning');
       } else {
-        showToast('Основное и резервное подключения должны отличаться!', 'warning');
+        showToast('Не выбрано основное подключение!', 'warning');
       }
       return;
     }
@@ -4441,7 +4449,7 @@ async function onFailoverToggleClick() {
       body: JSON.stringify({
         enabled,
         primaryConnectionId: primaryConnId,
-        backupConnectionId: backupConnId
+        backupPoolConnectionIds: backupPool
       })
     });
     const data = await res.json();
@@ -4456,16 +4464,14 @@ async function onFailoverToggleClick() {
   }
 }
 
-async function onFailoverConnSelectChange() {
+async function onFailoverPrimarySelectChange() {
   const toggle = document.getElementById('fo-enabled');
   if (!toggle || !toggle.checked) return;
 
   const primarySelect = document.getElementById('fo-primary-conn');
-  const backupSelect = document.getElementById('fo-backup-conn');
   const primaryConnId = primarySelect ? primarySelect.value : '';
-  const backupConnId = backupSelect ? backupSelect.value : '';
 
-  if (!primaryConnId || !backupConnId || primaryConnId === backupConnId) {
+  if (!primaryConnId) {
     toggle.checked = false;
     updateFailoverToggleUI(false);
     try {
@@ -4476,9 +4482,13 @@ async function onFailoverConnSelectChange() {
       });
       if (failoverState) failoverState.enabled = false;
       renderFailoverStatus(failoverState);
-      showToast('Подключения не заданы. Режим БС автоматически отключен.', 'warning');
+      showToast('Основное подключение не задано. Режим БС автоматически отключен.', 'warning');
     } catch (e) {}
   }
+}
+
+async function onFailoverConnSelectChange() {
+  await onFailoverPrimarySelectChange();
 }
 
 async function onFailoverFormSubmit(e) {
@@ -4486,24 +4496,26 @@ async function onFailoverFormSubmit(e) {
 
   const enabled = document.getElementById('fo-enabled').checked;
   const primaryConnectionId = document.getElementById('fo-primary-conn').value;
-  const backupConnectionId = document.getElementById('fo-backup-conn').value;
+  const strategy = document.getElementById('fo-strategy') ? document.getElementById('fo-strategy').value : 'lowest_ping';
+
+  const poolCheckboxes = document.querySelectorAll('#fo-pool-container input[type="checkbox"]:checked');
+  const backupPoolConnectionIds = Array.from(poolCheckboxes).map(cb => cb.value);
+
   const checkIntervalSec = parseInt(document.getElementById('fo-interval').value, 10) || 25;
   const failThreshold = parseInt(document.getElementById('fo-fail-threshold').value, 10) || 3;
   const recoveryThreshold = parseInt(document.getElementById('fo-recovery-threshold').value, 10) || 3;
-  const ruCheckHost = document.getElementById('fo-ru-host').value.trim() || '77.88.8.8';
-  const canaryUrl = document.getElementById('fo-canary-url').value.trim() || 'http://cp.cloudflare.com/generate_204';
+  const ruHostInput = document.getElementById('fo-ru-host');
+  const ruCheckHost = (ruHostInput ? ruHostInput.value : '').trim() || '77.88.8.8';
+  const canaryUrlInput = document.getElementById('fo-canary-url');
+  const canaryUrl = (canaryUrlInput ? canaryUrlInput.value : '').trim() || 'http://cp.cloudflare.com/generate_204';
 
   if (enabled) {
     if (!primaryConnectionId) {
       showToast('Выберите основное подключение (обычный режим)', 'warning');
       return;
     }
-    if (!backupConnectionId) {
-      showToast('Выберите резервное подключение (для Белых Списков)', 'warning');
-      return;
-    }
-    if (primaryConnectionId === backupConnectionId) {
-      showToast('Основное и резервное подключение должны отличаться!', 'warning');
+    if (backupPoolConnectionIds.length === 0) {
+      showToast('Выберите хотя бы одно резервное подключение (для Белых Списков)', 'warning');
       return;
     }
   }
@@ -4512,7 +4524,7 @@ async function onFailoverFormSubmit(e) {
   const origText = btnSave ? btnSave.innerHTML : '';
   if (btnSave) {
     btnSave.disabled = true;
-    btnSave.innerHTML = '<span class="spin-icon">⏳</span> Сохранение...';
+    btnSave.innerHTML = '<span class="spin-icon">⏳</span> <span>Сохранение...</span>';
   }
 
   try {
@@ -4521,12 +4533,14 @@ async function onFailoverFormSubmit(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         enabled,
+        strategy,
         primaryConnectionId,
-        backupConnectionId,
+        backupPoolConnectionIds,
         checkIntervalSec,
         failThreshold,
         recoveryThreshold,
         ruCheckHost,
+        ruCheckPort: 53,
         canaryUrl
       })
     });
@@ -4538,7 +4552,7 @@ async function onFailoverFormSubmit(e) {
 
     failoverState = data.failover;
     renderFailoverStatus(failoverState);
-    showToast(data.message || 'Настройки Failover сохранены', 'success');
+    showToast(data.message || 'Настройки режима БС сохранены', 'success');
     closeModal('settings-modal');
   } catch (err) {
     showToast(err.message, 'error');
@@ -4758,67 +4772,7 @@ async function populateAutoFailoverForm() {
     const savedPool = Array.isArray(af.poolConnectionIds) && af.poolConnectionIds.length > 0
       ? af.poolConnectionIds
       : conns.map(c => c.id);
-
-    const groups = appData.groups || [];
-    let poolHtml = '';
-
-    groups.forEach(g => {
-      const gConns = conns.filter(c => c.groupId === g.id);
-      if (gConns.length === 0) return;
-
-      const groupTargetVal = g.isSubscription ? `sub:${g.id}` : `group:${g.id}`;
-      const isGroupChecked = savedPool.includes(groupTargetVal) || (gConns.length > 0 && gConns.every(c => savedPool.includes(c.id)));
-
-      const connsHtml = gConns.map(c => {
-        const isChecked = savedPool.includes(c.id) || savedPool.includes(groupTargetVal);
-        const flag = getFlagEmoji(c.countryCode);
-        const flagHtml = flag ? `<span class="conn-flag">${flag}</span>` : '';
-        const pingText = c.lastPing ? `${c.lastPing} ms` : (c.lastPingStatus === 'unreachable' ? 'Недоступен' : '–');
-        const pingClass = c.lastPing ? 'ok' : '';
-
-        return `
-          <div class="pool-conn-item" onclick="togglePoolConnItem('${c.id}')">
-            <div class="pool-conn-left">
-              <input type="checkbox" class="pool-conn-checkbox" data-group-id="${g.id}" id="af-pool-conn-${c.id}" value="${c.id}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()">
-              <label class="pool-conn-name" for="af-pool-conn-${c.id}" onclick="event.stopPropagation()">
-                ${flagHtml}
-                <span>${escapeHtml(c.name)}</span>
-              </label>
-            </div>
-            <div class="pool-conn-right">
-              <span class="pool-conn-host">${escapeHtml(c.serverAddress)}</span>
-              <span class="pool-conn-ping ${pingClass}">${pingText}</span>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      poolHtml += `
-        <div class="pool-group-block collapsed" id="pool-group-block-${g.id}" data-group-id="${g.id}">
-          <div class="pool-group-header" onclick="togglePoolGroupCollapse('${g.id}', event)">
-            <div class="pool-group-left">
-              <span class="pool-group-arrow collapsed" id="pool-group-arrow-${g.id}">▼</span>
-              <input type="checkbox" class="pool-group-checkbox" id="af-pool-group-${g.id}" value="${groupTargetVal}" ${isGroupChecked ? 'checked' : ''} onchange="onPoolGroupCheckboxChange('${g.id}', event)" onclick="event.stopPropagation()">
-              <label class="pool-group-label" for="af-pool-group-${g.id}" onclick="event.stopPropagation()">
-                <span class="pool-group-icon">${g.isSubscription ? '🌐' : '📂'}</span>
-                <strong>${escapeHtml(g.name)}</strong>
-                <span class="pool-group-count">(${gConns.length} серв.)</span>
-              </label>
-            </div>
-            <div class="pool-group-actions" onclick="event.stopPropagation()">
-              <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${g.id}', true)">Все</button>
-              <span style="opacity:0.3;">|</span>
-              <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${g.id}', false)">Снять</button>
-            </div>
-          </div>
-          <div class="pool-group-items hidden" id="pool-group-items-${g.id}">
-            ${connsHtml}
-          </div>
-        </div>
-      `;
-    });
-
-    poolContainer.innerHTML = poolHtml;
+    poolContainer.innerHTML = buildPoolListHtml('af', savedPool);
   }
 
   // Auto Return
@@ -4844,20 +4798,99 @@ async function populateAutoFailoverForm() {
   loadAutoFailoverHistoryUI();
 }
 
-function togglePoolConnItem(connId) {
-  const cb = document.getElementById(`af-pool-conn-${connId}`);
+function buildPoolListHtml(prefix, savedPool) {
+  const conns = (appData && appData.connections) || [];
+  const groups = (appData && appData.groups) || [];
+  if (!Array.isArray(savedPool)) savedPool = [];
+  let poolHtml = '';
+
+  groups.forEach(g => {
+    const gConns = conns.filter(c => c.groupId === g.id);
+    if (gConns.length === 0) return;
+
+    const groupTargetVal = g.isSubscription ? `sub:${g.id}` : `group:${g.id}`;
+    const isGroupChecked = savedPool.includes(groupTargetVal) || (gConns.length > 0 && gConns.every(c => savedPool.includes(c.id)));
+
+    const connsHtml = gConns.map(c => {
+      const isChecked = savedPool.includes(c.id) || savedPool.includes(groupTargetVal);
+      const flag = getFlagEmoji(c.countryCode);
+      const flagHtml = flag ? `<span class="conn-flag">${flag}</span>` : '';
+      const pingText = c.lastPing ? `${c.lastPing} ms` : (c.lastPingStatus === 'unreachable' ? 'Недоступен' : '–');
+      const pingClass = c.lastPing ? 'ok' : '';
+
+      return `
+        <div class="pool-conn-item" onclick="togglePoolConnItem('${prefix}', '${c.id}')">
+          <div class="pool-conn-left">
+            <input type="checkbox" class="pool-conn-checkbox" data-group-id="${g.id}" id="${prefix}-pool-conn-${c.id}" value="${c.id}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()">
+            <label class="pool-conn-name" for="${prefix}-pool-conn-${c.id}" onclick="event.stopPropagation()">
+              ${flagHtml}
+              <span>${escapeHtml(c.name)}</span>
+            </label>
+          </div>
+          <div class="pool-conn-right">
+            <span class="pool-conn-host">${escapeHtml(c.serverAddress)}</span>
+            <span class="pool-conn-ping ${pingClass}">${pingText}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    poolHtml += `
+      <div class="pool-group-block collapsed" id="${prefix}-pool-group-block-${g.id}" data-group-id="${g.id}">
+        <div class="pool-group-header" onclick="togglePoolGroupCollapse('${prefix}', '${g.id}', event)">
+          <div class="pool-group-left">
+            <span class="pool-group-arrow collapsed" id="${prefix}-pool-group-arrow-${g.id}">▼</span>
+            <input type="checkbox" class="pool-group-checkbox" id="${prefix}-pool-group-${g.id}" value="${groupTargetVal}" ${isGroupChecked ? 'checked' : ''} onchange="onPoolGroupCheckboxChange('${prefix}', '${g.id}', event)" onclick="event.stopPropagation()">
+            <label class="pool-group-label" for="${prefix}-pool-group-${g.id}" onclick="event.stopPropagation()">
+              <span class="pool-group-icon">${g.isSubscription ? '🌐' : '📂'}</span>
+              <strong>${escapeHtml(g.name)}</strong>
+              <span class="pool-group-count">(${gConns.length} серв.)</span>
+            </label>
+          </div>
+          <div class="pool-group-actions" onclick="event.stopPropagation()">
+            <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${prefix}', '${g.id}', true)">Все</button>
+            <span style="opacity:0.3;">|</span>
+            <button type="button" class="btn-text-action" onclick="toggleGroupPoolConns('${prefix}', '${g.id}', false)">Снять</button>
+          </div>
+        </div>
+        <div class="pool-group-items hidden" id="${prefix}-pool-group-items-${g.id}">
+          ${connsHtml}
+        </div>
+      </div>
+    `;
+  });
+
+  return poolHtml;
+}
+
+function togglePoolConnItem(prefixOrConnId, connId) {
+  let p = 'af';
+  let cid = prefixOrConnId;
+  if (connId !== undefined) {
+    p = prefixOrConnId;
+    cid = connId;
+  }
+  const cb = document.getElementById(`${p}-pool-conn-${cid}`);
   if (cb) {
     cb.checked = !cb.checked;
   }
 }
 
-function togglePoolGroupCollapse(groupId, event) {
-  if (event && event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON')) {
+function togglePoolGroupCollapse(prefixOrGroupId, groupIdOrEvent, event) {
+  let p = 'af';
+  let gid = prefixOrGroupId;
+  let ev = groupIdOrEvent;
+  if (event !== undefined || typeof groupIdOrEvent === 'string') {
+    p = prefixOrGroupId;
+    gid = groupIdOrEvent;
+    ev = event;
+  }
+  if (ev && ev.target && (ev.target.tagName === 'INPUT' || ev.target.tagName === 'BUTTON')) {
     return;
   }
-  const block = document.getElementById(`pool-group-block-${groupId}`);
-  const items = document.getElementById(`pool-group-items-${groupId}`);
-  const arrow = document.getElementById(`pool-group-arrow-${groupId}`);
+  const block = document.getElementById(`${p}-pool-group-block-${gid}`);
+  const items = document.getElementById(`${p}-pool-group-items-${gid}`);
+  const arrow = document.getElementById(`${p}-pool-group-arrow-${gid}`);
   if (!items) return;
   const isHidden = items.classList.contains('hidden');
   if (isHidden) {
@@ -4877,28 +4910,36 @@ function togglePoolGroupCollapse(groupId, event) {
   }
 }
 
-function toggleAllPoolGroupsCollapse(collapse) {
-  const blocks = document.querySelectorAll('.pool-group-block');
+function toggleAllPoolGroupsCollapse(prefixOrCollapse, collapse) {
+  let p = 'af';
+  let col = prefixOrCollapse;
+  if (collapse !== undefined) {
+    p = prefixOrCollapse;
+    col = collapse;
+  }
+  const container = document.getElementById(`${p}-pool-container`);
+  if (!container) return;
+  const blocks = container.querySelectorAll('.pool-group-block');
   blocks.forEach(block => {
     const gid = block.dataset.groupId;
-    const items = document.getElementById(`pool-group-items-${gid}`);
-    const arrow = document.getElementById(`pool-group-arrow-${gid}`);
+    const items = document.getElementById(`${p}-pool-group-items-${gid}`);
+    const arrow = document.getElementById(`${p}-pool-group-arrow-${gid}`);
     if (items) {
-      if (collapse) {
+      if (col) {
         items.classList.add('hidden');
       } else {
         items.classList.remove('hidden');
       }
     }
     if (block) {
-      if (collapse) {
+      if (col) {
         block.classList.add('collapsed');
       } else {
         block.classList.remove('collapsed');
       }
     }
     if (arrow) {
-      if (collapse) {
+      if (col) {
         arrow.classList.add('collapsed');
         arrow.classList.remove('expanded');
       } else {
@@ -4909,23 +4950,48 @@ function toggleAllPoolGroupsCollapse(collapse) {
   });
 }
 
-function onPoolGroupCheckboxChange(groupId, event) {
-  const isChecked = event.target.checked;
-  const childCbs = document.querySelectorAll(`#pool-group-items-${groupId} .pool-conn-checkbox`);
+function onPoolGroupCheckboxChange(prefixOrGroupId, groupIdOrEvent, event) {
+  let p = 'af';
+  let gid = prefixOrGroupId;
+  let ev = groupIdOrEvent;
+  if (event !== undefined || typeof groupIdOrEvent === 'string') {
+    p = prefixOrGroupId;
+    gid = groupIdOrEvent;
+    ev = event;
+  }
+  const isChecked = ev && ev.target ? ev.target.checked : false;
+  const childCbs = document.querySelectorAll(`#${p}-pool-group-items-${gid} .pool-conn-checkbox`);
   childCbs.forEach(cb => { cb.checked = isChecked; });
 }
 
-function toggleGroupPoolConns(groupId, select) {
-  const groupCb = document.getElementById(`af-pool-group-${groupId}`);
-  if (groupCb) groupCb.checked = select;
-  const childCbs = document.querySelectorAll(`#pool-group-items-${groupId} .pool-conn-checkbox`);
-  childCbs.forEach(cb => { cb.checked = select; });
+function toggleGroupPoolConns(prefixOrGroupId, groupIdOrSelect, select) {
+  let p = 'af';
+  let gid = prefixOrGroupId;
+  let sel = groupIdOrSelect;
+  if (select !== undefined || typeof groupIdOrSelect === 'string') {
+    p = prefixOrGroupId;
+    gid = groupIdOrSelect;
+    sel = select;
+  }
+  const groupCb = document.getElementById(`${p}-pool-group-${gid}`);
+  if (groupCb) groupCb.checked = sel;
+  const childCbs = document.querySelectorAll(`#${p}-pool-group-items-${gid} .pool-conn-checkbox`);
+  childCbs.forEach(cb => { cb.checked = sel; });
 }
 
-function toggleAllPool(select) {
-  const checkboxes = document.querySelectorAll('#af-pool-container input[type="checkbox"]');
-  checkboxes.forEach(cb => { cb.checked = select; });
+function toggleAllPool(prefixOrSelect, select) {
+  let p = 'af';
+  let sel = prefixOrSelect;
+  if (select !== undefined) {
+    p = prefixOrSelect;
+    sel = select;
+  }
+  const checkboxes = document.querySelectorAll(`#${p}-pool-container input[type="checkbox"]`);
+  checkboxes.forEach(cb => { cb.checked = sel; });
 }
+
+function toggleAllFoPool(select) { toggleAllPool('fo', select); }
+function toggleAllFoPoolGroupsCollapse(collapse) { toggleAllPoolGroupsCollapse('fo', collapse); }
 
 function updateAutoFailoverToggleUI(enabled) {
   const panel = document.getElementById('af-status-panel');

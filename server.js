@@ -2689,12 +2689,11 @@ function resolveFailoverTarget(data, targetId) {
   };
 }
 
-// Helper: Resolve full list of connections in AutoFailover pool
-function resolveAutoFailoverPool(data, af) {
-  const poolTargets = Array.isArray(af.poolConnectionIds) && af.poolConnectionIds.length > 0
-    ? af.poolConnectionIds
-    : data.connections.map(c => c.id);
-
+// Helper: Resolve full list of connections from pool targets (connection IDs, group:id, sub:id)
+function resolveConnectionPool(data, poolTargets) {
+  if (!Array.isArray(poolTargets) || poolTargets.length === 0) {
+    return [];
+  }
   const poolConns = [];
   const seen = new Set();
 
@@ -2703,14 +2702,14 @@ function resolveAutoFailoverPool(data, af) {
     const trimmed = target.trim();
     if (trimmed.startsWith('group:') || trimmed.startsWith('sub:')) {
       const gid = trimmed.replace(/^(group:|sub:)/, '');
-      for (const c of data.connections) {
+      for (const c of (data.connections || [])) {
         if (c.groupId === gid && !seen.has(c.id)) {
           seen.add(c.id);
           poolConns.push(c);
         }
       }
     } else {
-      const c = data.connections.find(conn => conn.id === trimmed);
+      const c = (data.connections || []).find(conn => conn.id === trimmed);
       if (c && !seen.has(c.id)) {
         seen.add(c.id);
         poolConns.push(c);
@@ -2718,6 +2717,14 @@ function resolveAutoFailoverPool(data, af) {
     }
   }
   return poolConns;
+}
+
+// Helper: Resolve full list of connections in AutoFailover pool
+function resolveAutoFailoverPool(data, af) {
+  const poolTargets = Array.isArray(af.poolConnectionIds) && af.poolConnectionIds.length > 0
+    ? af.poolConnectionIds
+    : (data.connections || []).map(c => c.id);
+  return resolveConnectionPool(data, poolTargets);
 }
 
 // Helper: Sleep
@@ -3570,19 +3577,22 @@ async function failoverTick() {
   const data = loadData();
   const fo = data.settings && data.settings.failover;
   if (!fo || !fo.enabled) return;
-  if (!fo.primaryConnectionId || !fo.backupConnectionId) {
+  if (!fo.primaryConnectionId) {
     fo.enabled = false;
-    fo.lastLog = 'Режим БС отключен: не заданы основное или резервное подключения';
+    fo.lastLog = 'Режим БС отключен: не задано основное подключение';
     saveData(data);
     return;
   }
 
   const primaryTarget = resolveFailoverTarget(data, fo.primaryConnectionId);
-  const backupTarget = resolveFailoverTarget(data, fo.backupConnectionId);
+  const poolTargets = Array.isArray(fo.backupPoolConnectionIds) && fo.backupPoolConnectionIds.length > 0
+    ? fo.backupPoolConnectionIds
+    : (fo.backupConnectionId ? [fo.backupConnectionId] : []);
+  const backupConns = resolveConnectionPool(data, poolTargets);
 
-  if (!primaryTarget || !backupTarget || primaryTarget.conns.length === 0 || backupTarget.conns.length === 0) {
+  if (!primaryTarget || primaryTarget.conns.length === 0 || backupConns.length === 0) {
     fo.enabled = false;
-    fo.lastLog = 'Режим БС отключен: выбранные профили/группы не найдены или пусты';
+    fo.lastLog = 'Режим БС отключен: основной профиль или пул резерва БС пусты';
     saveData(data);
     return;
   }
@@ -3618,13 +3628,8 @@ async function failoverTick() {
     }
 
     // Step 2: Determine if currently on backup
-    let isCurrentlyOnBackup = false;
-    if (backupTarget.type === 'connection') {
-      isCurrentlyOnBackup = (currentActiveId === backupTarget.conn.id);
-    } else {
-      isCurrentlyOnBackup = (fo.state === 'backup' && fo.activeBackupId && currentActiveId === fo.activeBackupId) ||
-                            backupTarget.conns.some(c => c.id === currentActiveId);
-    }
+    const isCurrentlyOnBackup = (fo.state === 'backup' && fo.activeBackupId && currentActiveId === fo.activeBackupId) ||
+                                backupConns.some(c => c.id === currentActiveId);
 
     if (!isCurrentlyOnBackup) {
       // Normal state (Primary active): check if Primary VLESS / foreign internet works
@@ -3646,41 +3651,45 @@ async function failoverTick() {
         fo.lastLog = `Основной профиль «${activePrimaryConn.name}» не отвечает (${fo.consecutiveFails}/${fo.failThreshold || 3})`;
 
         if (fo.consecutiveFails >= (fo.failThreshold || 3)) {
-          // Pre-test candidate connections from backup target
-          const candidates = backupTarget.conns.filter(c => c.id !== currentActiveId);
+          // Pre-test candidate connections from backup pool
+          const candidates = backupConns.filter(c => c.id !== currentActiveId);
           if (candidates.length === 0) {
-            fo.lastLog = `Сбой основного, но в резерве «${backupTarget.name}» нет других подключений`;
+            fo.lastLog = `Сбой основного, но в пуле резерва БС нет других подключений`;
             saveData(data);
             return;
           }
 
-          console.log(`[Failover] Тестирование кандидатов резерва «${backupTarget.name}» (${candidates.length} шт.)...`);
+          console.log(`[Failover] Тестирование кандидатов пула резерва БС (${candidates.length} шт.)...`);
           const alive = await testCandidateConnections(candidates, { timeout: 2500, canaryUrl: fo.canaryUrl });
 
           if (alive.length === 0) {
-            fo.lastLog = `Сбой основного! Все серверы в резерве «${backupTarget.name}» (${candidates.length}) недоступны!`;
+            fo.lastLog = `Сбой основного! Все серверы в пуле резерва БС (${candidates.length}) недоступны!`;
             saveData(data);
             return;
           }
 
-          // Pick best alive connection (lowest latency)
-          alive.sort((a, b) => a.latency - b.latency);
-          const selected = alive[0];
+          let selected;
+          if (fo.strategy === 'priority_order') {
+            selected = alive[0];
+          } else {
+            alive.sort((a, b) => a.latency - b.latency);
+            selected = alive[0];
+          }
           const backupConn = selected.conn;
 
-          console.log(`[Failover] Activating backup: "${backupConn.name}" (${selected.latency} ms) from ${backupTarget.name}`);
+          console.log(`[Failover] Activating backup: "${backupConn.name}" (${selected.latency} ms) [БС пул]`);
           fo.state = 'backup';
           fo.activeBackupId = backupConn.id;
           fo.consecutiveFails = 0;
           fo.lastSwitchAt = new Date().toISOString();
-          fo.lastLog = `Блокировка БС! Переключено на «${backupConn.name}» (${selected.latency} ms) [${backupTarget.name}]`;
+          fo.lastLog = `Блокировка БС! Переключено на «${backupConn.name}» (${selected.latency} ms)`;
 
           appendFailoverHistory({
             event: 'switch_to_backup',
             title: 'Переключение на БС (Резерв)',
             fromName: activePrimaryConn.name,
             toName: backupConn.name,
-            reason: `Сбоев подряд: ${fo.failThreshold || 3}. Протестировано резервов: ${candidates.length}, выбран «${backupConn.name}» (пинг: ${selected.latency} ms, источник: ${backupTarget.name}).`
+            reason: `Сбоев подряд: ${fo.failThreshold || 3}. Протестировано резервов: ${candidates.length}, выбран «${backupConn.name}» (пинг: ${selected.latency} ms, стратегия: ${fo.strategy === 'priority_order' ? 'по порядку' : 'наименьший пинг'}).`
           });
 
           await activateConnectionInternal(backupConn.id, data, true);
@@ -4419,25 +4428,30 @@ const server = http.createServer(async (req, res) => {
       const data = loadData();
       const enabled = Boolean(body.enabled);
       const primaryConnectionId = body.primaryConnectionId || '';
-      const backupConnectionId = body.backupConnectionId || '';
+      let backupPoolConnectionIds = Array.isArray(body.backupPoolConnectionIds) ? body.backupPoolConnectionIds : [];
+      if (backupPoolConnectionIds.length === 0 && body.backupConnectionId) {
+        backupPoolConnectionIds = [body.backupConnectionId];
+      }
+
+      const primaryTarget = resolveFailoverTarget(data, primaryConnectionId);
+      const resolvedPool = resolveConnectionPool(data, backupPoolConnectionIds);
 
       if (enabled) {
-        if (!primaryConnectionId || !data.connections.some(c => c.id === primaryConnectionId)) {
+        if (!primaryConnectionId || !primaryTarget || primaryTarget.conns.length === 0) {
           return sendJson(res, 400, { error: 'Не выбрано основное подключение!' });
         }
-        if (!backupConnectionId || !data.connections.some(c => c.id === backupConnectionId)) {
-          return sendJson(res, 400, { error: 'Не выбрано резервное подключение (для Белых Списков)!' });
-        }
-        if (primaryConnectionId === backupConnectionId) {
-          return sendJson(res, 400, { error: 'Основное и резервное подключения должны отличаться!' });
+        if (resolvedPool.length === 0) {
+          return sendJson(res, 400, { error: 'Не выбраны резервные подключения (для Белых Списков)!' });
         }
       }
 
       data.settings.failover = {
         ...(data.settings.failover || {}),
         enabled,
+        strategy: body.strategy === 'priority_order' ? 'priority_order' : 'lowest_ping',
         primaryConnectionId,
-        backupConnectionId,
+        backupConnectionId: backupPoolConnectionIds[0] || body.backupConnectionId || '',
+        backupPoolConnectionIds,
         checkIntervalSec: Math.max(10, parseInt(body.checkIntervalSec, 10) || 25),
         failThreshold: Math.max(1, parseInt(body.failThreshold, 10) || 3),
         recoveryThreshold: Math.max(1, parseInt(body.recoveryThreshold, 10) || 3),
@@ -4446,14 +4460,14 @@ const server = http.createServer(async (req, res) => {
         canaryUrl: (body.canaryUrl || 'http://cp.cloudflare.com/generate_204').trim(),
         consecutiveFails: 0,
         consecutiveSuccesses: 0,
-        lastLog: enabled ? 'Настройки обновлены. Авто-мониторинг активен.' : 'Авто-переключение отключено.'
+        lastLog: enabled ? 'Настройки обновлены. Авто-мониторинг БС активен.' : 'Авто-переключение БС отключено.'
       };
 
       saveData(data);
       failoverCooldownUntil = Date.now() + 15000; // 15s pause after saving settings
 
       return sendJson(res, 200, {
-        message: 'Настройки авто-переключения сохранены',
+        message: 'Настройки авто-переключения БС сохранены',
         failover: data.settings.failover
       });
     } catch (err) {
@@ -4481,32 +4495,29 @@ const server = http.createServer(async (req, res) => {
           primaryId = data.settings.activeConnectionId;
         }
 
-        let backupId = fo.backupConnectionId;
-        if (body.backupConnectionId !== undefined) {
-          backupId = body.backupConnectionId;
-        }
+        let backupPool = Array.isArray(body.backupPoolConnectionIds) && body.backupPoolConnectionIds.length > 0
+          ? body.backupPoolConnectionIds
+          : (Array.isArray(fo.backupPoolConnectionIds) && fo.backupPoolConnectionIds.length > 0
+              ? fo.backupPoolConnectionIds
+              : (fo.backupConnectionId ? [fo.backupConnectionId] : []));
 
-        const primaryExists = data.connections.some(c => c.id === primaryId);
-        const backupExists = data.connections.some(c => c.id === backupId);
+        const primaryTarget = resolveFailoverTarget(data, primaryId);
+        const resolvedPool = resolveConnectionPool(data, backupPool);
 
-        if (!primaryId || !primaryExists) {
+        if (!primaryId || !primaryTarget || primaryTarget.conns.length === 0) {
           return sendJson(res, 400, {
             error: 'Не выбрано основное подключение! Выберите его перед включением БС.'
           });
         }
-        if (!backupId || !backupExists) {
+        if (resolvedPool.length === 0) {
           return sendJson(res, 400, {
-            error: 'Не выбрано резервное подключение для Белых Списков! Выберите его перед включением.'
-          });
-        }
-        if (primaryId === backupId) {
-          return sendJson(res, 400, {
-            error: 'Основное и резервное подключения не должны совпадать!'
+            error: 'Не выбраны резервные подключения для Белых Списков! Выберите их перед включением.'
           });
         }
 
         data.settings.failover.primaryConnectionId = primaryId;
-        data.settings.failover.backupConnectionId = backupId;
+        data.settings.failover.backupPoolConnectionIds = backupPool;
+        data.settings.failover.backupConnectionId = backupPool[0] || '';
       }
 
       data.settings.failover.enabled = enabled;
@@ -5136,10 +5147,15 @@ const server = http.createServer(async (req, res) => {
         data.settings.failover.enabled = false;
         data.settings.failover.lastLog = 'Основное подключение удалено. Режим БС отключен.';
       }
+      if (Array.isArray(data.settings.failover.backupPoolConnectionIds)) {
+        data.settings.failover.backupPoolConnectionIds = data.settings.failover.backupPoolConnectionIds.filter(x => x !== id);
+        if (data.settings.failover.backupPoolConnectionIds.length === 0) {
+          data.settings.failover.enabled = false;
+          data.settings.failover.lastLog = 'Все резервные подключения БС удалены. Режим БС отключен.';
+        }
+      }
       if (data.settings.failover.backupConnectionId === id) {
-        data.settings.failover.backupConnectionId = '';
-        data.settings.failover.enabled = false;
-        data.settings.failover.lastLog = 'Резервное подключение удалено. Режим БС отключен.';
+        data.settings.failover.backupConnectionId = (data.settings.failover.backupPoolConnectionIds && data.settings.failover.backupPoolConnectionIds[0]) || '';
       }
     }
 
@@ -5182,16 +5198,25 @@ const server = http.createServer(async (req, res) => {
 
       // Update failover state if manual activation occurs
       if (data.settings.failover && data.settings.failover.enabled) {
-        if (id === data.settings.failover.primaryConnectionId) {
-          data.settings.failover.state = 'normal';
-          data.settings.failover.consecutiveFails = 0;
-          data.settings.failover.lastLog = `Вручную активирован основной профиль "${result.conn.name}"`;
-        } else if (id === data.settings.failover.backupConnectionId) {
-          data.settings.failover.state = 'backup';
-          data.settings.failover.consecutiveSuccesses = 0;
-          data.settings.failover.lastLog = `Вручную активирован резервный (БС) профиль "${result.conn.name}"`;
+        const fo = data.settings.failover;
+        const poolTargets = Array.isArray(fo.backupPoolConnectionIds) && fo.backupPoolConnectionIds.length > 0
+          ? fo.backupPoolConnectionIds
+          : (fo.backupConnectionId ? [fo.backupConnectionId] : []);
+        const backupConns = resolveConnectionPool(data, poolTargets);
+        const primaryTarget = resolveFailoverTarget(data, fo.primaryConnectionId);
+
+        if (primaryTarget && primaryTarget.conns.some(c => c.id === id)) {
+          fo.state = 'normal';
+          fo.activeBackupId = null;
+          fo.consecutiveFails = 0;
+          fo.lastLog = `Вручную активирован основной профиль "${result.conn.name}"`;
+        } else if (backupConns.some(c => c.id === id)) {
+          fo.state = 'backup';
+          fo.activeBackupId = id;
+          fo.consecutiveSuccesses = 0;
+          fo.lastLog = `Вручную активирован резервный (БС) профиль "${result.conn.name}"`;
         } else {
-          data.settings.failover.lastLog = `Вручную активирован сторонний профиль "${result.conn.name}"`;
+          fo.lastLog = `Вручную активирован сторонний профиль "${result.conn.name}"`;
         }
         failoverCooldownUntil = Date.now() + 60000; // 60s cooldown
       }
@@ -5723,10 +5748,15 @@ const server = http.createServer(async (req, res) => {
         data.settings.failover.enabled = false;
         data.settings.failover.lastLog = `Подписка "${subName}" удалена. Режим БС отключен.`;
       }
+      if (Array.isArray(data.settings.failover.backupPoolConnectionIds)) {
+        data.settings.failover.backupPoolConnectionIds = data.settings.failover.backupPoolConnectionIds.filter(pid => pid !== `sub:${id}` && pid !== `group:${id}`);
+        if (data.settings.failover.backupPoolConnectionIds.length === 0) {
+          data.settings.failover.enabled = false;
+          data.settings.failover.lastLog = `Резервная подписка "${subName}" удалена. Режим БС отключен.`;
+        }
+      }
       if (data.settings.failover.backupConnectionId === `sub:${id}` || data.settings.failover.backupConnectionId === `group:${id}`) {
-        data.settings.failover.backupConnectionId = '';
-        data.settings.failover.enabled = false;
-        data.settings.failover.lastLog = `Резервная подписка "${subName}" удалена. Режим БС отключен.`;
+        data.settings.failover.backupConnectionId = (data.settings.failover.backupPoolConnectionIds && data.settings.failover.backupPoolConnectionIds[0]) || '';
       }
     }
     if (data.settings && data.settings.autoFailover && Array.isArray(data.settings.autoFailover.poolConnectionIds)) {
