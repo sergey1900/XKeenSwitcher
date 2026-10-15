@@ -2319,26 +2319,30 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 .conn-collapsible-inner {
   min-height: 0;
   overflow: hidden;
-  padding-top: 12px;
-  margin-top: 10px;
+  padding-top: 10px;
+  padding-bottom: 2px;
+  margin-top: 8px;
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.conn-collapsible-top {
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  flex-wrap: nowrap;
+  box-sizing: border-box;
 }
 
-.conn-collapsible-top .conn-routing-row {
-  margin-bottom: 0;
+.conn-collapsible-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.conn-collapsible-main .conn-routing-row {
+  margin: 0;
   padding: 0 10px;
   gap: 8px;
   flex: 0 1 auto;
@@ -2347,13 +2351,13 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   height: 32px;
   box-sizing: border-box;
   background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
 }
 
-.conn-collapsible-top .conn-routing-label {
+.conn-collapsible-main .conn-routing-label {
   font-size: 0.76rem;
   color: var(--text-muted);
   display: inline-flex;
@@ -2361,24 +2365,29 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   gap: 5px;
   white-space: nowrap;
   flex-shrink: 0;
+  line-height: 1;
 }
 
-.conn-collapsible-top .conn-routing-select {
-  padding: 2px 8px;
+.conn-collapsible-main .conn-routing-select {
+  padding: 0 24px 0 6px;
   font-size: 0.78rem;
-  height: 26px;
+  height: 100%;
   width: 400px;
   max-width: 440px;
   min-width: 200px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  color: #f1f5f9;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+  cursor: pointer;
+  outline: none;
 }
 
-.conn-collapsible-top .conn-footer-actions {
+.conn-collapsible-inner .conn-footer-actions {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -2388,7 +2397,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   margin-left: auto;
 }
 
-.conn-collapsible-top .conn-footer-actions .btn-sm {
+.conn-collapsible-inner .conn-footer-actions .btn-sm {
   width: 32px !important;
   height: 32px !important;
   padding: 0 !important;
@@ -2400,14 +2409,30 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-shrink: 0 !important;
 }
 
-.conn-origin-footer {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+.conn-collapsible-main .conn-extra-info {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conn-collapsible-main .conn-comment {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.25;
+}
+
+.conn-collapsible-main .conn-origin-footer {
+  margin: 0;
+  padding: 0;
+  border: none;
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 0.74rem;
+  line-height: 1.2;
 }
 
 .conn-origin-label {
@@ -4057,18 +4082,22 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 /* Collapsible Inner in Compact Mode */
 .connections-grid.view-mode-compact .conn-collapsible-inner {
   padding-top: 8px;
+  padding-bottom: 2px;
   margin-top: 6px;
-  gap: 8px;
-}
-
-.connections-grid.view-mode-compact .conn-collapsible-top {
+  gap: 10px;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  flex-wrap: nowrap;
+}
+
+.connections-grid.view-mode-compact .conn-collapsible-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .connections-grid.view-mode-compact .conn-routing-row {
@@ -4084,7 +4113,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   align-items: center;
   border-radius: 5px;
   background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .connections-grid.view-mode-compact .conn-routing-label {
@@ -4095,24 +4124,29 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   gap: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+  line-height: 1;
 }
 
 .connections-grid.view-mode-compact .conn-routing-select {
-  padding: 2px 6px;
+  padding: 0 20px 0 6px;
   font-size: 0.75rem;
-  height: 22px;
+  height: 100%;
   width: 380px;
   max-width: 420px;
   min-width: 180px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  color: #f1f5f9;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+  outline: none;
+  cursor: pointer;
 }
 
-.connections-grid.view-mode-compact .conn-footer-actions {
+.connections-grid.view-mode-compact .conn-collapsible-inner .conn-footer-actions {
   gap: 6px;
   display: flex;
   flex-direction: row;
@@ -4122,7 +4156,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-shrink: 0;
 }
 
-.connections-grid.view-mode-compact .conn-footer-actions .btn-sm {
+.connections-grid.view-mode-compact .conn-collapsible-inner .conn-footer-actions .btn-sm {
   width: 28px !important;
   height: 28px !important;
   padding: 0 !important;
@@ -4132,6 +4166,19 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   align-items: center !important;
   justify-content: center !important;
   flex-shrink: 0 !important;
+}
+
+.connections-grid.view-mode-compact .conn-collapsible-main .conn-extra-info {
+  margin: 0;
+  padding: 0;
+}
+
+.connections-grid.view-mode-compact .conn-collapsible-main .conn-origin-footer {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
 @media (max-width: 900px) {

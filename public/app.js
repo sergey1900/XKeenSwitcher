@@ -549,7 +549,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
       <!-- COLLAPSIBLE DETAILS BODY -->
       <div class="conn-collapsible-body">
         <div class="conn-collapsible-inner">
-          <div class="conn-collapsible-top">
+          <div class="conn-collapsible-main">
             <!-- ROUTING SELECTOR ROW -->
             <div class="conn-routing-row" title="Вариант маршрутизации для этого подключения">
               <span class="conn-routing-label">
@@ -561,30 +561,30 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
               </select>
             </div>
 
-            <!-- ACTIONS TOOLBAR -->
-            <div class="conn-footer-actions">
-              <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="${(parentGroup?.isSubscription || (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'))?.isSubscription) ? 'Скопировать в другую группу' : 'Переместить или скопировать в другую группу'}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              </button>
-              <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
-              </button>
-              <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditConnectionModal('${conn.id}')" title="Редактировать параметры и outbound.json">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              </button>
-              <button class="btn btn-danger btn-sm btn-icon" onclick="deleteConnection('${conn.id}', '${escapeJs(conn.name)}')" title="Удалить подключение">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
-            </div>
+            <!-- COMMENT / ORIGIN (IF ANY) -->
+            ${(conn.description || originFooterHtml) ? `
+              <div class="conn-extra-info">
+                ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
+                ${originFooterHtml}
+              </div>
+            ` : ''}
           </div>
 
-          <!-- COMMENT (IF ANY) -->
-          ${(conn.description || originFooterHtml) ? `
-            <div class="conn-extra-info">
-              ${conn.description ? `<div class="conn-comment">${escapeHtml(conn.description)}</div>` : ''}
-              ${originFooterHtml}
-            </div>
-          ` : ''}
+          <!-- ACTIONS TOOLBAR (VERTICALLY CENTERED) -->
+          <div class="conn-footer-actions">
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="openMoveCopyModal('${conn.id}')" title="${(parentGroup?.isSubscription || (appData.groups || []).find(g => g.id === (conn.groupId || 'group_default'))?.isSubscription) ? 'Скопировать в другую группу' : 'Переместить или скопировать в другую группу'}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </button>
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="openQrModal('${conn.id}')" title="Показать QR-код VLESS">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01M17 17h.01M7 7h.01M17 7h.01"/></svg>
+            </button>
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditConnectionModal('${conn.id}')" title="Редактировать параметры и outbound.json">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteConnection('${conn.id}', '${escapeJs(conn.name)}')" title="Удалить подключение">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
