@@ -2566,25 +2566,31 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 /* Row 2: Comment (if any) */
 .conn-comment-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-size: 0.72rem;
-  color: var(--text-muted);
-  padding: 2px 2px;
+  padding: 3px 2px 2px 2px;
+  line-height: 1.35;
 }
 
 .conn-comment-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: #64748b;
   font-weight: 500;
   flex-shrink: 0;
+  line-height: 1.35;
 }
 
-.conn-comment {
-  color: #94a3b8;
-  font-style: italic;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.conn-comment-label svg {
+  opacity: 0.75;
+}
+
+.conn-comment-text {
+  color: #cbd5e1;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 @media (max-width: 900px) {
@@ -2868,18 +2874,6 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 
 .conn-routing-select:focus {
   border-color: var(--accent-primary);
-}
-
-/* COMMENT */
-.conn-comment {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin-bottom: 14px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.02);
-  border-left: 2px solid rgba(99, 102, 241, 0.5);
-  border-radius: 0 4px 4px 0;
-  word-break: break-word;
 }
 
 /* PING ROW */

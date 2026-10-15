@@ -572,9 +572,12 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
 
           <!-- COMMENT (BELOW, IF ANY) -->
           ${conn.description ? `
-            <div class="conn-comment-row">
-              <span class="conn-comment-label">Комментарий:</span>
-              <span class="conn-comment">${escapeHtml(conn.description)}</span>
+            <div class="conn-comment-row" title="Комментарий к подключению">
+              <span class="conn-comment-label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Комментарий:
+              </span>
+              <span class="conn-comment-text">${escapeHtml(conn.description)}</span>
             </div>
           ` : ''}
         </div>
