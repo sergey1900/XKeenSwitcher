@@ -3682,6 +3682,21 @@ function switchRoutingMode(mode) {
   }
 }
 
+// Clean domains and IPs from comments (# or // or ;), preserving valid rules
+function extractCleanTargets(arr) {
+  if (!Array.isArray(arr)) return [];
+  const res = [];
+  for (const raw of arr) {
+    if (!raw) continue;
+    const s = String(raw).trim();
+    if (!s) continue;
+    if (s.startsWith('#') || s.startsWith('//') || s.startsWith(';') || s.startsWith('!')) continue;
+    const clean = s.split(/#|\/\/|;/)[0].trim();
+    if (clean) res.push(clean);
+  }
+  return res;
+}
+
 // Collect current builder configuration from form inputs
 function collectBuilderConfig() {
   const bittorrent = document.querySelector('input[name="builder-bittorrent"]:checked')?.value || 'direct';
@@ -3696,7 +3711,7 @@ function collectBuilderConfig() {
 
   const parseLines = (id) => {
     const val = document.getElementById(id)?.value || '';
-    return val.split('\n').map(s => s.trim()).filter(Boolean);
+    return val.split('\n').map(s => s.trimEnd()).filter(s => s.trim().length > 0);
   };
 
   return {
@@ -3730,11 +3745,13 @@ function generateBuilderJson(cfg) {
   if (cfg.blockAds) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: ['geosite:category-ads-all'] });
   }
-  if (Array.isArray(cfg.customBlockDomains) && cfg.customBlockDomains.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: cfg.customBlockDomains });
+  const cleanBlockDomains = extractCleanTargets(cfg.customBlockDomains);
+  if (cleanBlockDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: cleanBlockDomains });
   }
-  if (Array.isArray(cfg.customBlockIps) && cfg.customBlockIps.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', ip: cfg.customBlockIps });
+  const cleanBlockIps = extractCleanTargets(cfg.customBlockIps);
+  if (cleanBlockIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', ip: cleanBlockIps });
   }
   if (cfg.quic === 'block') {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', network: 'udp', port: '443' });
@@ -3755,11 +3772,13 @@ function generateBuilderJson(cfg) {
   } else if (cfg.voip === 'proxy') {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, network: 'udp', port: '3478,3479,5349,19302-19309' });
   }
-  if (Array.isArray(cfg.customDirectDomains) && cfg.customDirectDomains.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', domain: cfg.customDirectDomains });
+  const cleanDirectDomains = extractCleanTargets(cfg.customDirectDomains);
+  if (cleanDirectDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', domain: cleanDirectDomains });
   }
-  if (Array.isArray(cfg.customDirectIps) && cfg.customDirectIps.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', ip: cfg.customDirectIps });
+  const cleanDirectIps = extractCleanTargets(cfg.customDirectIps);
+  if (cleanDirectIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', ip: cleanDirectIps });
   }
   if (cfg.bypassRu) {
     rules.push({
@@ -3797,11 +3816,13 @@ function generateBuilderJson(cfg) {
       ip: ['geoip:private']
     });
   }
-  if (Array.isArray(cfg.customProxyDomains) && cfg.customProxyDomains.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, domain: cfg.customProxyDomains });
+  const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
+  if (cleanProxyDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, domain: cleanProxyDomains });
   }
-  if (Array.isArray(cfg.customProxyIps) && cfg.customProxyIps.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cfg.customProxyIps });
+  const cleanProxyIps = extractCleanTargets(cfg.customProxyIps);
+  if (cleanProxyIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cleanProxyIps });
   }
   rules.push({
     type: 'field',

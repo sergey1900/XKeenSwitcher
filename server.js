@@ -200,6 +200,21 @@ function extractProxyTag(conn) {
   return 'proxy';
 }
 
+// Clean domains and IPs from comments (# or // or ;), preserving valid rules
+function extractCleanTargets(arr) {
+  if (!Array.isArray(arr)) return [];
+  const res = [];
+  for (const raw of arr) {
+    if (!raw) continue;
+    const s = String(raw).trim();
+    if (!s) continue;
+    if (s.startsWith('#') || s.startsWith('//') || s.startsWith(';') || s.startsWith('!')) continue;
+    const clean = s.split(/#|\/\/|;/)[0].trim();
+    if (clean) res.push(clean);
+  }
+  return res;
+}
+
 // Universal Xray Routing Compiler
 function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
   if (!cfg || typeof cfg !== 'object') {
@@ -229,21 +244,23 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
     });
   }
 
-  // 3. Custom Block domains & IPs
-  if (Array.isArray(cfg.customBlockDomains) && cfg.customBlockDomains.length > 0) {
+  // 3. Custom Block domains & IPs (with comment support)
+  const cleanBlockDomains = extractCleanTargets(cfg.customBlockDomains);
+  if (cleanBlockDomains.length > 0) {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'block',
-      domain: cfg.customBlockDomains.filter(Boolean)
+      domain: cleanBlockDomains
     });
   }
-  if (Array.isArray(cfg.customBlockIps) && cfg.customBlockIps.length > 0) {
+  const cleanBlockIps = extractCleanTargets(cfg.customBlockIps);
+  if (cleanBlockIps.length > 0) {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'block',
-      ip: cfg.customBlockIps.filter(Boolean)
+      ip: cleanBlockIps
     });
   }
 
@@ -318,21 +335,23 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
     });
   }
 
-  // 7. Custom Direct domains & IPs
-  if (Array.isArray(cfg.customDirectDomains) && cfg.customDirectDomains.length > 0) {
+  // 7. Custom Direct domains & IPs (with comment support)
+  const cleanDirectDomains = extractCleanTargets(cfg.customDirectDomains);
+  if (cleanDirectDomains.length > 0) {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'direct',
-      domain: cfg.customDirectDomains.filter(Boolean)
+      domain: cleanDirectDomains
     });
   }
-  if (Array.isArray(cfg.customDirectIps) && cfg.customDirectIps.length > 0) {
+  const cleanDirectIps = extractCleanTargets(cfg.customDirectIps);
+  if (cleanDirectIps.length > 0) {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'direct',
-      ip: cfg.customDirectIps.filter(Boolean)
+      ip: cleanDirectIps
     });
   }
 
@@ -377,21 +396,23 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
     });
   }
 
-  // 9. Custom Proxy domains & IPs
-  if (Array.isArray(cfg.customProxyDomains) && cfg.customProxyDomains.length > 0) {
+  // 9. Custom Proxy domains & IPs (with comment support)
+  const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
+  if (cleanProxyDomains.length > 0) {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: proxyTag,
-      domain: cfg.customProxyDomains.filter(Boolean)
+      domain: cleanProxyDomains
     });
   }
-  if (Array.isArray(cfg.customProxyIps) && cfg.customProxyIps.length > 0) {
+  const cleanProxyIps = extractCleanTargets(cfg.customProxyIps);
+  if (cleanProxyIps.length > 0) {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: proxyTag,
-      ip: cfg.customProxyIps.filter(Boolean)
+      ip: cleanProxyIps
     });
   }
 
@@ -437,17 +458,15 @@ function compileMihomoRules(cfg) {
     lines.push('  - GEOSITE,category-ads-all,REJECT');
   }
 
-  // 4. Custom Block
-  if (Array.isArray(cfg.customBlockDomains)) {
-    for (const d of cfg.customBlockDomains.filter(Boolean)) {
-      lines.push(`  - DOMAIN-SUFFIX,${d.trim()},REJECT`);
-    }
+  // 4. Custom Block (with comment support)
+  const cleanBlockDomains = extractCleanTargets(cfg.customBlockDomains);
+  for (const d of cleanBlockDomains) {
+    lines.push(`  - DOMAIN-SUFFIX,${d},REJECT`);
   }
-  if (Array.isArray(cfg.customBlockIps)) {
-    for (const ip of cfg.customBlockIps.filter(Boolean)) {
-      const cidr = ip.includes('/') ? ip.trim() : `${ip.trim()}/32`;
-      lines.push(`  - IP-CIDR,${cidr},REJECT,no-resolve`);
-    }
+  const cleanBlockIps = extractCleanTargets(cfg.customBlockIps);
+  for (const ip of cleanBlockIps) {
+    const cidr = ip.includes('/') ? ip : `${ip}/32`;
+    lines.push(`  - IP-CIDR,${cidr},REJECT,no-resolve`);
   }
 
   // 5. QUIC (UDP 443)
@@ -484,17 +503,15 @@ function compileMihomoRules(cfg) {
     lines.push('  - DST-PORT,19302-19309,PROXY,udp');
   }
 
-  // 8. Custom Direct
-  if (Array.isArray(cfg.customDirectDomains)) {
-    for (const d of cfg.customDirectDomains.filter(Boolean)) {
-      lines.push(`  - DOMAIN-SUFFIX,${d.trim()},DIRECT`);
-    }
+  // 8. Custom Direct (with comment support)
+  const cleanDirectDomains = extractCleanTargets(cfg.customDirectDomains);
+  for (const d of cleanDirectDomains) {
+    lines.push(`  - DOMAIN-SUFFIX,${d},DIRECT`);
   }
-  if (Array.isArray(cfg.customDirectIps)) {
-    for (const ip of cfg.customDirectIps.filter(Boolean)) {
-      const cidr = ip.includes('/') ? ip.trim() : `${ip.trim()}/32`;
-      lines.push(`  - IP-CIDR,${cidr},DIRECT,no-resolve`);
-    }
+  const cleanDirectIps = extractCleanTargets(cfg.customDirectIps);
+  for (const ip of cleanDirectIps) {
+    const cidr = ip.includes('/') ? ip : `${ip}/32`;
+    lines.push(`  - IP-CIDR,${cidr},DIRECT,no-resolve`);
   }
 
   // 9. Bypass RU
@@ -506,17 +523,15 @@ function compileMihomoRules(cfg) {
     lines.push('  - GEOIP,ru,DIRECT');
   }
 
-  // 10. Custom Proxy
-  if (Array.isArray(cfg.customProxyDomains)) {
-    for (const d of cfg.customProxyDomains.filter(Boolean)) {
-      lines.push(`  - DOMAIN-SUFFIX,${d.trim()},PROXY`);
-    }
+  // 10. Custom Proxy (with comment support)
+  const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
+  for (const d of cleanProxyDomains) {
+    lines.push(`  - DOMAIN-SUFFIX,${d},PROXY`);
   }
-  if (Array.isArray(cfg.customProxyIps)) {
-    for (const ip of cfg.customProxyIps.filter(Boolean)) {
-      const cidr = ip.includes('/') ? ip.trim() : `${ip.trim()}/32`;
-      lines.push(`  - IP-CIDR,${cidr},PROXY,no-resolve`);
-    }
+  const cleanProxyIps = extractCleanTargets(cfg.customProxyIps);
+  for (const ip of cleanProxyIps) {
+    const cidr = ip.includes('/') ? ip : `${ip}/32`;
+    lines.push(`  - IP-CIDR,${cidr},PROXY,no-resolve`);
   }
 
   // 11. Match Default
@@ -6306,6 +6321,11 @@ const server = http.createServer(async (req, res) => {
       let effectiveContent = (content || '').trim();
 
       if (mode === 'builder' && body.builderConfig) {
+        const parseList = (val) => {
+          if (Array.isArray(val)) return val.map(s => String(s).trimEnd()).filter(s => s.trim().length > 0);
+          if (typeof val === 'string') return val.split('\n').map(s => s.trimEnd()).filter(s => s.trim().length > 0);
+          return [];
+        };
         builderConfig = {
           defaultAction: body.builderConfig.defaultAction === 'direct' ? 'direct' : 'proxy',
           bittorrent: ['direct', 'proxy', 'block'].includes(body.builderConfig.bittorrent) ? body.builderConfig.bittorrent : 'direct',
@@ -6315,12 +6335,12 @@ const server = http.createServer(async (req, res) => {
           bypassPrivate: Boolean(body.builderConfig.bypassPrivate),
           blockAds: Boolean(body.builderConfig.blockAds),
           blockNetbios: Boolean(body.builderConfig.blockNetbios),
-          customProxyDomains: Array.isArray(body.builderConfig.customProxyDomains) ? body.builderConfig.customProxyDomains.map(s => String(s).trim()).filter(Boolean) : [],
-          customDirectDomains: Array.isArray(body.builderConfig.customDirectDomains) ? body.builderConfig.customDirectDomains.map(s => String(s).trim()).filter(Boolean) : [],
-          customBlockDomains: Array.isArray(body.builderConfig.customBlockDomains) ? body.builderConfig.customBlockDomains.map(s => String(s).trim()).filter(Boolean) : [],
-          customProxyIps: Array.isArray(body.builderConfig.customProxyIps) ? body.builderConfig.customProxyIps.map(s => String(s).trim()).filter(Boolean) : [],
-          customDirectIps: Array.isArray(body.builderConfig.customDirectIps) ? body.builderConfig.customDirectIps.map(s => String(s).trim()).filter(Boolean) : [],
-          customBlockIps: Array.isArray(body.builderConfig.customBlockIps) ? body.builderConfig.customBlockIps.map(s => String(s).trim()).filter(Boolean) : []
+          customProxyDomains: parseList(body.builderConfig.customProxyDomains),
+          customDirectDomains: parseList(body.builderConfig.customDirectDomains),
+          customBlockDomains: parseList(body.builderConfig.customBlockDomains),
+          customProxyIps: parseList(body.builderConfig.customProxyIps),
+          customDirectIps: parseList(body.builderConfig.customDirectIps),
+          customBlockIps: parseList(body.builderConfig.customBlockIps)
         };
         effectiveContent = compileXrayRouting(builderConfig, 'vless-reality');
       } else {
@@ -6449,6 +6469,11 @@ const server = http.createServer(async (req, res) => {
       let effectiveContent = (content || '').trim();
 
       if (mode === 'builder' && body.builderConfig) {
+        const parseList = (val) => {
+          if (Array.isArray(val)) return val.map(s => String(s).trimEnd()).filter(s => s.trim().length > 0);
+          if (typeof val === 'string') return val.split('\n').map(s => s.trimEnd()).filter(s => s.trim().length > 0);
+          return [];
+        };
         builderConfig = {
           defaultAction: body.builderConfig.defaultAction === 'direct' ? 'direct' : 'proxy',
           bittorrent: ['direct', 'proxy', 'block'].includes(body.builderConfig.bittorrent) ? body.builderConfig.bittorrent : 'direct',
@@ -6458,12 +6483,12 @@ const server = http.createServer(async (req, res) => {
           bypassPrivate: Boolean(body.builderConfig.bypassPrivate),
           blockAds: Boolean(body.builderConfig.blockAds),
           blockNetbios: Boolean(body.builderConfig.blockNetbios),
-          customProxyDomains: Array.isArray(body.builderConfig.customProxyDomains) ? body.builderConfig.customProxyDomains.map(s => String(s).trim()).filter(Boolean) : [],
-          customDirectDomains: Array.isArray(body.builderConfig.customDirectDomains) ? body.builderConfig.customDirectDomains.map(s => String(s).trim()).filter(Boolean) : [],
-          customBlockDomains: Array.isArray(body.builderConfig.customBlockDomains) ? body.builderConfig.customBlockDomains.map(s => String(s).trim()).filter(Boolean) : [],
-          customProxyIps: Array.isArray(body.builderConfig.customProxyIps) ? body.builderConfig.customProxyIps.map(s => String(s).trim()).filter(Boolean) : [],
-          customDirectIps: Array.isArray(body.builderConfig.customDirectIps) ? body.builderConfig.customDirectIps.map(s => String(s).trim()).filter(Boolean) : [],
-          customBlockIps: Array.isArray(body.builderConfig.customBlockIps) ? body.builderConfig.customBlockIps.map(s => String(s).trim()).filter(Boolean) : []
+          customProxyDomains: parseList(body.builderConfig.customProxyDomains),
+          customDirectDomains: parseList(body.builderConfig.customDirectDomains),
+          customBlockDomains: parseList(body.builderConfig.customBlockDomains),
+          customProxyIps: parseList(body.builderConfig.customProxyIps),
+          customDirectIps: parseList(body.builderConfig.customDirectIps),
+          customBlockIps: parseList(body.builderConfig.customBlockIps)
         };
         effectiveContent = compileXrayRouting(builderConfig, 'vless-reality');
       } else {

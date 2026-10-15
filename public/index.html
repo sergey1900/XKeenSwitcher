@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.10">
+  <link rel="stylesheet" href="style.css?v=2.9.11">
 </head>
 <body>
   <div class="app-background"></div>
@@ -673,12 +673,12 @@
                 </summary>
                 <div class="routing-list-content">
                   <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (по одному на строку):</label>
-                    <textarea id="builder-custom-proxy-domains" class="routing-textarea" rows="3" placeholder="instagram.com&#10;youtube.com&#10;notion.so"></textarea>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (поддерживаются # и // комментарии):</label>
+                    <textarea id="builder-custom-proxy-domains" class="routing-textarea" rows="3" placeholder="instagram.com # Соцсети&#10;youtube.com&#10;# Рабочие сервисы&#10;notion.so"></textarea>
                   </div>
                   <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (по одному на строку):</label>
-                    <textarea id="builder-custom-proxy-ips" class="routing-textarea" rows="3" placeholder="1.1.1.1&#10;8.8.8.8&#10;104.16.0.0/12"></textarea>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (поддерживаются # и // комментарии):</label>
+                    <textarea id="builder-custom-proxy-ips" class="routing-textarea" rows="3" placeholder="1.1.1.1 # Cloudflare&#10;8.8.8.8&#10;104.16.0.0/12 # CDN"></textarea>
                   </div>
                 </div>
               </details>
@@ -690,12 +690,12 @@
                 </summary>
                 <div class="routing-list-content">
                   <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (по одному на строку):</label>
-                    <textarea id="builder-custom-direct-domains" class="routing-textarea" rows="3" placeholder="kinopoisk.ru&#10;gosuslugi.ru"></textarea>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (поддерживаются # и // комментарии):</label>
+                    <textarea id="builder-custom-direct-domains" class="routing-textarea" rows="3" placeholder="kinopoisk.ru # Онлайн-кинотеатр&#10;gosuslugi.ru"></textarea>
                   </div>
                   <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (по одному на строку):</label>
-                    <textarea id="builder-custom-direct-ips" class="routing-textarea" rows="3" placeholder=""></textarea>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (поддерживаются # и // комментарии):</label>
+                    <textarea id="builder-custom-direct-ips" class="routing-textarea" rows="3" placeholder="192.168.10.0/24 # Локальная подсеть"></textarea>
                   </div>
                 </div>
               </details>
@@ -707,11 +707,11 @@
                 </summary>
                 <div class="routing-list-content">
                   <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены:</label>
-                    <textarea id="builder-custom-block-domains" class="routing-textarea" rows="2" placeholder="analytics.google.com"></textarea>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (поддерживаются # и // комментарии):</label>
+                    <textarea id="builder-custom-block-domains" class="routing-textarea" rows="2" placeholder="analytics.google.com # Метрика"></textarea>
                   </div>
                   <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR:</label>
+                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (поддерживаются # и // комментарии):</label>
                     <textarea id="builder-custom-block-ips" class="routing-textarea" rows="2" placeholder=""></textarea>
                   </div>
                 </div>
@@ -1860,6 +1860,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.10"></script>
+  <script src="app.js?v=2.9.11"></script>
 </body>
 </html>
