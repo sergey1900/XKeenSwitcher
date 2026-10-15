@@ -539,6 +539,9 @@ body {
 
 .req {
   color: var(--accent-danger);
+  white-space: nowrap;
+  display: inline-block;
+  margin-left: 2px;
 }
 
 .label-row {
@@ -592,6 +595,9 @@ select, .custom-select {
   background-position: right 14px center;
   padding-right: 38px;
   cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 select option, .custom-select option {
@@ -679,6 +685,11 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.form-row > .form-group {
+  display: flex;
+  flex-direction: column;
 }
 
 .flex-1 {
