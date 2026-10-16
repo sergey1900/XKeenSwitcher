@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.2';
+let appVersion = '2.0.3';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -433,6 +433,44 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
   }, null, 2);
 }
 
+// Helper: format a single domain rule for Mihomo
+function formatMihomoDomainRule(rawDomain, target) {
+  if (!rawDomain) return null;
+  const d = String(rawDomain).trim();
+  if (!d) return null;
+  if (d.startsWith('ext:') || d.startsWith('geosite:')) {
+    const gName = d.split(':').pop();
+    return `  - GEOSITE,${gName},${target}`;
+  }
+  if (d.startsWith('full:')) {
+    return `  - DOMAIN,${d.replace(/^full:/i, '')},${target}`;
+  }
+  if (d.startsWith('keyword:')) {
+    return `  - DOMAIN-KEYWORD,${d.replace(/^keyword:/i, '')},${target}`;
+  }
+  if (d.startsWith('regexp:')) {
+    return null;
+  }
+  const cleanDomain = d.replace(/^domain:/i, '');
+  return `  - DOMAIN-SUFFIX,${cleanDomain},${target}`;
+}
+
+// Helper: format a single IP rule for Mihomo
+function formatMihomoIpRule(rawIp, target) {
+  if (!rawIp) return null;
+  const ip = String(rawIp).trim();
+  if (!ip) return null;
+  if (ip === 'geoip:private') {
+    return `  - GEOIP,private,${target},no-resolve`;
+  }
+  if (ip.startsWith('geoip:') || ip.startsWith('ext:')) {
+    const country = ip.split(':').pop();
+    return `  - GEOIP,${country},${target}`;
+  }
+  const cidr = ip.includes('/') ? ip : `${ip}/32`;
+  return `  - IP-CIDR,${cidr},${target},no-resolve`;
+}
+
 // Universal Mihomo Rules Compiler
 function compileMihomoRules(cfg) {
   if (!cfg || typeof cfg !== 'object') {
@@ -461,21 +499,22 @@ function compileMihomoRules(cfg) {
   // 4. Custom Block (with comment support)
   const cleanBlockDomains = extractCleanTargets(cfg.customBlockDomains);
   for (const d of cleanBlockDomains) {
-    lines.push(`  - DOMAIN-SUFFIX,${d},REJECT`);
+    const r = formatMihomoDomainRule(d, 'REJECT');
+    if (r) lines.push(r);
   }
   const cleanBlockIps = extractCleanTargets(cfg.customBlockIps);
   for (const ip of cleanBlockIps) {
-    const cidr = ip.includes('/') ? ip : `${ip}/32`;
-    lines.push(`  - IP-CIDR,${cidr},REJECT,no-resolve`);
+    const r = formatMihomoIpRule(ip, 'REJECT');
+    if (r) lines.push(r);
   }
 
   // 5. QUIC (UDP 443)
   if (cfg.quic === 'block') {
-    lines.push('  - DST-PORT,443,REJECT,udp');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT');
   } else if (cfg.quic === 'direct') {
-    lines.push('  - DST-PORT,443,DIRECT,udp');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,443)),DIRECT');
   } else if (cfg.quic === 'proxy') {
-    lines.push('  - DST-PORT,443,PROXY,udp');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,443)),PROXY');
   }
 
   // 6. BitTorrent
@@ -492,26 +531,27 @@ function compileMihomoRules(cfg) {
 
   // 7. VoIP / Calls (WebRTC, STUN)
   if (cfg.voip === 'direct') {
-    lines.push('  - DST-PORT,3478,DIRECT,udp');
-    lines.push('  - DST-PORT,3479,DIRECT,udp');
-    lines.push('  - DST-PORT,5349,DIRECT,udp');
-    lines.push('  - DST-PORT,19302-19309,DIRECT,udp');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,3478)),DIRECT');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,3479)),DIRECT');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,5349)),DIRECT');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,19302-19309)),DIRECT');
   } else if (cfg.voip === 'proxy') {
-    lines.push('  - DST-PORT,3478,PROXY,udp');
-    lines.push('  - DST-PORT,3479,PROXY,udp');
-    lines.push('  - DST-PORT,5349,PROXY,udp');
-    lines.push('  - DST-PORT,19302-19309,PROXY,udp');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,3478)),PROXY');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,3479)),PROXY');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,5349)),PROXY');
+    lines.push('  - AND,((NETWORK,UDP),(DST-PORT,19302-19309)),PROXY');
   }
 
   // 8. Custom Direct (with comment support)
   const cleanDirectDomains = extractCleanTargets(cfg.customDirectDomains);
   for (const d of cleanDirectDomains) {
-    lines.push(`  - DOMAIN-SUFFIX,${d},DIRECT`);
+    const r = formatMihomoDomainRule(d, 'DIRECT');
+    if (r) lines.push(r);
   }
   const cleanDirectIps = extractCleanTargets(cfg.customDirectIps);
   for (const ip of cleanDirectIps) {
-    const cidr = ip.includes('/') ? ip : `${ip}/32`;
-    lines.push(`  - IP-CIDR,${cidr},DIRECT,no-resolve`);
+    const r = formatMihomoIpRule(ip, 'DIRECT');
+    if (r) lines.push(r);
   }
 
   // 9. Bypass RU
@@ -526,12 +566,13 @@ function compileMihomoRules(cfg) {
   // 10. Custom Proxy (with comment support)
   const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
   for (const d of cleanProxyDomains) {
-    lines.push(`  - DOMAIN-SUFFIX,${d},PROXY`);
+    const r = formatMihomoDomainRule(d, 'PROXY');
+    if (r) lines.push(r);
   }
   const cleanProxyIps = extractCleanTargets(cfg.customProxyIps);
   for (const ip of cleanProxyIps) {
-    const cidr = ip.includes('/') ? ip : `${ip}/32`;
-    lines.push(`  - IP-CIDR,${cidr},PROXY,no-resolve`);
+    const r = formatMihomoIpRule(ip, 'PROXY');
+    if (r) lines.push(r);
   }
 
   // 11. Match Default
@@ -570,8 +611,13 @@ function parseRawXrayToMihomoRules(rawJson) {
         for (const p of ports) {
           const pt = p.trim();
           if (pt) {
-            const proto = r.network === 'udp' ? ',udp' : (r.network === 'tcp' ? ',tcp' : '');
-            lines.push(`  - DST-PORT,${pt},${mihomoTarget}${proto}`);
+            if (r.network === 'udp') {
+              lines.push(`  - AND,((NETWORK,UDP),(DST-PORT,${pt})),${mihomoTarget}`);
+            } else if (r.network === 'tcp') {
+              lines.push(`  - AND,((NETWORK,TCP),(DST-PORT,${pt})),${mihomoTarget}`);
+            } else {
+              lines.push(`  - DST-PORT,${pt},${mihomoTarget}`);
+            }
           }
         }
       }
@@ -722,26 +768,68 @@ function detectConfigPaths() {
     }
   }
 
-  // Ensure dat symlinks for Xray and Mihomo if needed
+  ensureMihomoGeodataSymlinks();
+
+  return { outboundPath, routingPath };
+}
+
+// Ensure dat symlinks for Xray and Mihomo if needed
+function ensureMihomoGeodataSymlinks() {
   try {
     const xrayDatDir = '/opt/etc/xray/dat';
+    const xrayDir = '/opt/etc/xray';
+
+    // Xray symlinks
     if (fs.existsSync(xrayDatDir)) {
       if (!fs.existsSync(path.join(xrayDatDir, 'geoip.dat')) && fs.existsSync(path.join(xrayDatDir, 'geoip_v2fly.dat'))) {
-        fs.symlinkSync(path.join(xrayDatDir, 'geoip_v2fly.dat'), path.join(xrayDatDir, 'geoip.dat'));
+        try { fs.symlinkSync(path.join(xrayDatDir, 'geoip_v2fly.dat'), path.join(xrayDatDir, 'geoip.dat')); } catch (e) {}
       }
       if (!fs.existsSync(path.join(xrayDatDir, 'geosite.dat')) && fs.existsSync(path.join(xrayDatDir, 'geosite_v2fly.dat'))) {
-        fs.symlinkSync(path.join(xrayDatDir, 'geosite_v2fly.dat'), path.join(xrayDatDir, 'geosite.dat'));
+        try { fs.symlinkSync(path.join(xrayDatDir, 'geosite_v2fly.dat'), path.join(xrayDatDir, 'geosite.dat')); } catch (e) {}
       }
     }
+
+    // Mihomo symlinks (Mihomo expects lowercase geosite.dat and geoip.dat)
     const mihomoDir = '/opt/etc/mihomo';
-    if (fs.existsSync(mihomoDir) && fs.existsSync(path.join(xrayDatDir, 'geosite_v2fly.dat'))) {
-      if (!fs.existsSync(path.join(mihomoDir, 'GeoSite.dat'))) {
-        fs.symlinkSync(path.join(xrayDatDir, 'geosite_v2fly.dat'), path.join(mihomoDir, 'GeoSite.dat'));
+    if (!fs.existsSync(mihomoDir)) return;
+
+    const geositeCandidates = [
+      path.join(xrayDatDir, 'geosite_v2fly.dat'),
+      path.join(xrayDatDir, 'geosite.dat'),
+      path.join(xrayDir, 'geosite.dat')
+    ];
+    const geositeSrc = geositeCandidates.find(f => fs.existsSync(f));
+
+    const geoipCandidates = [
+      path.join(xrayDatDir, 'geoip_zkeenip.dat'),
+      path.join(xrayDatDir, 'geoip_v2fly.dat'),
+      path.join(xrayDatDir, 'geoip.dat'),
+      path.join(xrayDir, 'geoip.dat')
+    ];
+    const geoipSrc = geoipCandidates.find(f => fs.existsSync(f));
+
+    if (geositeSrc) {
+      for (const name of ['geosite.dat', 'GeoSite.dat']) {
+        const dest = path.join(mihomoDir, name);
+        try {
+          if (!fs.existsSync(dest)) {
+            fs.symlinkSync(geositeSrc, dest);
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (geoipSrc) {
+      for (const name of ['geoip.dat', 'GeoIP.dat']) {
+        const dest = path.join(mihomoDir, name);
+        try {
+          if (!fs.existsSync(dest)) {
+            fs.symlinkSync(geoipSrc, dest);
+          }
+        } catch (e) {}
       }
     }
   } catch (e) {}
-
-  return { outboundPath, routingPath };
 }
 
 // Helper: Detect active proxy core from S05xkeen and binaries
@@ -1969,6 +2057,18 @@ ipv6: false
 allow-lan: true
 unified-delay: true
 tcp-concurrent: true
+geodata-mode: true
+geodata-loader: memconservative
+
+sniffer:
+  enable: true
+  parse-pure-ip: true
+  override-destination: false
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+    TLS:
+      ports: [443, 8443]
 
 proxies:
 ${proxyYamlEntry}
@@ -3931,12 +4031,8 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
         console.error('Error writing mihomo config.yaml:', mErr);
       }
 
-      // Ensure GeoSite.dat exists in mihomo directory
-      try {
-        if (!fs.existsSync('/opt/etc/mihomo/GeoSite.dat') && fs.existsSync('/opt/etc/xray/dat/geosite_v2fly.dat')) {
-          fs.symlinkSync('/opt/etc/xray/dat/geosite_v2fly.dat', '/opt/etc/mihomo/GeoSite.dat');
-        }
-      } catch (e) {}
+      // Ensure geosite and geoip symlinks exist in mihomo directory
+      ensureMihomoGeodataSymlinks();
 
       // Also write Xray files as fallback
       writeTargetFile(outboundPath, conn.outboundContent);
