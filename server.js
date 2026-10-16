@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.10';
+let appVersion = '2.0.11';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -7321,6 +7321,30 @@ const server = http.createServer(async (req, res) => {
       message: 'Команда остановки службы XKeen выполнена',
       ...lastServiceStatus
     });
+  }
+
+  // GET /api/diag/logs
+  if (urlParts === '/api/diag/logs' && req.method === 'GET') {
+    const logs = {};
+    const candidateFiles = [
+      '/opt/var/log/xkeen-detached.log',
+      '/opt/var/log/xkeen-switcher.log',
+      '/opt/etc/init.d/S05xkeen'
+    ];
+    for (const f of candidateFiles) {
+      if (fs.existsSync(f)) {
+        try {
+          const content = fs.readFileSync(f, 'utf8');
+          const lines = content.split('\n');
+          logs[f] = lines.slice(-100).join('\n');
+        } catch (e) {
+          logs[f] = 'Error reading: ' + e.message;
+        }
+      } else {
+        logs[f] = 'File not found';
+      }
+    }
+    return sendJson(res, 200, logs);
   }
 
   // GET /api/settings - Get current settings
