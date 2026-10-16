@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.13';
+let appVersion = '2.0.14';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -1568,7 +1568,7 @@ function parseWireguardConfig(confText) {
   if (!normalizedText.includes('\n') && (normalizedText.includes('[Interface]') || normalizedText.includes('[Peer]'))) {
     normalizedText = normalizedText
       .replace(/\s*(\[(?:Interface|Peer)\])\s*/gi, '\n$1\n')
-      .replace(/\s*(PrivateKey|PublicKey|Address|DNS|MTU|Endpoint|AllowedIPs|PresharedKey|pre-shared-key|psk|Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4)\s*=/gi, '\n$1=');
+      .replace(/\s*(PrivateKey|PublicKey|Address|DNS|MTU|Endpoint|AllowedIPs|PresharedKey|pre-shared-key|psk|Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4|I1|I2|I3|I4|I5|ContentPaddingAddition|RekeyAfterTime|RekeyTimeout|RejectAfterTime|KeepaliveTimeout|MaxHandshakeAttempts|RandomTrailers|DisableCookies|HeaderProtectionKey|PersistentKeepalive)\s*=/gi, '\n$1=');
   }
 
   const lines = normalizedText.split(/\r?\n/).map(l => l.trim());
@@ -1618,10 +1618,24 @@ function parseWireguardConfig(confText) {
     endpointHost = endpoint.replace(/^\[|\]$/g, '');
   }
 
-  const isAwg = Boolean(iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.h1);
+  const isV3 = Boolean(
+    iface.contentpaddingaddition || iface.rekeyaftertime || iface.rekeytimeout ||
+    iface.rejectaftertime || iface.keepalivetimeout || iface.maxhandshakeattempts ||
+    iface.randomtrailers || iface.disablecookies || iface.headerprotectionkey ||
+    iface.protocol_version === '3' || iface.version === '3'
+  );
+  const isAwg = isV3 || Boolean(
+    iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.s2 || iface.h1 || iface.h2 || iface.i1
+  );
   const name = commentName || `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
   const cleanAddress = address.split(',')[0].trim();
   const psk = peer.presharedkey || peer.preshared_key || peer.psk || '';
+
+  let cleanKeepalive = undefined;
+  if (peer.persistentkeepalive) {
+    cleanKeepalive = parseInt(peer.persistentkeepalive, 10);
+    if (isNaN(cleanKeepalive) || cleanKeepalive <= 0) cleanKeepalive = 25;
+  }
 
   const outboundJsonObj = {
     outbounds: [
@@ -1639,7 +1653,7 @@ function parseWireguardConfig(confText) {
               preSharedKey: psk || undefined
             }
           ],
-          mtu: parseInt(iface.mtu, 10) || 1420
+          mtu: parseInt(iface.mtu, 10) || 1280
         }
       },
       { tag: 'direct', protocol: 'freedom' },
@@ -1654,7 +1668,7 @@ function parseWireguardConfig(confText) {
       client_priv_key: privateKey,
       server_pub_key: publicKey,
       psk: psk,
-      version: parseInt(iface.protocol_version || '2', 10),
+      version: isV3 ? 3 : parseInt(iface.protocol_version || '2', 10),
       jc: iface.jc !== undefined ? parseInt(iface.jc, 10) : undefined,
       jmin: iface.jmin !== undefined ? parseInt(iface.jmin, 10) : undefined,
       jmax: iface.jmax !== undefined ? parseInt(iface.jmax, 10) : undefined,
@@ -1671,6 +1685,17 @@ function parseWireguardConfig(confText) {
       i3: iface.i3 || undefined,
       i4: iface.i4 || undefined,
       i5: iface.i5 || undefined,
+      content_padding_addition: iface.contentpaddingaddition || undefined,
+      rekey_after_time: iface.rekeyaftertime || undefined,
+      rekey_timeout: iface.rekeytimeout || undefined,
+      reject_after_time: iface.rejectaftertime || undefined,
+      keepalive_timeout: iface.keepalivetimeout || undefined,
+      max_handshake_attempts: iface.maxhandshakeattempts || undefined,
+      random_trailers: iface.randomtrailers !== undefined ? (iface.randomtrailers.toLowerCase() === 'on' || iface.randomtrailers.toLowerCase() === 'true') : undefined,
+      disable_cookies: iface.disablecookies !== undefined ? (iface.disablecookies.toLowerCase() === 'on' || iface.disablecookies.toLowerCase() === 'true') : undefined,
+      header_protection_key: iface.headerprotectionkey || undefined,
+      persistent_keepalive: cleanKeepalive || 25,
+      mtu: parseInt(iface.mtu, 10) || 1280,
       dns: iface.dns ? iface.dns.split(',').map(s => s.trim()) : ['1.1.1.1', '1.0.0.1']
     };
   }
@@ -1950,6 +1975,54 @@ function formatAwgHeader(val) {
   return JSON.stringify(s);
 }
 
+// Helper: Build amnezia-wg-option YAML block supporting AWG 1.0, 2.0, 3.0, and 3.1
+function buildAmneziaWgOptions(am) {
+  if (!am) return '';
+  const isV3 = Boolean(
+    am.version === 3 || am.version === '3' ||
+    am.content_padding_addition || am.rekey_after_time || am.rekey_timeout ||
+    am.reject_after_time || am.keepalive_timeout || am.max_handshake_attempts ||
+    am.random_trailers !== undefined || am.disable_cookies !== undefined || am.header_protection_key
+  );
+  const isAwg = isV3 || Boolean(
+    am.jc !== undefined || am.s1 !== undefined || am.h1 || am.jmin !== undefined || am.jmax !== undefined || am.i1
+  );
+  if (!isAwg) return '';
+
+  const lines = [];
+  lines.push(`      version: ${isV3 ? 3 : (am.version || 2)}`);
+  if (am.jc !== undefined && am.jc !== '') lines.push(`      jc: ${parseInt(am.jc, 10)}`);
+  if (am.jmin !== undefined && am.jmin !== '') lines.push(`      jmin: ${parseInt(am.jmin, 10)}`);
+  if (am.jmax !== undefined && am.jmax !== '') lines.push(`      jmax: ${parseInt(am.jmax, 10)}`);
+  if (am.s1 !== undefined && am.s1 !== '') lines.push(`      s1: ${parseInt(am.s1, 10)}`);
+  if (am.s2 !== undefined && am.s2 !== '') lines.push(`      s2: ${parseInt(am.s2, 10)}`);
+  if (am.s3 !== undefined && am.s3 !== '') lines.push(`      s3: ${parseInt(am.s3, 10)}`);
+  if (am.s4 !== undefined && am.s4 !== '') lines.push(`      s4: ${parseInt(am.s4, 10)}`);
+  const h1Val = formatAwgHeader(am.h1);
+  if (h1Val !== null) lines.push(`      h1: ${h1Val}`);
+  const h2Val = formatAwgHeader(am.h2);
+  if (h2Val !== null) lines.push(`      h2: ${h2Val}`);
+  const h3Val = formatAwgHeader(am.h3);
+  if (h3Val !== null) lines.push(`      h3: ${h3Val}`);
+  const h4Val = formatAwgHeader(am.h4);
+  if (h4Val !== null) lines.push(`      h4: ${h4Val}`);
+  if (am.i1) lines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+  if (am.i2) lines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
+  if (am.i3) lines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
+  if (am.i4) lines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
+  if (am.i5) lines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
+  if (am.content_padding_addition) lines.push(`      content-padding-addition: ${JSON.stringify(String(am.content_padding_addition))}`);
+  if (am.rekey_after_time) lines.push(`      rekey-after-time: ${JSON.stringify(String(am.rekey_after_time))}`);
+  if (am.rekey_timeout) lines.push(`      rekey-timeout: ${JSON.stringify(String(am.rekey_timeout))}`);
+  if (am.reject_after_time) lines.push(`      reject-after-time: ${JSON.stringify(String(am.reject_after_time))}`);
+  if (am.keepalive_timeout) lines.push(`      keepalive-timeout: ${JSON.stringify(String(am.keepalive_timeout))}`);
+  if (am.max_handshake_attempts) lines.push(`      max-handshake-attempts: ${JSON.stringify(String(am.max_handshake_attempts))}`);
+  if (am.random_trailers !== undefined) lines.push(`      random-trailers: ${Boolean(am.random_trailers)}`);
+  if (am.disable_cookies !== undefined) lines.push(`      disable-cookies: ${Boolean(am.disable_cookies)}`);
+  if (am.header_protection_key) lines.push(`      header-protection-key: ${JSON.stringify(String(am.header_protection_key))}`);
+  return `\n    amnezia-wg-option:\n${lines.join('\n')}`;
+}
+
 // Generate Mihomo config.yaml for AmneziaWG and Hysteria 2 connections
 function generateMihomoConfig(conn, routing) {
   const isHy2 = conn.protocol === 'hysteria2' || conn.protocol === 'hy2';
@@ -2047,39 +2120,16 @@ function generateMihomoConfig(conn, routing) {
 
     if (!clientIp) clientIp = '10.8.1.2';
 
-    const isAwg = conn.protocol === 'amneziawg' || Boolean(am.jc !== undefined || am.s1 !== undefined || am.h1 || am.jmin !== undefined || am.jmax !== undefined);
-
-    let awgOptionStr = '';
-    if (isAwg) {
-      const awgOptionLines = [];
-      awgOptionLines.push(`      version: ${am.version || 2}`);
-      if (am.jc !== undefined && am.jc !== '') awgOptionLines.push(`      jc: ${parseInt(am.jc, 10)}`);
-      if (am.jmin !== undefined && am.jmin !== '') awgOptionLines.push(`      jmin: ${parseInt(am.jmin, 10)}`);
-      if (am.jmax !== undefined && am.jmax !== '') awgOptionLines.push(`      jmax: ${parseInt(am.jmax, 10)}`);
-      if (am.s1 !== undefined && am.s1 !== '') awgOptionLines.push(`      s1: ${parseInt(am.s1, 10)}`);
-      if (am.s2 !== undefined && am.s2 !== '') awgOptionLines.push(`      s2: ${parseInt(am.s2, 10)}`);
-      if (am.s3 !== undefined && am.s3 !== '') awgOptionLines.push(`      s3: ${parseInt(am.s3, 10)}`);
-      if (am.s4 !== undefined && am.s4 !== '') awgOptionLines.push(`      s4: ${parseInt(am.s4, 10)}`);
-      const h1Val = formatAwgHeader(am.h1);
-      if (h1Val !== null) awgOptionLines.push(`      h1: ${h1Val}`);
-      const h2Val = formatAwgHeader(am.h2);
-      if (h2Val !== null) awgOptionLines.push(`      h2: ${h2Val}`);
-      const h3Val = formatAwgHeader(am.h3);
-      if (h3Val !== null) awgOptionLines.push(`      h3: ${h3Val}`);
-      const h4Val = formatAwgHeader(am.h4);
-      if (h4Val !== null) awgOptionLines.push(`      h4: ${h4Val}`);
-      if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
-      if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
-      if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
-      if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
-      if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
-      awgOptionStr = `\n    amnezia-wg-option:\n${awgOptionLines.join('\n')}`;
-    }
+    const awgOptionStr = buildAmneziaWgOptions(am);
 
     const dnsList = (Array.isArray(am.dns) && am.dns.length > 0)
       ? am.dns
       : ['1.1.1.1', '1.0.0.1'];
     const dnsYaml = dnsList.map(d => `      - ${d}`).join('\n');
+
+    const keepaliveVal = parseInt(am.persistent_keepalive || am.persistentKeepalive || conn.persistentKeepalive, 10) || 25;
+    const mtuVal = parseInt(am.mtu || conn.mtu, 10);
+    const mtuLine = (!isNaN(mtuVal) && mtuVal > 0) ? `\n    mtu: ${mtuVal}` : '';
 
     proxyYamlEntry = `  - name: ${JSON.stringify(connName)}
     type: wireguard
@@ -2091,10 +2141,11 @@ function generateMihomoConfig(conn, routing) {
 ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    allowed-ips:
       - 0.0.0.0/0
       - "::/0"
+    persistent-keepalive: ${keepaliveVal}
     udp: true
     remote-dns-resolve: true
     dns:
-${dnsYaml}${awgOptionStr}`;
+${dnsYaml}${mtuLine}${awgOptionStr}`;
   }
 
   let rulesYaml = '';
@@ -2844,34 +2895,10 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
 
     if (!clientIp) clientIp = '10.8.1.2';
 
-    const isAwg = conn.protocol === 'amneziawg' || Boolean(am.jc !== undefined || am.s1 !== undefined || am.h1 || am.jmin !== undefined || am.jmax !== undefined);
-
-    let awgOptionStr = '';
-    if (isAwg) {
-      const awgOptionLines = [];
-      awgOptionLines.push(`      version: ${am.version || 2}`);
-      if (am.jc !== undefined && am.jc !== '') awgOptionLines.push(`      jc: ${parseInt(am.jc, 10)}`);
-      if (am.jmin !== undefined && am.jmin !== '') awgOptionLines.push(`      jmin: ${parseInt(am.jmin, 10)}`);
-      if (am.jmax !== undefined && am.jmax !== '') awgOptionLines.push(`      jmax: ${parseInt(am.jmax, 10)}`);
-      if (am.s1 !== undefined && am.s1 !== '') awgOptionLines.push(`      s1: ${parseInt(am.s1, 10)}`);
-      if (am.s2 !== undefined && am.s2 !== '') awgOptionLines.push(`      s2: ${parseInt(am.s2, 10)}`);
-      if (am.s3 !== undefined && am.s3 !== '') awgOptionLines.push(`      s3: ${parseInt(am.s3, 10)}`);
-      if (am.s4 !== undefined && am.s4 !== '') awgOptionLines.push(`      s4: ${parseInt(am.s4, 10)}`);
-      const h1Val = formatAwgHeader(am.h1);
-      if (h1Val !== null) awgOptionLines.push(`      h1: ${h1Val}`);
-      const h2Val = formatAwgHeader(am.h2);
-      if (h2Val !== null) awgOptionLines.push(`      h2: ${h2Val}`);
-      const h3Val = formatAwgHeader(am.h3);
-      if (h3Val !== null) awgOptionLines.push(`      h3: ${h3Val}`);
-      const h4Val = formatAwgHeader(am.h4);
-      if (h4Val !== null) awgOptionLines.push(`      h4: ${h4Val}`);
-      if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
-      if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
-      if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
-      if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
-      if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
-      awgOptionStr = `\n    amnezia-wg-option:\n${awgOptionLines.join('\n')}`;
-    }
+    const awgOptionStr = buildAmneziaWgOptions(am);
+    const keepaliveVal = parseInt(am.persistent_keepalive || am.persistentKeepalive || conn.persistentKeepalive, 10) || 25;
+    const mtuVal = parseInt(am.mtu || conn.mtu, 10);
+    const mtuLine = (!isNaN(mtuVal) && mtuVal > 0) ? `\n    mtu: ${mtuVal}` : '';
 
     const yaml = `port: ${testPort}
 mode: rule
@@ -2884,11 +2911,12 @@ proxies:
     ip: ${JSON.stringify(clientIp)}
     public-key: ${JSON.stringify(serverPubKey)}
     private-key: ${JSON.stringify(clientPrivKey)}
-${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
+${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    allowed-ips: ['0.0.0.0/0', '::/0']
+    persistent-keepalive: ${keepaliveVal}
+    udp: true
     remote-dns-resolve: true
     dns:
-      - 1.1.1.1
-    allowed-ips: ['0.0.0.0/0', '::/0']${awgOptionStr}
+      - 1.1.1.1${mtuLine}${awgOptionStr}
 rules:
   - MATCH,test-proxy
 `;
