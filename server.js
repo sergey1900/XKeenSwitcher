@@ -519,13 +519,10 @@ function compileMihomoRules(cfg) {
 
   // 6. BitTorrent
   if (cfg.bittorrent === 'block') {
-    lines.push('  - GEOSITE,torrent,REJECT');
     lines.push('  - DST-PORT,6881-6889,REJECT');
   } else if (cfg.bittorrent === 'direct') {
-    lines.push('  - GEOSITE,torrent,DIRECT');
     lines.push('  - DST-PORT,6881-6889,DIRECT');
   } else if (cfg.bittorrent === 'proxy') {
-    lines.push('  - GEOSITE,torrent,PROXY');
     lines.push('  - DST-PORT,6881-6889,PROXY');
   }
 
@@ -602,7 +599,6 @@ function parseRawXrayToMihomoRules(rawJson) {
       else mihomoTarget = 'PROXY';
 
       if (Array.isArray(r.protocol) && r.protocol.includes('bittorrent')) {
-        lines.push(`  - GEOSITE,torrent,${mihomoTarget}`);
         lines.push(`  - DST-PORT,6881-6889,${mihomoTarget}`);
       }
 
