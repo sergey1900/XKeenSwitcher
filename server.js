@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.6';
+let appVersion = '2.0.7';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -1920,6 +1920,15 @@ function formatAwgHeader(val) {
   if (val === undefined || val === null || val === '') return null;
   const s = String(val).trim();
   if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (rangeMatch) {
+    const min = parseInt(rangeMatch[1], 10);
+    const max = parseInt(rangeMatch[2], 10);
+    if (!isNaN(min) && !isNaN(max) && max >= min) {
+      return min + Math.floor(Math.random() * (max - min + 1));
+    }
+    return min;
+  }
   return JSON.stringify(s);
 }
 
