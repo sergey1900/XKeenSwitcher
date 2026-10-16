@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.3';
+let appVersion = '2.0.4';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -778,6 +778,8 @@ function ensureMihomoGeodataSymlinks() {
   try {
     const xrayDatDir = '/opt/etc/xray/dat';
     const xrayDir = '/opt/etc/xray';
+    const sbinDir = '/opt/sbin';
+    const shareDir = '/opt/share/xray';
 
     // Xray symlinks
     if (fs.existsSync(xrayDatDir)) {
@@ -789,14 +791,19 @@ function ensureMihomoGeodataSymlinks() {
       }
     }
 
-    // Mihomo symlinks (Mihomo expects lowercase geosite.dat and geoip.dat)
+    // Ensure mihomo directory exists
     const mihomoDir = '/opt/etc/mihomo';
-    if (!fs.existsSync(mihomoDir)) return;
+    if (!fs.existsSync(mihomoDir)) {
+      try { fs.mkdirSync(mihomoDir, { recursive: true }); } catch (e) {}
+    }
 
     const geositeCandidates = [
       path.join(xrayDatDir, 'geosite_v2fly.dat'),
       path.join(xrayDatDir, 'geosite.dat'),
-      path.join(xrayDir, 'geosite.dat')
+      path.join(xrayDir, 'geosite.dat'),
+      path.join(sbinDir, 'geosite_v2fly.dat'),
+      path.join(sbinDir, 'geosite.dat'),
+      path.join(shareDir, 'geosite.dat')
     ];
     const geositeSrc = geositeCandidates.find(f => fs.existsSync(f));
 
@@ -804,32 +811,43 @@ function ensureMihomoGeodataSymlinks() {
       path.join(xrayDatDir, 'geoip_zkeenip.dat'),
       path.join(xrayDatDir, 'geoip_v2fly.dat'),
       path.join(xrayDatDir, 'geoip.dat'),
-      path.join(xrayDir, 'geoip.dat')
+      path.join(xrayDir, 'geoip.dat'),
+      path.join(sbinDir, 'geoip_zkeenip.dat'),
+      path.join(sbinDir, 'geoip_v2fly.dat'),
+      path.join(sbinDir, 'geoip.dat'),
+      path.join(shareDir, 'geoip.dat')
     ];
     const geoipSrc = geoipCandidates.find(f => fs.existsSync(f));
 
+    const safeSymlink = (src, dest) => {
+      try {
+        try {
+          const stat = fs.lstatSync(dest);
+          if (stat) fs.unlinkSync(dest);
+        } catch (err) {}
+        fs.symlinkSync(src, dest);
+      } catch (e) {}
+    };
+
     if (geositeSrc) {
       for (const name of ['geosite.dat', 'GeoSite.dat']) {
-        const dest = path.join(mihomoDir, name);
-        try {
-          if (!fs.existsSync(dest)) {
-            fs.symlinkSync(geositeSrc, dest);
-          }
-        } catch (e) {}
+        safeSymlink(geositeSrc, path.join(mihomoDir, name));
       }
     }
 
     if (geoipSrc) {
       for (const name of ['geoip.dat', 'GeoIP.dat']) {
-        const dest = path.join(mihomoDir, name);
-        try {
-          if (!fs.existsSync(dest)) {
-            fs.symlinkSync(geoipSrc, dest);
-          }
-        } catch (e) {}
+        safeSymlink(geoipSrc, path.join(mihomoDir, name));
       }
     }
-  } catch (e) {}
+
+    return {
+      hasGeosite: Boolean(geositeSrc || fs.existsSync(path.join(mihomoDir, 'geosite.dat'))),
+      hasGeoip: Boolean(geoipSrc || fs.existsSync(path.join(mihomoDir, 'geoip.dat')))
+    };
+  } catch (e) {
+    return { hasGeosite: false, hasGeoip: false };
+  }
 }
 
 // Helper: Detect active proxy core from S05xkeen and binaries
@@ -846,8 +864,20 @@ function detectActiveProxyCore() {
       }
     } catch (e) {}
   }
-  const hasXray = fs.existsSync('/opt/sbin/xray') || fs.existsSync('/opt/bin/xray');
-  const hasMihomo = fs.existsSync('/opt/sbin/mihomo') || fs.existsSync('/opt/bin/mihomo');
+  let hasXray = fs.existsSync('/opt/sbin/xray') || fs.existsSync('/opt/bin/xray') || fs.existsSync('/usr/sbin/xray') || fs.existsSync('/usr/bin/xray');
+  let hasMihomo = fs.existsSync('/opt/sbin/mihomo') || fs.existsSync('/opt/bin/mihomo') || fs.existsSync('/usr/sbin/mihomo') || fs.existsSync('/usr/bin/mihomo') || fs.existsSync('/usr/local/bin/mihomo');
+  if (!hasMihomo) {
+    try {
+      const whichRes = execSync('which mihomo 2>/dev/null', { timeout: 1000 }).toString().trim();
+      if (whichRes && fs.existsSync(whichRes)) hasMihomo = true;
+    } catch (e) {}
+  }
+  if (!hasXray) {
+    try {
+      const whichRes = execSync('which xray 2>/dev/null', { timeout: 1000 }).toString().trim();
+      if (whichRes && fs.existsSync(whichRes)) hasXray = true;
+    } catch (e) {}
+  }
   return {
     activeCore,
     hasXray,
@@ -1885,6 +1915,14 @@ function safeDecodeUriMulti(str) {
   return cur;
 }
 
+// Helper: Format AWG header values (emit numbers as integers, non-numeric strings as JSON string)
+function formatAwgHeader(val) {
+  if (val === undefined || val === null || val === '') return null;
+  const s = String(val).trim();
+  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  return JSON.stringify(s);
+}
+
 // Generate Mihomo config.yaml for AmneziaWG and Hysteria 2 connections
 function generateMihomoConfig(conn, routing) {
   const isHy2 = conn.protocol === 'hysteria2' || conn.protocol === 'hy2';
@@ -1988,17 +2026,21 @@ function generateMihomoConfig(conn, routing) {
     if (isAwg) {
       const awgOptionLines = [];
       awgOptionLines.push(`      version: ${am.version || 2}`);
-      if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
-      if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
-      if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
-      if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
-      if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
-      if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
-      if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
-      if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
-      if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
-      if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
-      if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+      if (am.jc !== undefined && am.jc !== '') awgOptionLines.push(`      jc: ${parseInt(am.jc, 10)}`);
+      if (am.jmin !== undefined && am.jmin !== '') awgOptionLines.push(`      jmin: ${parseInt(am.jmin, 10)}`);
+      if (am.jmax !== undefined && am.jmax !== '') awgOptionLines.push(`      jmax: ${parseInt(am.jmax, 10)}`);
+      if (am.s1 !== undefined && am.s1 !== '') awgOptionLines.push(`      s1: ${parseInt(am.s1, 10)}`);
+      if (am.s2 !== undefined && am.s2 !== '') awgOptionLines.push(`      s2: ${parseInt(am.s2, 10)}`);
+      if (am.s3 !== undefined && am.s3 !== '') awgOptionLines.push(`      s3: ${parseInt(am.s3, 10)}`);
+      if (am.s4 !== undefined && am.s4 !== '') awgOptionLines.push(`      s4: ${parseInt(am.s4, 10)}`);
+      const h1Val = formatAwgHeader(am.h1);
+      if (h1Val !== null) awgOptionLines.push(`      h1: ${h1Val}`);
+      const h2Val = formatAwgHeader(am.h2);
+      if (h2Val !== null) awgOptionLines.push(`      h2: ${h2Val}`);
+      const h3Val = formatAwgHeader(am.h3);
+      if (h3Val !== null) awgOptionLines.push(`      h3: ${h3Val}`);
+      const h4Val = formatAwgHeader(am.h4);
+      if (h4Val !== null) awgOptionLines.push(`      h4: ${h4Val}`);
       if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
       if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
       if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
@@ -2007,18 +2049,25 @@ function generateMihomoConfig(conn, routing) {
       awgOptionStr = `\n    amnezia-wg-option:\n${awgOptionLines.join('\n')}`;
     }
 
+    const dnsList = (Array.isArray(am.dns) && am.dns.length > 0)
+      ? am.dns
+      : ['1.1.1.1', '1.0.0.1'];
+    const dnsYaml = dnsList.map(d => `      - ${d}`).join('\n');
+
     proxyYamlEntry = `  - name: ${JSON.stringify(connName)}
     type: wireguard
-    server: ${host}
-    port: ${port}
-    ip: ${clientIp}
+    server: ${JSON.stringify(String(host))}
+    port: ${parseInt(port, 10) || 51820}
+    ip: ${JSON.stringify(String(clientIp))}
     public-key: ${JSON.stringify(serverPubKey)}
     private-key: ${JSON.stringify(clientPrivKey)}
-${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
+${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    allowed-ips:
+      - 0.0.0.0/0
+      - "::/0"
+    udp: true
     remote-dns-resolve: true
     dns:
-      - 1.1.1.1
-      - 1.0.0.1${awgOptionStr}`;
+${dnsYaml}${awgOptionStr}`;
   }
 
   let rulesYaml = '';
@@ -2046,10 +2095,15 @@ ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
     rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
   }
 
+  const geodataStatus = ensureMihomoGeodataSymlinks();
+  const geodataHeader = (geodataStatus.hasGeosite || geodataStatus.hasGeoip)
+    ? 'geodata-mode: true\ngeodata-loader: memconservative\n'
+    : '';
+
   const yamlContent = `# Generated by XKeenSwitcher for ${connName}
 mixed-port: 7890
-tproxy-port: 1181
-redir-port: 1182
+tproxy-port: 5001
+redir-port: 5000
 routing-mark: 255
 mode: rule
 log-level: info
@@ -2057,9 +2111,7 @@ ipv6: false
 allow-lan: true
 unified-delay: true
 tcp-concurrent: true
-geodata-mode: true
-geodata-loader: memconservative
-
+${geodataHeader}
 sniffer:
   enable: true
   parse-pure-ip: true
@@ -2771,36 +2823,45 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
     if (isAwg) {
       const awgOptionLines = [];
       awgOptionLines.push(`      version: ${am.version || 2}`);
-      if (am.jc !== undefined) awgOptionLines.push(`      jc: ${am.jc}`);
-      if (am.jmin !== undefined) awgOptionLines.push(`      jmin: ${am.jmin}`);
-      if (am.jmax !== undefined) awgOptionLines.push(`      jmax: ${am.jmax}`);
-      if (am.s1 !== undefined) awgOptionLines.push(`      s1: ${am.s1}`);
-      if (am.s2 !== undefined) awgOptionLines.push(`      s2: ${am.s2}`);
-      if (am.s3 !== undefined) awgOptionLines.push(`      s3: ${am.s3}`);
-      if (am.s4 !== undefined) awgOptionLines.push(`      s4: ${am.s4}`);
-      if (am.h1) awgOptionLines.push(`      h1: ${JSON.stringify(String(am.h1))}`);
-      if (am.h2) awgOptionLines.push(`      h2: ${JSON.stringify(String(am.h2))}`);
-      if (am.h3) awgOptionLines.push(`      h3: ${JSON.stringify(String(am.h3))}`);
-      if (am.h4) awgOptionLines.push(`      h4: ${JSON.stringify(String(am.h4))}`);
+      if (am.jc !== undefined && am.jc !== '') awgOptionLines.push(`      jc: ${parseInt(am.jc, 10)}`);
+      if (am.jmin !== undefined && am.jmin !== '') awgOptionLines.push(`      jmin: ${parseInt(am.jmin, 10)}`);
+      if (am.jmax !== undefined && am.jmax !== '') awgOptionLines.push(`      jmax: ${parseInt(am.jmax, 10)}`);
+      if (am.s1 !== undefined && am.s1 !== '') awgOptionLines.push(`      s1: ${parseInt(am.s1, 10)}`);
+      if (am.s2 !== undefined && am.s2 !== '') awgOptionLines.push(`      s2: ${parseInt(am.s2, 10)}`);
+      if (am.s3 !== undefined && am.s3 !== '') awgOptionLines.push(`      s3: ${parseInt(am.s3, 10)}`);
+      if (am.s4 !== undefined && am.s4 !== '') awgOptionLines.push(`      s4: ${parseInt(am.s4, 10)}`);
+      const h1Val = formatAwgHeader(am.h1);
+      if (h1Val !== null) awgOptionLines.push(`      h1: ${h1Val}`);
+      const h2Val = formatAwgHeader(am.h2);
+      if (h2Val !== null) awgOptionLines.push(`      h2: ${h2Val}`);
+      const h3Val = formatAwgHeader(am.h3);
+      if (h3Val !== null) awgOptionLines.push(`      h3: ${h3Val}`);
+      const h4Val = formatAwgHeader(am.h4);
+      if (h4Val !== null) awgOptionLines.push(`      h4: ${h4Val}`);
       if (am.i1) awgOptionLines.push(`      i1: ${JSON.stringify(String(am.i1))}`);
+      if (am.i2) awgOptionLines.push(`      i2: ${JSON.stringify(String(am.i2))}`);
+      if (am.i3) awgOptionLines.push(`      i3: ${JSON.stringify(String(am.i3))}`);
+      if (am.i4) awgOptionLines.push(`      i4: ${JSON.stringify(String(am.i4))}`);
+      if (am.i5) awgOptionLines.push(`      i5: ${JSON.stringify(String(am.i5))}`);
       awgOptionStr = `\n    amnezia-wg-option:\n${awgOptionLines.join('\n')}`;
     }
 
     const yaml = `port: ${testPort}
-mode: direct
+mode: rule
 log-level: silent
 proxies:
   - name: test-proxy
     type: wireguard
-    server: ${host}
+    server: ${JSON.stringify(host)}
     port: ${port}
-    ip: ${clientIp}
+    ip: ${JSON.stringify(clientIp)}
     public-key: ${JSON.stringify(serverPubKey)}
     private-key: ${JSON.stringify(clientPrivKey)}
 ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    udp: true
     remote-dns-resolve: true
     dns:
-      - 1.1.1.1${awgOptionStr}
+      - 1.1.1.1
+    allowed-ips: ['0.0.0.0/0', '::/0']${awgOptionStr}
 rules:
   - MATCH,test-proxy
 `;
@@ -4021,7 +4082,19 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
 
   try {
     if (isMihomoRequired) {
-      // 1. Generate & write Mihomo configuration for AmneziaWG / Hysteria 2
+      // 1. Switch core to Mihomo if not already active (stop previous core first to release ports)
+      if (coreInfo.activeCore !== 'mihomo' && coreInfo.hasMihomo) {
+        try { await runShellCommand('xkeen -stop'); } catch (e) {}
+        await runShellCommand('xkeen -mihomo');
+        coreSwitched = true;
+        targetCore = 'mihomo';
+      }
+
+      // Ensure geosite and geoip symlinks exist in mihomo directory
+      ensureMihomoGeodataSymlinks();
+
+      // 2. Generate & write Mihomo configuration for AmneziaWG / Hysteria 2
+      // Must be written AFTER xkeen -mihomo so XKeen template doesn't overwrite it
       const mihomoYaml = generateMihomoConfig(conn, routing);
       const mihomoConfigPath = '/opt/etc/mihomo/config.yaml';
       try {
@@ -4031,34 +4104,25 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
         console.error('Error writing mihomo config.yaml:', mErr);
       }
 
-      // Ensure geosite and geoip symlinks exist in mihomo directory
-      ensureMihomoGeodataSymlinks();
-
       // Also write Xray files as fallback
       writeTargetFile(outboundPath, conn.outboundContent);
       fileWriteStatus.outbound = true;
       writeTargetFile(routingPath, compileRoutingForXray(routing, conn));
       fileWriteStatus.routing = true;
-
-      // 2. Switch core to Mihomo if not already active
-      if (coreInfo.activeCore !== 'mihomo' && coreInfo.hasMihomo) {
-        await runShellCommand('xkeen -mihomo');
-        coreSwitched = true;
-        targetCore = 'mihomo';
-      }
     } else {
+      // Switch back to Xray if currently on Mihomo
+      if (coreInfo.activeCore === 'mihomo' && coreInfo.hasXray) {
+        try { await runShellCommand('xkeen -stop'); } catch (e) {}
+        await runShellCommand('xkeen -xray');
+        coreSwitched = true;
+        targetCore = 'xray';
+      }
+
       // Standard connection: write Xray files
       writeTargetFile(outboundPath, conn.outboundContent);
       fileWriteStatus.outbound = true;
       writeTargetFile(routingPath, compileRoutingForXray(routing, conn));
       fileWriteStatus.routing = true;
-
-      // Switch back to Xray if currently on Mihomo
-      if (coreInfo.activeCore === 'mihomo' && coreInfo.hasXray) {
-        await runShellCommand('xkeen -xray');
-        coreSwitched = true;
-        targetCore = 'xray';
-      }
     }
   } catch (err) {
     console.error('File write error during activation:', err);
@@ -6948,29 +7012,6 @@ const server = http.createServer(async (req, res) => {
 
   // --- SERVICE CONTROL ROUTES ---
 
-  // Helper: Detect active proxy core from S05xkeen and binaries
-  function detectActiveProxyCore() {
-    let activeCore = 'xray';
-    const initdPath = '/opt/etc/init.d/S05xkeen';
-    if (fs.existsSync(initdPath)) {
-      try {
-        const content = fs.readFileSync(initdPath, 'utf8');
-        if (/name_client="mihomo"/.test(content)) {
-          activeCore = 'mihomo';
-        } else if (/name_client="xray"/.test(content)) {
-          activeCore = 'xray';
-        }
-      } catch (e) {}
-    }
-    const hasXray = fs.existsSync('/opt/sbin/xray') || fs.existsSync('/opt/bin/xray');
-    const hasMihomo = fs.existsSync('/opt/sbin/mihomo') || fs.existsSync('/opt/bin/mihomo');
-    return {
-      activeCore,
-      hasXray,
-      hasMihomo
-    };
-  }
-
   // GET /api/service/status
   if (urlParts === '/api/service/status' && req.method === 'GET') {
     const data = loadData();
@@ -7012,8 +7053,26 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'Ядро Xray не установлено на роутере' });
       }
 
+      if (coreInfo.activeCore !== targetCore) {
+        try { await runShellCommand('xkeen -stop'); } catch (e) {}
+      }
+
       const switchCmd = targetCore === 'mihomo' ? 'xkeen -mihomo' : 'xkeen -xray';
       const switchRes = await runShellCommand(switchCmd);
+
+      if (targetCore === 'mihomo') {
+        ensureMihomoGeodataSymlinks();
+        const data = loadData();
+        if (data.settings && data.settings.activeConnectionId) {
+          const actConn = (data.connections || []).find(c => c.id === data.settings.activeConnectionId);
+          if (actConn) {
+            let actRouting = (data.routings || []).find(r => r.id === actConn.routingId) || SYSTEM_ROUTING_ALL_VPN;
+            try {
+              writeTargetFile('/opt/etc/mihomo/config.yaml', generateMihomoConfig(actConn, actRouting));
+            } catch (e) {}
+          }
+        }
+      }
 
       // Restart service to apply core switch
       await runShellCommand('xkeen -restart');
