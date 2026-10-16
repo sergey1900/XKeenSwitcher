@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.5';
+let appVersion = '2.0.6';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -125,9 +125,7 @@ const SYSTEM_ROUTING_EXCEPT_RU = {
             'tproxy'
           ],
           outboundTag: 'direct',
-          protocol: [
-            'bittorrent'
-          ]
+          port: '6881-6889'
         },
         {
           type: 'field',
@@ -297,21 +295,21 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'block',
-      protocol: ['bittorrent']
+      port: '6881-6889'
     });
   } else if (cfg.bittorrent === 'direct') {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'direct',
-      protocol: ['bittorrent']
+      port: '6881-6889'
     });
   } else if (cfg.bittorrent === 'proxy') {
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: proxyTag,
-      protocol: ['bittorrent']
+      port: '6881-6889'
     });
   }
 
@@ -677,6 +675,12 @@ function compileRoutingForXray(routing, conn) {
         for (const r of parsed.routing.rules) {
           if (r.outboundTag && r.outboundTag !== 'direct' && r.outboundTag !== 'block') {
             r.outboundTag = proxyTag;
+            changed = true;
+          }
+          if (Array.isArray(r.protocol) && r.protocol.includes('bittorrent')) {
+            r.protocol = r.protocol.filter(p => p !== 'bittorrent');
+            if (r.protocol.length === 0) delete r.protocol;
+            if (!r.port) r.port = '6881-6889';
             changed = true;
           }
         }
@@ -3967,6 +3971,13 @@ function loadData() {
       const userRoutings = data.routings.filter(r => !r.isSystem && r.id !== 'routing_all_vpn' && r.id !== 'routing_except_ru');
       data.routings = [...userRoutings, sysAllVpn, sysExceptRu];
 
+      // Sanitize legacy bittorrent protocol to prevent XKeen from generating fatal GEOSITE,torrent in Mihomo
+      for (const r of data.routings) {
+        if (r.content && r.content.includes('"bittorrent"')) {
+          r.content = r.content.replace(/"protocol":\s*\[\s*"bittorrent"\s*\]/g, '"port": "6881-6889"');
+        }
+      }
+
       // Load Connections
       if (Array.isArray(parsed.connections) && parsed.connections.length > 0) {
         data.connections = parsed.connections.map(c => {
@@ -4133,6 +4144,17 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
   restartStatus.executed = true;
   restartStatus.output = resCmd.stdout;
   restartStatus.error = resCmd.stderr || resCmd.error || '';
+
+  // If Mihomo was required, re-apply config.yaml AFTER xkeen -restart to ensure
+  // our AWG proxies and rule parameters are never clobbered by XKeen restart hooks
+  if (isMihomoRequired) {
+    try {
+      const mihomoConfigPath = '/opt/etc/mihomo/config.yaml';
+      const mihomoYaml = generateMihomoConfig(conn, routing);
+      writeTargetFile(mihomoConfigPath, mihomoYaml);
+      await runShellCommand('/opt/etc/init.d/S05xkeen restart').catch(() => {});
+    } catch (e) {}
+  }
 
   const computedStatus = evaluateServiceStatus(resCmd);
   const updatedCoreInfo = detectActiveProxyCore();
