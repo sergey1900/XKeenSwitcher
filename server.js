@@ -1841,9 +1841,9 @@ function parseAmneziaVpnUrl(cleanStr) {
 
   const containers = data.containers || [];
   const defaultContainer = data.defaultContainer || '';
-  let targetContainer = containers.find(c => c.container === defaultContainer) || containers[0];
+  let targetContainer = containers.find(c => c.container === defaultContainer);
   if (!targetContainer && containers.length > 0) {
-    targetContainer = containers[0];
+    targetContainer = containers.find(c => c.container && (c.container.includes('awg') || c.container.includes('wireguard'))) || containers[0];
   }
 
   if (!targetContainer) {
@@ -1852,6 +1852,27 @@ function parseAmneziaVpnUrl(cleanStr) {
 
   const awg = targetContainer.awg || targetContainer.wireguard;
   if (!awg) {
+    if (targetContainer.shadowsocks || targetContainer.container === 'amnezia-shadowsocks') {
+      const ss = targetContainer.shadowsocks || {};
+      const ssHost = ss.server_ip || data.hostName || '';
+      const ssPort = parseInt(ss.port, 10) || 443;
+      const cipher = ss.cipher_type || 'chacha20-ietf-poly1305';
+      const password = ss.client_password || ss.password || '';
+      if (ssHost && password) {
+        const userInfo = Buffer.from(`${cipher}:${password}`).toString('base64');
+        const tag = encodeURIComponent(data.description || `Shadowsocks - ${ssHost}`);
+        return parseShadowsocksUrl(`ss://${userInfo}@${ssHost}:${ssPort}#${tag}`);
+      }
+    }
+    if (targetContainer.xray || targetContainer.container === 'amnezia-xray') {
+      const xray = targetContainer.xray || {};
+      if (xray.last_config && typeof xray.last_config === 'string') {
+        const trimmed = xray.last_config.trim();
+        if (trimmed.startsWith('vless://') || trimmed.startsWith('vmess://')) {
+          return parseProxyUrl(trimmed);
+        }
+      }
+    }
     throw new Error(`Контейнер ${targetContainer.container || 'неизвестный'} пока не поддерживается`);
   }
 
@@ -1862,6 +1883,39 @@ function parseAmneziaVpnUrl(cleanStr) {
         ? JSON.parse(awg.last_config)
         : null;
     } catch (e) {}
+  }
+
+  // 1. Check if lastConfig or awg contains raw Wireguard/Amnezia config text ([Interface] ... [Peer])
+  let rawConfText = null;
+  if (lastConfig && typeof lastConfig.config === 'string' && (lastConfig.config.includes('[Interface]') || lastConfig.config.includes('[Peer]'))) {
+    rawConfText = lastConfig.config;
+  } else if (typeof awg.last_config === 'string' && (awg.last_config.includes('[Interface]') || awg.last_config.includes('[Peer]'))) {
+    rawConfText = awg.last_config;
+  } else if (typeof awg.config === 'string' && (awg.config.includes('[Interface]') || awg.config.includes('[Peer]'))) {
+    rawConfText = awg.config;
+  }
+
+  if (rawConfText) {
+    // If endpoint is missing from rawConfText, inject it if host is available
+    if (!rawConfText.toLowerCase().includes('endpoint =') && !rawConfText.toLowerCase().includes('endpoint=')) {
+      const epHost = awg.hostName || (lastConfig && lastConfig.hostName) || awg.server_ip || awg.ip || data.hostName || '';
+      const epPort = parseInt(awg.port || (lastConfig && lastConfig.port), 10) || 51820;
+      if (epHost) {
+        if (rawConfText.includes('[Peer]')) {
+          rawConfText = rawConfText.replace(/\[Peer\]/i, `[Peer]\nEndpoint = ${epHost}:${epPort}`);
+        } else {
+          rawConfText += `\n[Peer]\nEndpoint = ${epHost}:${epPort}\n`;
+        }
+      }
+    }
+    const parsed = parseWireguardConfig(rawConfText);
+    if (data.description && (!parsed.name || parsed.name.startsWith('AmneziaWG') || parsed.name.startsWith('WireGuard'))) {
+      parsed.name = data.description;
+    }
+    if (parsed.amneziaConfig && (!parsed.amneziaConfig.dns || parsed.amneziaConfig.dns.length === 0)) {
+      parsed.amneziaConfig.dns = [data.dns1 || '1.1.1.1', data.dns2 || '1.0.0.1'].filter(Boolean);
+    }
+    return parsed;
   }
 
   const host = awg.hostName || (lastConfig && lastConfig.hostName) || awg.server_ip || awg.ip || data.hostName || '';
@@ -1886,12 +1940,16 @@ function parseAmneziaVpnUrl(cleanStr) {
 
   const connName = data.description || (host ? `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${host}` : `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${port}`);
 
+  const rawProtoVer = String(awg.protocol_version || (lastConfig && lastConfig.protocol_version) || '2');
+  let verNum = parseInt(rawProtoVer, 10);
+  if (isNaN(verNum)) verNum = 2;
+
   const amneziaParams = {
     client_ip: clientIp,
     client_priv_key: clientPrivKey,
     server_pub_key: serverPubKey,
     psk: psk,
-    version: parseInt(awg.protocol_version || (lastConfig && lastConfig.protocol_version) || '2', 10),
+    version: verNum,
     jc: (awg.Jc !== undefined ? parseInt(awg.Jc, 10) : (lastConfig && lastConfig.Jc !== undefined ? parseInt(lastConfig.Jc, 10) : 4)),
     jmin: (awg.Jmin !== undefined ? parseInt(awg.Jmin, 10) : (lastConfig && lastConfig.Jmin !== undefined ? parseInt(lastConfig.Jmin, 10) : 40)),
     jmax: (awg.Jmax !== undefined ? parseInt(awg.Jmax, 10) : (lastConfig && lastConfig.Jmax !== undefined ? parseInt(lastConfig.Jmax, 10) : 70)),
@@ -1908,8 +1966,23 @@ function parseAmneziaVpnUrl(cleanStr) {
     i3: awg.I3 || (lastConfig && lastConfig.I3) || undefined,
     i4: awg.I4 || (lastConfig && lastConfig.I4) || undefined,
     i5: awg.I5 || (lastConfig && lastConfig.I5) || undefined,
+    content_padding_addition: awg.ContentPaddingAddition || (lastConfig && lastConfig.ContentPaddingAddition) || undefined,
+    rekey_after_time: awg.RekeyAfterTime || (lastConfig && lastConfig.RekeyAfterTime) || undefined,
+    rekey_timeout: awg.RekeyTimeout || (lastConfig && lastConfig.RekeyTimeout) || undefined,
+    reject_after_time: awg.RejectAfterTime || (lastConfig && lastConfig.RejectAfterTime) || undefined,
+    keepalive_timeout: awg.KeepaliveTimeout || (lastConfig && lastConfig.KeepaliveTimeout) || undefined,
+    max_handshake_attempts: awg.MaxHandshakeAttempts || (lastConfig && lastConfig.MaxHandshakeAttempts) || undefined,
+    random_trailers: awg.RandomTrailers !== undefined ? (awg.RandomTrailers === 'on' || awg.RandomTrailers === true) : (lastConfig && lastConfig.RandomTrailers !== undefined ? (lastConfig.RandomTrailers === 'on' || lastConfig.RandomTrailers === true) : undefined),
+    disable_cookies: awg.DisableCookies !== undefined ? (awg.DisableCookies === 'on' || awg.DisableCookies === true) : (lastConfig && lastConfig.DisableCookies !== undefined ? (lastConfig.DisableCookies === 'on' || lastConfig.DisableCookies === true) : undefined),
+    header_protection_key: awg.HeaderProtectionKey || (lastConfig && lastConfig.HeaderProtectionKey) || undefined,
+    persistent_keepalive: parseInt(awg.PersistentKeepalive || (lastConfig && lastConfig.PersistentKeepalive) || '25', 10) || 25,
+    mtu: parseInt(awg.mtu || (lastConfig && lastConfig.mtu) || '1280', 10) || 1280,
     dns: [data.dns1 || '1.1.1.1', data.dns2 || '1.0.0.1'].filter(Boolean)
   };
+
+  if (rawProtoVer.startsWith('3') || amneziaParams.content_padding_addition || amneziaParams.rekey_after_time || amneziaParams.random_trailers !== undefined || amneziaParams.disable_cookies !== undefined) {
+    amneziaParams.version = 3;
+  }
 
   const outboundJsonObj = {
     outbounds: [
