@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.11';
+let appVersion = '2.0.12';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -41,9 +41,10 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT', 'exit'].forEach(sig => {
+['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT'].forEach(sig => {
   process.on(sig, (code) => {
-    console.log(`[PROCESS EVENT] Received ${sig}, code/arg: ${code}`);
+    console.log(`[PROCESS EVENT] Received ${sig}, code/arg: ${code}. Exiting cleanly...`);
+    process.exit(0);
   });
 });
 
@@ -5196,6 +5197,11 @@ const server = http.createServer(async (req, res) => {
           exec(`nohup sh -c "sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}'" >/dev/null 2>&1 &`);
         }
       }
+
+      setTimeout(() => {
+        console.log('[Updater] Exiting current process for clean restart...');
+        process.exit(0);
+      }, 500);
 
       isUpdatingApp = false;
       return sendJson(res, 200, {

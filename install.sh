@@ -301,6 +301,8 @@ stop() {
     rm -f "$PIDFILE"
   else
     killall -q node 2>/dev/null || true
+    sleep 1
+    killall -9 -q node 2>/dev/null || true
   fi
   echo "done."
 }
