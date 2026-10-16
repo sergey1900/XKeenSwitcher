@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.7';
+let appVersion = '2.0.8';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -458,8 +458,8 @@ function formatMihomoIpRule(rawIp, target) {
   if (!rawIp) return null;
   const ip = String(rawIp).trim();
   if (!ip) return null;
-  if (ip === 'geoip:private') {
-    return `  - GEOIP,private,${target},no-resolve`;
+  if (ip === 'geoip:private' || ip.endsWith(':private')) {
+    return `  - GEOIP,lan,${target},no-resolve`;
   }
   if (ip.startsWith('geoip:') || ip.startsWith('ext:')) {
     const country = ip.split(':').pop();
@@ -472,13 +472,13 @@ function formatMihomoIpRule(rawIp, target) {
 // Universal Mihomo Rules Compiler
 function compileMihomoRules(cfg) {
   if (!cfg || typeof cfg !== 'object') {
-    return '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
+    return '  - GEOIP,lan,DIRECT,no-resolve\n  - MATCH,PROXY';
   }
   const lines = [];
 
   // 1. Private IPs
   if (cfg.bypassPrivate || cfg.bypassRu) {
-    lines.push('  - GEOIP,private,DIRECT,no-resolve');
+    lines.push('  - GEOIP,lan,DIRECT,no-resolve');
   }
 
   // 2. NetBIOS ports
@@ -635,8 +635,8 @@ function parseRawXrayToMihomoRules(rawJson) {
       if (Array.isArray(r.ip)) {
         for (const ip of r.ip) {
           if (!ip) continue;
-          if (ip === 'geoip:private') {
-            lines.push(`  - GEOIP,private,${mihomoTarget},no-resolve`);
+          if (ip === 'geoip:private' || ip.endsWith(':private')) {
+            lines.push(`  - GEOIP,lan,${mihomoTarget},no-resolve`);
           } else if (ip === 'geoip:ru' || ip.includes(':ru')) {
             lines.push(`  - GEOIP,ru,${mihomoTarget}`);
           } else if (ip.startsWith('geoip:')) {
@@ -649,13 +649,13 @@ function parseRawXrayToMihomoRules(rawJson) {
       }
     }
 
-    if (!lines.some(l => l.includes('GEOIP,private'))) {
-      lines.unshift('  - GEOIP,private,DIRECT,no-resolve');
+    if (!lines.some(l => l.includes('GEOIP,lan'))) {
+      lines.unshift('  - GEOIP,lan,DIRECT,no-resolve');
     }
     lines.push('  - MATCH,PROXY');
     return lines.join('\n');
   } catch (e) {
-    return '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
+    return '  - GEOIP,lan,DIRECT,no-resolve\n  - MATCH,PROXY';
   }
 }
 
@@ -2083,7 +2083,7 @@ ${dnsYaml}${awgOptionStr}`;
   if (routing && routing.builderConfig) {
     rulesYaml = compileMihomoRules(routing.builderConfig);
   } else if (routing && routing.id === 'routing_except_ru') {
-    rulesYaml = `  - GEOIP,private,DIRECT,no-resolve
+    rulesYaml = `  - GEOIP,lan,DIRECT,no-resolve
   - DST-PORT,135,REJECT
   - DST-PORT,137,REJECT
   - DST-PORT,138,REJECT
@@ -2096,12 +2096,12 @@ ${dnsYaml}${awgOptionStr}`;
   - GEOIP,ru,DIRECT
   - MATCH,PROXY`;
   } else if (routing && routing.id === 'routing_all_vpn') {
-    rulesYaml = `  - GEOIP,private,DIRECT,no-resolve
+    rulesYaml = `  - GEOIP,lan,DIRECT,no-resolve
   - MATCH,PROXY`;
   } else if (routing && routing.content) {
     rulesYaml = parseRawXrayToMihomoRules(routing.content);
   } else {
-    rulesYaml = '  - GEOIP,private,DIRECT,no-resolve\n  - MATCH,PROXY';
+    rulesYaml = '  - GEOIP,lan,DIRECT,no-resolve\n  - MATCH,PROXY';
   }
 
   const geodataStatus = ensureMihomoGeodataSymlinks();
