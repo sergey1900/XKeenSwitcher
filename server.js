@@ -32,6 +32,21 @@ try {
   console.warn('Could not read package.json version:', e.message);
 }
 
+// Process error safety handlers
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT', 'exit'].forEach(sig => {
+  process.on(sig, (code) => {
+    console.log(`[PROCESS EVENT] Received ${sig}, code/arg: ${code}`);
+  });
+});
+
 // In-memory service state & error cache
 let lastServiceStatus = {
   status: 'unknown', // 'running' | 'stopped' | 'error' | 'unknown'
@@ -3918,6 +3933,18 @@ function loadData() {
       if (!data.settings.pingTimeout || typeof data.settings.pingTimeout !== 'number' || data.settings.pingTimeout < 500) {
         data.settings.pingTimeout = 3500;
       }
+      if (!data.settings.statusCommand || data.settings.statusCommand.includes('S99xkeen-switcher') || data.settings.statusCommand.includes('sleep')) {
+        data.settings.statusCommand = 'xkeen -status';
+      }
+      if (!data.settings.restartCommand || data.settings.restartCommand.includes('S99xkeen-switcher')) {
+        data.settings.restartCommand = 'xkeen -restart';
+      }
+      if (!data.settings.startCommand || data.settings.startCommand.includes('S99xkeen-switcher')) {
+        data.settings.startCommand = 'xkeen -start';
+      }
+      if (!data.settings.stopCommand || data.settings.stopCommand.includes('S99xkeen-switcher')) {
+        data.settings.stopCommand = 'xkeen -stop';
+      }
 
       // Load Groups
       if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
@@ -7264,10 +7291,22 @@ const server = http.createServer(async (req, res) => {
 
       if (outboundPath) data.settings.outboundPath = outboundPath.trim();
       if (routingPath) data.settings.routingPath = routingPath.trim();
-      if (restartCommand !== undefined) data.settings.restartCommand = restartCommand.trim();
-      if (startCommand !== undefined) data.settings.startCommand = startCommand.trim();
-      if (stopCommand !== undefined) data.settings.stopCommand = stopCommand.trim();
-      if (statusCommand !== undefined) data.settings.statusCommand = statusCommand.trim();
+      if (restartCommand !== undefined) {
+        const rc = restartCommand.trim();
+        data.settings.restartCommand = rc.includes('S99xkeen-switcher') ? 'xkeen -restart' : (rc || 'xkeen -restart');
+      }
+      if (startCommand !== undefined) {
+        const sc = startCommand.trim();
+        data.settings.startCommand = sc.includes('S99xkeen-switcher') ? 'xkeen -start' : (sc || 'xkeen -start');
+      }
+      if (stopCommand !== undefined) {
+        const sc = stopCommand.trim();
+        data.settings.stopCommand = sc.includes('S99xkeen-switcher') ? 'xkeen -stop' : (sc || 'xkeen -stop');
+      }
+      if (statusCommand !== undefined) {
+        const sc = statusCommand.trim();
+        data.settings.statusCommand = (sc.includes('S99xkeen-switcher') || sc.includes('sleep')) ? 'xkeen -status' : (sc || 'xkeen -status');
+      }
       if (body.pingTimeout !== undefined && body.pingTimeout !== null && body.pingTimeout !== '') {
         const pt = parseInt(body.pingTimeout, 10);
         if (!isNaN(pt) && pt >= 500 && pt <= 60000) {

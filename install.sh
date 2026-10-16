@@ -281,7 +281,7 @@ start() {
   fi
 
   cd "$APP_DIR" || exit 1
-  node "$SERVER_JS" >> "$LOGFILE" 2>&1 &
+  nohup node "$SERVER_JS" >> "$LOGFILE" 2>&1 &
   PID=$!
   echo $PID > "$PIDFILE"
   echo "done (pid $PID)."
