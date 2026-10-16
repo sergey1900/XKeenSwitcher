@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.9';
+let appVersion = '2.0.10';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -872,9 +872,9 @@ function detectActiveProxyCore() {
   if (fs.existsSync(initdPath)) {
     try {
       const content = fs.readFileSync(initdPath, 'utf8');
-      if (/name_client="mihomo"/.test(content)) {
+      if (/name_client\s*=\s*["']?mihomo["']?/i.test(content)) {
         activeCore = 'mihomo';
-      } else if (/name_client="xray"/.test(content)) {
+      } else if (/name_client\s*=\s*["']?xray["']?/i.test(content)) {
         activeCore = 'xray';
       }
     } catch (e) {}
@@ -3615,12 +3615,36 @@ function copyDirRecursiveSync(srcDir, destDir, excludeNames = []) {
 // Evaluate service status from command output and exit code
 function evaluateServiceStatus(res) {
   const stdout = (res.stdout || '').toLowerCase();
+  const stderr = (res.stderr || '').toLowerCase();
   const combined = ((res.stdout || '') + ' ' + (res.stderr || '') + ' ' + (res.error || '')).toLowerCase();
 
-  const isRunning = combined.includes('is running') ||
-                    combined.includes(' running') ||
-                    combined.includes('[ok] xray is running') ||
-                    combined.includes('active (running)') ||
+  // Explicit fatal error during execution
+  const hasFatalError = combined.includes('failed to start') ||
+                        combined.includes('cannot start') ||
+                        combined.includes('panic:') ||
+                        combined.includes('syntax error') ||
+                        combined.includes('invalid config') ||
+                        combined.includes('ошибка запуска') ||
+                        combined.includes('не удалось запустить');
+
+  if (hasFatalError) {
+    return 'error';
+  }
+
+  // Explicit indicator that a proxy client is actively running in a proxy mode
+  // e.g. "прокси-клиент запущен в режиме redirect", "прокси-клиент xray запущен в режиме..."
+  const hasRunningMode = combined.includes('запущен в режиме') ||
+                         combined.includes('успешно запущен') ||
+                         combined.includes('[ok] xray is running') ||
+                         combined.includes('[ok] mihomo is running') ||
+                         combined.includes('is running') ||
+                         combined.includes('active (running)');
+
+  if (hasRunningMode) {
+    return 'running';
+  }
+
+  const isRunning = combined.includes(' running') ||
                     combined.includes('работает') ||
                     (combined.includes('запущен') && !combined.includes('не запущен') && !combined.includes('не работает'));
 
@@ -3639,17 +3663,6 @@ function evaluateServiceStatus(res) {
 
   if (isStopped && !isRunning) {
     return 'stopped';
-  }
-
-  // Explicit fatal error during execution
-  if (combined.includes('failed to start') ||
-      combined.includes('cannot start') ||
-      combined.includes('panic:') ||
-      combined.includes('syntax error') ||
-      combined.includes('invalid config') ||
-      combined.includes('ошибка запуска') ||
-      combined.includes('не удалось запустить')) {
-    return 'error';
   }
 
   if (res.success && res.code === 0) {
@@ -4114,7 +4127,7 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
     routing = data.routings.find(r => r.id === 'routing_all_vpn') || SYSTEM_ROUTING_ALL_VPN;
   }
 
-  const { outboundPath, routingPath, restartCommand } = data.settings;
+  const { outboundPath, routingPath, restartCommand, startCommand, statusCommand } = data.settings;
   const isMihomoRequired = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || conn.protocol === 'hysteria2' || conn.protocol === 'hy2' || Boolean(conn.amneziaConfig);
   const coreInfo = detectActiveProxyCore();
   let coreSwitched = false;
@@ -4128,7 +4141,9 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
       // 1. Switch core to Mihomo if not already active (stop previous core first to release ports)
       if (coreInfo.activeCore !== 'mihomo' && coreInfo.hasMihomo) {
         try { await runShellCommand('xkeen -stop'); } catch (e) {}
+        await sleep(400);
         await runShellCommand('xkeen -mihomo');
+        await sleep(400);
         coreSwitched = true;
         targetCore = 'mihomo';
       }
@@ -4156,7 +4171,9 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
       // Switch back to Xray if currently on Mihomo
       if (coreInfo.activeCore === 'mihomo' && coreInfo.hasXray) {
         try { await runShellCommand('xkeen -stop'); } catch (e) {}
+        await sleep(400);
         await runShellCommand('xkeen -xray');
+        await sleep(400);
         coreSwitched = true;
         targetCore = 'xray';
       }
@@ -4172,27 +4189,61 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
     fileWriteStatus.error = err.message;
   }
 
-  const effectiveRestartCmd = restartCommand && restartCommand.trim()
+  let effectiveRestartCmd = restartCommand && restartCommand.trim()
     ? restartCommand.trim()
-    : '/opt/etc/init.d/S05xkeen restart';
+    : 'xkeen -restart';
+  if (effectiveRestartCmd === '/opt/etc/init.d/S05xkeen restart') {
+    effectiveRestartCmd = 'xkeen -restart';
+  }
 
-  const resCmd = await runShellCommand(effectiveRestartCmd);
+  const effectiveStartCmd = startCommand && startCommand.trim()
+    ? startCommand.trim()
+    : 'xkeen -start';
+  const effectiveStatusCmd = statusCommand && statusCommand.trim()
+    ? statusCommand.trim()
+    : 'xkeen -status';
+
+  // Check current service running status before deciding launch command
+  const currentStatusProbe = await runShellCommand(effectiveStatusCmd);
+  const currentRunning = evaluateServiceStatus(currentStatusProbe) === 'running';
+
+  // If the core was switched, or if the service was not running,
+  // we MUST use xkeen -start (canonical XKeen cold-start that reinitializes ipsets and routing).
+  // Otherwise, if the same core is already running, use restart.
+  const launchCmd = (coreSwitched || !currentRunning) ? effectiveStartCmd : effectiveRestartCmd;
+
+  let resCmd = await runShellCommand(launchCmd);
   restartStatus.executed = true;
   restartStatus.output = resCmd.stdout;
   restartStatus.error = resCmd.stderr || resCmd.error || '';
 
-  // If Mihomo was required, re-apply config.yaml AFTER xkeen -restart to ensure
-  // our AWG proxies and rule parameters are never clobbered by XKeen restart hooks
-  if (isMihomoRequired) {
-    try {
-      const mihomoConfigPath = '/opt/etc/mihomo/config.yaml';
-      const mihomoYaml = generateMihomoConfig(conn, routing);
-      writeTargetFile(mihomoConfigPath, mihomoYaml);
-      await runShellCommand('/opt/etc/init.d/S05xkeen restart').catch(() => {});
-    } catch (e) {}
+  // Wait for daemon to initialize, bind ports, and configure firewall in background
+  await sleep(coreSwitched ? 1200 : 600);
+
+  // Probe actual running status via status command (e.g. xkeen -status)
+  let statusProbe = await runShellCommand(effectiveStatusCmd);
+  let computedStatus = evaluateServiceStatus(statusProbe);
+
+  // If status is not yet running, wait a little more as detached start might take an extra second
+  if (computedStatus !== 'running') {
+    await sleep(800);
+    statusProbe = await runShellCommand(effectiveStatusCmd);
+    computedStatus = evaluateServiceStatus(statusProbe);
   }
 
-  const computedStatus = evaluateServiceStatus(resCmd);
+  // Fallback recovery: if service is still not running after core switch or restart,
+  // execute xkeen -start and verify again
+  if (computedStatus !== 'running') {
+    console.warn(`[activateConnectionInternal] Service not running after "${launchCmd}" (status probe: "${computedStatus}"). Attempting recovery via "${effectiveStartCmd}"...`);
+    const recoveryRes = await runShellCommand(effectiveStartCmd);
+    await sleep(1200);
+    statusProbe = await runShellCommand(effectiveStatusCmd);
+    computedStatus = evaluateServiceStatus(statusProbe);
+    if (computedStatus === 'running') {
+      restartStatus.output = (restartStatus.output ? restartStatus.output + '\n' : '') + recoveryRes.stdout;
+    }
+  }
+
   const updatedCoreInfo = detectActiveProxyCore();
   lastServiceStatus = {
     status: computedStatus,
@@ -4201,11 +4252,11 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
       xray: updatedCoreInfo.hasXray,
       mihomo: updatedCoreInfo.hasMihomo
     },
-    output: resCmd.stdout,
-    error: resCmd.stderr || resCmd.error || '',
-    code: resCmd.code,
+    output: (statusProbe.stdout || resCmd.stdout || '').trim(),
+    error: statusProbe.stderr || statusProbe.error || resCmd.stderr || resCmd.error || '',
+    code: statusProbe.code !== undefined ? statusProbe.code : resCmd.code,
     timestamp: new Date().toISOString(),
-    command: effectiveRestartCmd
+    command: launchCmd
   };
 
   if (updateActiveState) {
@@ -7123,10 +7174,12 @@ const server = http.createServer(async (req, res) => {
 
       if (coreInfo.activeCore !== targetCore) {
         try { await runShellCommand('xkeen -stop'); } catch (e) {}
+        await sleep(400);
       }
 
       const switchCmd = targetCore === 'mihomo' ? 'xkeen -mihomo' : 'xkeen -xray';
       const switchRes = await runShellCommand(switchCmd);
+      await sleep(400);
 
       if (targetCore === 'mihomo') {
         ensureMihomoGeodataSymlinks();
@@ -7142,10 +7195,19 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // Restart service to apply core switch
-      await runShellCommand('xkeen -restart');
-      const statusRes = await runShellCommand('xkeen -status');
-      const computedStatus = evaluateServiceStatus(statusRes);
+      // Start service to apply core switch (xkeen -start initializes ipsets and starts the core cleanly)
+      await runShellCommand('xkeen -start');
+      await sleep(800);
+      let statusRes = await runShellCommand('xkeen -status');
+      let computedStatus = evaluateServiceStatus(statusRes);
+
+      if (computedStatus !== 'running') {
+        await runShellCommand('xkeen -start');
+        await sleep(800);
+        statusRes = await runShellCommand('xkeen -status');
+        computedStatus = evaluateServiceStatus(statusRes);
+      }
+
       const updatedCoreInfo = detectActiveProxyCore();
 
       lastServiceStatus = {
