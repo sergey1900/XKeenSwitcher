@@ -1628,7 +1628,18 @@ function parseWireguardConfig(confText) {
     iface.jc || iface.jmin || iface.jmax || iface.s1 || iface.s2 || iface.h1 || iface.h2 || iface.i1
   );
   const name = commentName || `${isAwg ? 'AmneziaWG' : 'WireGuard'} - ${endpointHost}:${endpointPort}`;
-  const cleanAddress = address.split(',')[0].trim();
+  const addrParts = address.split(',').map(s => s.trim()).filter(Boolean);
+  let ipv4Addr = '';
+  let ipv6Addr = '';
+  for (const a of addrParts) {
+    const rawIp = a.split('/')[0].trim();
+    if (rawIp.includes(':') && !ipv6Addr) {
+      ipv6Addr = rawIp;
+    } else if (!rawIp.includes(':') && !ipv4Addr) {
+      ipv4Addr = rawIp;
+    }
+  }
+  const cleanAddress = ipv4Addr || addrParts[0] || '10.0.0.2';
   const psk = peer.presharedkey || peer.preshared_key || peer.psk || '';
 
   let cleanKeepalive = undefined;
@@ -1644,7 +1655,7 @@ function parseWireguardConfig(confText) {
         protocol: 'wireguard',
         settings: {
           secretKey: privateKey,
-          address: [cleanAddress],
+          address: addrParts.length > 0 ? addrParts : [cleanAddress],
           peers: [
             {
               publicKey: publicKey,
@@ -1665,6 +1676,7 @@ function parseWireguardConfig(confText) {
   if (isAwg) {
     amneziaConfig = {
       client_ip: cleanAddress,
+      client_ipv6: ipv6Addr || undefined,
       client_priv_key: privateKey,
       server_pub_key: publicKey,
       psk: psk,
@@ -2156,6 +2168,15 @@ function generateMihomoConfig(conn, routing) {
     // WireGuard / AmneziaWG
     let am = conn.amneziaConfig || {};
     let clientIp = (am.client_ip || '').split('/')[0];
+    let clientIpv6 = (am.client_ipv6 || '').split('/')[0];
+    if (!clientIpv6 && am.client_ip && am.client_ip.includes(',')) {
+      const parts = am.client_ip.split(',').map(s => s.trim());
+      for (const p of parts) {
+        const raw = p.split('/')[0].trim();
+        if (raw.includes(':') && !clientIpv6) clientIpv6 = raw;
+        if (!raw.includes(':') && !clientIp) clientIp = raw;
+      }
+    }
     let clientPrivKey = am.client_priv_key || '';
     let serverPubKey = am.server_pub_key || '';
     let psk = am.psk || '';
@@ -2169,8 +2190,12 @@ function generateMihomoConfig(conn, routing) {
         const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
         if (ob && ob.settings) {
           if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
-          if ((!clientIp || clientIp === '10.8.1.2') && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
-            clientIp = String(ob.settings.address[0]).split('/')[0];
+          if (Array.isArray(ob.settings.address)) {
+            for (const addr of ob.settings.address) {
+              const raw = String(addr).split('/')[0].trim();
+              if (raw.includes(':') && !clientIpv6) clientIpv6 = raw;
+              if (!raw.includes(':') && (!clientIp || clientIp === '10.8.1.2')) clientIp = raw;
+            }
           }
           if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
             const peer = ob.settings.peers[0];
@@ -2209,7 +2234,7 @@ function generateMihomoConfig(conn, routing) {
     server: ${JSON.stringify(String(host))}
     port: ${parseInt(port, 10) || 51820}
     ip: ${JSON.stringify(String(clientIp))}
-    public-key: ${JSON.stringify(serverPubKey)}
+${clientIpv6 ? `    ipv6: ${JSON.stringify(String(clientIpv6))}\n` : ''}    public-key: ${JSON.stringify(serverPubKey)}
     private-key: ${JSON.stringify(clientPrivKey)}
 ${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    allowed-ips:
       - 0.0.0.0/0
@@ -2849,10 +2874,10 @@ async function measureProxyHealth(outboundContent, options = {}) {
 
 // Helper: Direct HTTP proxy request test to canary URL
 function testHttpProxyDirect(proxyHost, proxyPort, canaryUrl, timeout = 3500) {
-  return new Promise((resolve) => {
+  const doRequest = (targetUrl) => new Promise((resolve) => {
     let canaryParsed;
     try {
-      canaryParsed = new URL(canaryUrl);
+      canaryParsed = new URL(targetUrl);
     } catch (e) {
       return resolve({ ok: false, error: 'Некорректный Canary URL' });
     }
@@ -2863,7 +2888,7 @@ function testHttpProxyDirect(proxyHost, proxyPort, canaryUrl, timeout = 3500) {
         host: proxyHost,
         port: proxyPort,
         method: 'GET',
-        path: canaryUrl,
+        path: targetUrl,
         headers: { Host: canaryParsed.host },
         timeout: timeout
       },
@@ -2888,6 +2913,15 @@ function testHttpProxyDirect(proxyHost, proxyPort, canaryUrl, timeout = 3500) {
     });
 
     req.end();
+  });
+
+  return doRequest(canaryUrl).then((r1) => {
+    if (r1.ok) return r1;
+    const fallbackUrl = 'http://connectivitycheck.gstatic.com/generate_204';
+    if (canaryUrl !== fallbackUrl) {
+      return doRequest(fallbackUrl).then((r2) => (r2.ok ? r2 : r1));
+    }
+    return r1;
   });
 }
 
@@ -2931,6 +2965,15 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
     let host = conn.serverAddress || '';
     let port = conn.serverPort || 51820;
     let clientIp = (am.client_ip || '').split('/')[0];
+    let clientIpv6 = (am.client_ipv6 || '').split('/')[0];
+    if (!clientIpv6 && am.client_ip && am.client_ip.includes(',')) {
+      const parts = am.client_ip.split(',').map(s => s.trim());
+      for (const p of parts) {
+        const raw = p.split('/')[0].trim();
+        if (raw.includes(':') && !clientIpv6) clientIpv6 = raw;
+        if (!raw.includes(':') && !clientIp) clientIp = raw;
+      }
+    }
     let clientPrivKey = am.client_priv_key || '';
     let serverPubKey = am.server_pub_key || '';
     let psk = am.psk || '';
@@ -2944,8 +2987,12 @@ async function testAmneziaWgWithRealTunnel(conn, options = {}) {
         const ob = list.find(o => o && (o.protocol === 'wireguard' || o.tag === 'amneziawg'));
         if (ob && ob.settings) {
           if (!clientPrivKey && ob.settings.secretKey) clientPrivKey = ob.settings.secretKey;
-          if ((!clientIp || clientIp === '10.8.1.2') && Array.isArray(ob.settings.address) && ob.settings.address[0]) {
-            clientIp = String(ob.settings.address[0]).split('/')[0];
+          if (Array.isArray(ob.settings.address)) {
+            for (const addr of ob.settings.address) {
+              const raw = String(addr).split('/')[0].trim();
+              if (raw.includes(':') && !clientIpv6) clientIpv6 = raw;
+              if (!raw.includes(':') && (!clientIp || clientIp === '10.8.1.2')) clientIp = raw;
+            }
           }
           if (Array.isArray(ob.settings.peers) && ob.settings.peers[0]) {
             const peer = ob.settings.peers[0];
@@ -2982,9 +3029,11 @@ proxies:
     server: ${JSON.stringify(host)}
     port: ${port}
     ip: ${JSON.stringify(clientIp)}
-    public-key: ${JSON.stringify(serverPubKey)}
+${clientIpv6 ? `    ipv6: ${JSON.stringify(clientIpv6)}\n` : ''}    public-key: ${JSON.stringify(serverPubKey)}
     private-key: ${JSON.stringify(clientPrivKey)}
-${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    allowed-ips: ['0.0.0.0/0', '::/0']
+${psk ? `    pre-shared-key: ${JSON.stringify(psk)}\n` : ''}    allowed-ips:
+      - 0.0.0.0/0
+      - "::/0"
     persistent-keepalive: ${keepaliveVal}
     udp: true
     remote-dns-resolve: true
@@ -3037,52 +3086,71 @@ rules:
 
       setTimeout(() => {
         if (settled) return;
-        let canaryParsed;
-        try {
-          canaryParsed = new URL(canaryUrl);
-        } catch (e) {
-          return finish({ ok: false, error: 'Некорректный Canary URL' });
-        }
 
-        const makeAttempt = (isRetry) => {
-          if (settled) return;
+        const testSingleUrl = (targetUrl, onResult) => {
+          let parsed;
+          try {
+            parsed = new URL(targetUrl);
+          } catch (e) {
+            return onResult({ ok: false, error: 'Некорректный Canary URL' });
+          }
           const t0 = Date.now();
           const req = http.request(
             {
               host: '127.0.0.1',
               port: testPort,
               method: 'GET',
-              path: canaryUrl,
-              headers: { Host: canaryParsed.host },
+              path: targetUrl,
+              headers: { Host: parsed.host },
               timeout: timeout
             },
             (res) => {
               const latency = Date.now() - t0;
               res.resume();
               if (res.statusCode >= 200 && res.statusCode < 400) {
-                finish({ ok: true, latency, statusCode: res.statusCode });
-              } else if (res.statusCode === 502 && !isRetry) {
-                setTimeout(() => makeAttempt(true), 600);
+                onResult({ ok: true, latency, statusCode: res.statusCode });
               } else {
-                finish({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
+                onResult({ ok: false, error: `HTTP статус: ${res.statusCode}`, statusCode: res.statusCode });
               }
             }
           );
 
           req.on('timeout', () => {
             req.destroy();
-            finish({ ok: false, error: 'Таймаут сквозного ответа через туннель AWG' });
+            onResult({ ok: false, error: 'Таймаут сквозного ответа через туннель AWG' });
           });
 
           req.on('error', (err) => {
-            if (!isRetry) {
-              setTimeout(() => makeAttempt(true), 600);
-            } else {
-              finish({ ok: false, error: 'Сбой соединения через прокси AWG: ' + (err.message || 'ошибка сети') });
-            }
+            onResult({ ok: false, error: 'Сбой соединения через прокси AWG: ' + (err.message || 'ошибка сети') });
           });
 
           req.end();
+        };
+
+        const makeAttempt = (isRetry) => {
+          if (settled) return;
+          testSingleUrl(canaryUrl, (res1) => {
+            if (settled) return;
+            if (res1.ok) {
+              return finish(res1);
+            }
+            const fallbackUrl = 'http://connectivitycheck.gstatic.com/generate_204';
+            if (canaryUrl !== fallbackUrl && (res1.statusCode === 403 || res1.statusCode === 502 || !isRetry)) {
+              testSingleUrl(fallbackUrl, (res2) => {
+                if (settled) return;
+                if (res2.ok) return finish(res2);
+                if (!isRetry) {
+                  setTimeout(() => makeAttempt(true), 600);
+                } else {
+                  finish(res1.statusCode ? res1 : res2);
+                }
+              });
+            } else if (!isRetry) {
+              setTimeout(() => makeAttempt(true), 600);
+            } else {
+              finish(res1);
+            }
+          });
         };
 
         makeAttempt(false);
