@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DATA_FILE))) {
 }
 
 // Read application version from package.json
-let appVersion = '2.0.12';
+let appVersion = '2.0.13';
 try {
   const pkgPath = path.join(__dirname, 'package.json');
   if (fs.existsSync(pkgPath)) {
@@ -1847,6 +1847,13 @@ function parseAmneziaVpnUrl(cleanStr) {
   const serverPubKey = awg.server_pub_key || (lastConfig && lastConfig.server_pub_key) || '';
   const psk = awg.psk_key || (lastConfig && lastConfig.psk_key) || '';
 
+  if (!clientPrivKey || !serverPubKey) {
+    if (data.password || data.userName) {
+      throw new Error('Вы вставили ссылку резервной копии сервера (с данными SSH), а не ссылку подключения клиента. В приложении Amnezia VPN откройте ваш сервер -> «Поделиться» -> «Поделиться подключением» (или экспортируйте файл .conf).');
+    }
+    throw new Error('В ссылке Amnezia vpn:// отсутствуют ключи клиента (client_priv_key или server_pub_key). Экспортируйте клиентское подключение из Amnezia VPN.');
+  }
+
   const isAwg = Boolean(
     (targetContainer.container && targetContainer.container.includes('awg')) ||
     awg.Jc || awg.H1 || (lastConfig && (lastConfig.Jc || lastConfig.H1))
@@ -1931,19 +1938,14 @@ function safeDecodeUriMulti(str) {
   return cur;
 }
 
-// Helper: Format AWG header values (emit numbers as integers, non-numeric strings as JSON string)
+// Helper: Format AWG header values (emit numbers as integers, ranges/strings as JSON string)
 function formatAwgHeader(val) {
   if (val === undefined || val === null || val === '') return null;
   const s = String(val).trim();
   if (/^-?\d+$/.test(s)) return parseInt(s, 10);
   const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
   if (rangeMatch) {
-    const min = parseInt(rangeMatch[1], 10);
-    const max = parseInt(rangeMatch[2], 10);
-    if (!isNaN(min) && !isNaN(max) && max >= min) {
-      return min + Math.floor(Math.random() * (max - min + 1));
-    }
-    return min;
+    return JSON.stringify(`${rangeMatch[1]}-${rangeMatch[2]}`);
   }
   return JSON.stringify(s);
 }
