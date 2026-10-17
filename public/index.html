@@ -194,98 +194,83 @@
                   <button type="button" class="dropdown-action-link" onclick="resetConnectionsFilters()">Сброс всех</button>
                 </div>
               </div>
-              <div class="dropdown-menu-scroll">
-                <!-- SECTION: PROTOCOLS -->
-                <div class="dropdown-filter-section">
-                  <div class="dropdown-section-header">
-                    <span>Протоколы</span>
-                  </div>
-                  <div class="dropdown-menu-list">
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="vless" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-vless">VLESS</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="vmess" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-vmess">VMESS</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="trojan" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-trojan">TROJAN</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="shadowsocks" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-ss">SS</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="hysteria2" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-hy2">HY2</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="amneziawg" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-awg">AWG</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="wireguard" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-wg">WG</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="tuic" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-tuic">TUIC</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="socks" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-socks">SOCKS</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-proto-checkbox" value="http" onchange="onProtoMultiFilterChange()">
-                      <span class="conn-badge badge-proto badge-proto-http">HTTP</span>
-                    </label>
-                  </div>
-                </div>
+              <div class="dropdown-menu-list dropdown-filters-unified-list">
+                <div class="dropdown-category-title">Протоколы</div>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="vless" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-vless">VLESS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="vmess" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-vmess">VMESS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="trojan" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-trojan">TROJAN</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="shadowsocks" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-ss">SS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="hysteria2" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-hy2">HY2</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="amneziawg" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-awg">AWG</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="wireguard" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-wg">WG</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="tuic" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-tuic">TUIC</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="socks" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-socks">SOCKS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="http" onchange="onProtoMultiFilterChange()">
+                  <span class="conn-badge badge-proto badge-proto-http">HTTP</span>
+                </label>
 
-                <div class="dropdown-section-divider"></div>
+                <div class="dropdown-category-title dropdown-category-title-spaced">Транспорты</div>
 
-                <!-- SECTION: TRANSPORTS -->
-                <div class="dropdown-filter-section">
-                  <div class="dropdown-section-header">
-                    <span>Транспорты</span>
-                  </div>
-                  <div class="dropdown-menu-list">
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="tcp" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">TCP</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="ws" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">WebSocket (WS)</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="grpc" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">gRPC</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="xhttp" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">XHTTP / SplitHTTP</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="httpupgrade" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">HTTPUpgrade</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="quic" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">QUIC</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="h2" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">HTTP/2 (H2)</span>
-                    </label>
-                    <label class="dropdown-check-item">
-                      <input type="checkbox" class="filter-net-checkbox" value="udp" onchange="onNetMultiFilterChange()">
-                      <span class="conn-badge badge-net">UDP</span>
-                    </label>
-                  </div>
-                </div>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="tcp" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">TCP</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="ws" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">WebSocket (WS)</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="grpc" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">gRPC</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="xhttp" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">XHTTP / SplitHTTP</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="httpupgrade" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">HTTPUpgrade</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="quic" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">QUIC</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="h2" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">HTTP/2 (H2)</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="udp" onchange="onNetMultiFilterChange()">
+                  <span class="conn-badge badge-net">UDP</span>
+                </label>
               </div>
             </div>
           </div>

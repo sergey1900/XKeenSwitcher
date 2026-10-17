@@ -4129,41 +4129,38 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   max-width: 320px;
 }
 
-.dropdown-menu-scroll {
+.dropdown-filters-unified-list {
   max-height: 420px;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.dropdown-menu-scroll::-webkit-scrollbar {
+.dropdown-filters-unified-list::-webkit-scrollbar {
   width: 5px;
 }
 
-.dropdown-menu-scroll::-webkit-scrollbar-thumb {
+.dropdown-filters-unified-list::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.16);
   border-radius: 4px;
 }
 
-.dropdown-filter-section {
-  padding: 2px 0;
-}
-
-.dropdown-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 12px;
-  font-size: 0.72rem;
-  font-weight: 600;
+.dropdown-category-title {
+  padding: 8px 10px 4px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
+  user-select: none;
 }
 
-.dropdown-section-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  margin: 6px 0;
+.dropdown-category-title.dropdown-category-title-spaced {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 @keyframes dropdownFadeIn {
