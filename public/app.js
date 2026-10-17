@@ -732,15 +732,21 @@ function toggleCustomDropdown(wrapId, event) {
   }
   const wrap = document.getElementById(wrapId);
   if (!wrap) return;
-  const isAlreadyOpen = wrap.classList.contains('open');
+  const isAlreadyOpen = wrap.classList.contains('open') || wrap.classList.contains('is-open');
   closeAllCustomDropdowns();
   if (!isAlreadyOpen) {
-    wrap.classList.add('open');
+    wrap.classList.add('open', 'is-open');
+    const btn = wrap.querySelector('.btn-dropdown');
+    if (btn) btn.classList.add('open', 'is-open');
   }
 }
 
 function closeAllCustomDropdowns() {
-  document.querySelectorAll('.custom-dropdown.open').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.custom-dropdown').forEach(el => {
+    el.classList.remove('open', 'is-open');
+    const btn = el.querySelector('.btn-dropdown');
+    if (btn) btn.classList.remove('open', 'is-open');
+  });
 }
 
 if (!window._customDropdownsInitialized) {
@@ -817,7 +823,7 @@ function onProtoMultiFilterChange() {
     if (cb.checked) selectedProtoFilters.add(cb.value);
   });
   saveProtoFilters();
-  updateProtoDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -829,7 +835,7 @@ function selectAllProtocols(selectAll) {
     if (selectAll) selectedProtoFilters.add(cb.value);
   });
   saveProtoFilters();
-  updateProtoDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -837,40 +843,6 @@ function saveProtoFilters() {
   try {
     localStorage.setItem('xkeen_connections_proto_filters', JSON.stringify(Array.from(selectedProtoFilters)));
   } catch (e) {}
-}
-
-function updateProtoDropdownUi() {
-  document.querySelectorAll('.filter-proto-checkbox').forEach(cb => {
-    cb.checked = selectedProtoFilters.has(cb.value);
-  });
-  const btn = document.getElementById('btn-proto-dropdown');
-  const labelEl = document.getElementById('proto-dropdown-label');
-  const countBadge = document.getElementById('proto-selected-count');
-  const count = selectedProtoFilters.size;
-
-  if (count === 0) {
-    if (labelEl) labelEl.textContent = 'Протокол';
-    if (countBadge) {
-      countBadge.textContent = '0';
-      countBadge.classList.add('hidden');
-    }
-    if (btn) btn.classList.remove('filter-active');
-  } else if (count === 1) {
-    const singleVal = Array.from(selectedProtoFilters)[0];
-    if (labelEl) labelEl.textContent = PROTOCOL_DISPLAY_NAMES[singleVal] || singleVal.toUpperCase();
-    if (countBadge) {
-      countBadge.textContent = '1';
-      countBadge.classList.add('hidden');
-    }
-    if (btn) btn.classList.add('filter-active');
-  } else {
-    if (labelEl) labelEl.textContent = 'Протоколы';
-    if (countBadge) {
-      countBadge.textContent = String(count);
-      countBadge.classList.remove('hidden');
-    }
-    if (btn) btn.classList.add('filter-active');
-  }
 }
 
 // Multi-select Transport Filter Handlers
@@ -892,7 +864,7 @@ function onNetMultiFilterChange() {
     if (cb.checked) selectedNetFilters.add(cb.value);
   });
   saveNetFilters();
-  updateNetDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -904,7 +876,7 @@ function selectAllTransports(selectAll) {
     if (selectAll) selectedNetFilters.add(cb.value);
   });
   saveNetFilters();
-  updateNetDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -914,38 +886,49 @@ function saveNetFilters() {
   } catch (e) {}
 }
 
-function updateNetDropdownUi() {
+function updateFilterDropdownUi() {
+  document.querySelectorAll('.filter-proto-checkbox').forEach(cb => {
+    cb.checked = selectedProtoFilters.has(cb.value);
+  });
   document.querySelectorAll('.filter-net-checkbox').forEach(cb => {
     cb.checked = selectedNetFilters.has(cb.value);
   });
-  const btn = document.getElementById('btn-net-dropdown');
-  const labelEl = document.getElementById('net-dropdown-label');
-  const countBadge = document.getElementById('net-selected-count');
-  const count = selectedNetFilters.size;
 
-  if (count === 0) {
-    if (labelEl) labelEl.textContent = 'Транспорт';
+  const btn = document.getElementById('btn-filter-dropdown');
+  const labelEl = document.getElementById('filter-dropdown-label');
+  const countBadge = document.getElementById('filter-selected-count');
+  const totalCount = selectedProtoFilters.size + selectedNetFilters.size;
+
+  if (labelEl) labelEl.textContent = 'Фильтры';
+
+  if (totalCount === 0) {
     if (countBadge) {
       countBadge.textContent = '0';
       countBadge.classList.add('hidden');
     }
     if (btn) btn.classList.remove('filter-active');
-  } else if (count === 1) {
-    const singleVal = Array.from(selectedNetFilters)[0];
-    if (labelEl) labelEl.textContent = TRANSPORT_DISPLAY_NAMES[singleVal] || singleVal.toUpperCase();
-    if (countBadge) {
-      countBadge.textContent = '1';
-      countBadge.classList.add('hidden');
-    }
-    if (btn) btn.classList.add('filter-active');
   } else {
-    if (labelEl) labelEl.textContent = 'Транспорты';
     if (countBadge) {
-      countBadge.textContent = String(count);
+      countBadge.textContent = String(totalCount);
       countBadge.classList.remove('hidden');
     }
     if (btn) btn.classList.add('filter-active');
   }
+
+  const btnReset = document.getElementById('btn-reset-filters');
+  if (btnReset) {
+    const isFilterActive = (totalCount > 0 || currentSort !== 'default');
+    btnReset.classList.toggle('hidden', !isFilterActive);
+  }
+}
+
+// Backward-compatibility wrappers
+function updateProtoDropdownUi() {
+  updateFilterDropdownUi();
+}
+
+function updateNetDropdownUi() {
+  updateFilterDropdownUi();
 }
 
 function matchesSelectedProtocols(conn) {
@@ -983,7 +966,7 @@ function onProtoFilterChange(val) {
   selectedProtoFilters.clear();
   if (val && val !== 'all') selectedProtoFilters.add(val);
   saveProtoFilters();
-  updateProtoDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -991,7 +974,7 @@ function onNetFilterChange(val) {
   selectedNetFilters.clear();
   if (val && val !== 'all') selectedNetFilters.add(val);
   saveNetFilters();
-  updateNetDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -1005,8 +988,7 @@ function resetConnectionsFilters() {
   saveProtoFilters();
   saveNetFilters();
   updateSortDropdownUi();
-  updateProtoDropdownUi();
-  updateNetDropdownUi();
+  updateFilterDropdownUi();
   renderConnections();
 }
 
@@ -1408,6 +1390,9 @@ function populateRoutingSelects() {
 
   const subSel = document.getElementById('sub-routing');
   if (subSel) subSel.innerHTML = optionsHtml;
+
+  const addSubSel = document.getElementById('add-sub-routing');
+  if (addSubSel) addSubSel.innerHTML = optionsHtml;
 }
 
 // Populate group select dropdowns in modals
@@ -2688,8 +2673,8 @@ function parseHysteria2Client(rawUrl) {
 // CONNECTION ACTIONS
 // ==============================================================================
 
-// Open Add Connection Modal
-function openAddConnectionModal(defaultGroupId = '') {
+// Open Add Modal (Tabs: connection, batch, subscription, group)
+function openAddConnectionModal(defaultGroupId = '', initialTab = 'connection') {
   document.getElementById('form-add-connection').reset();
   document.getElementById('add-meta-preview').classList.add('hidden');
   highlightDetectedProtocol(null);
@@ -2709,7 +2694,177 @@ function openAddConnectionModal(defaultGroupId = '') {
   }
 
   setEditorContent('conn-outbound-json', '{\n    "outbounds": []\n}');
+
+  // Reset batch import form
+  const batchForm = document.getElementById('form-batch-import');
+  if (batchForm) batchForm.reset();
+  const batchGroupSelect = document.getElementById('batch-group-select');
+  if (batchGroupSelect && defaultGroupId) {
+    batchGroupSelect.value = defaultGroupId;
+  }
+
+  // Reset subscription create form
+  const subForm = document.getElementById('form-add-subscription');
+  if (subForm) subForm.reset();
+  const addSubRouting = document.getElementById('add-sub-routing');
+  if (addSubRouting && appData.settings?.defaultRoutingBlacklist) {
+    addSubRouting.value = appData.settings.defaultRoutingBlacklist;
+  }
+  const addSubHideUnreach = document.getElementById('add-sub-hide-unreachable');
+  if (addSubHideUnreach) addSubHideUnreach.checked = true;
+  const addSubAutoUpdate = document.getElementById('add-sub-autoupdate');
+  if (addSubAutoUpdate) addSubAutoUpdate.value = '24';
+  const addSubRadio = document.querySelector('input[name="add-sub-target-list"][value="mixed"]');
+  if (addSubRadio) addSubRadio.checked = true;
+
+  // Reset group create form
+  const groupForm = document.getElementById('form-add-group');
+  if (groupForm) groupForm.reset();
+  const addGroupHideUnreach = document.getElementById('add-group-hide-unreachable');
+  if (addGroupHideUnreach) addGroupHideUnreach.checked = true;
+  const addGroupRadio = document.querySelector('input[name="add-group-target-list"][value="mixed"]');
+  if (addGroupRadio) addGroupRadio.checked = true;
+
+  switchAddModalTab(initialTab);
   openModal('modal-add-connection');
+
+  setTimeout(() => {
+    if (initialTab === 'connection') {
+      const input = document.getElementById('input-vless-url');
+      if (input) input.focus();
+    } else if (initialTab === 'batch') {
+      const input = document.getElementById('batch-import-text');
+      if (input) input.focus();
+    } else if (initialTab === 'subscription') {
+      const input = document.getElementById('add-sub-url');
+      if (input) input.focus();
+    } else if (initialTab === 'group') {
+      const input = document.getElementById('add-group-name');
+      if (input) input.focus();
+    }
+  }, 100);
+}
+
+function switchAddModalTab(tabName) {
+  const tabs = ['connection', 'batch', 'subscription', 'group'];
+  tabs.forEach(t => {
+    const btn = document.getElementById(`tab-add-${t}`);
+    const panel = document.getElementById(`panel-add-${t}`);
+    if (btn) btn.classList.toggle('active', t === tabName);
+    if (panel) panel.classList.toggle('hidden', t !== tabName);
+  });
+
+  if (tabName === 'connection') {
+    populateRoutingSelects();
+    populateGroupSelects();
+  } else if (tabName === 'batch') {
+    populateRoutingSelects();
+    populateGroupSelects();
+    toggleBatchGroupMode();
+    updateBatchImportCounter();
+  } else if (tabName === 'subscription') {
+    populateRoutingSelects();
+    const addSubRouting = document.getElementById('add-sub-routing');
+    if (addSubRouting && appData.settings?.defaultRoutingBlacklist) {
+      addSubRouting.value = appData.settings.defaultRoutingBlacklist;
+    }
+    const nameInput = document.getElementById('add-sub-name');
+    if (nameInput && !nameInput.value) {
+      const subCount = (appData.groups || []).filter(g => g.isSubscription).length;
+      nameInput.value = `Подписка ${subCount + 1}`;
+    }
+  } else if (tabName === 'group') {
+    const nameInput = document.getElementById('add-group-name');
+    if (nameInput && !nameInput.value) {
+      nameInput.value = getNextDefaultGroupName();
+    }
+  }
+}
+
+async function onAddSubscriptionSubmit(e) {
+  e.preventDefault();
+  const url = document.getElementById('add-sub-url').value.trim();
+  const name = document.getElementById('add-sub-name').value.trim();
+  const targetList = document.querySelector('input[name="add-sub-target-list"]:checked')?.value || 'mixed';
+  const routingId = document.getElementById('add-sub-routing').value;
+  const hideUnreachable = Boolean(document.getElementById('add-sub-hide-unreachable')?.checked);
+  const autoUpdateHours = parseInt(document.getElementById('add-sub-autoupdate')?.value, 10) || 0;
+  const submitBtn = document.getElementById('btn-submit-add-sub');
+  const submitText = document.getElementById('btn-submit-add-sub-text');
+
+  if (!url) {
+    showToast('Укажите URL подписки', 'warning');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = 'Загрузка и парсинг...';
+
+  try {
+    const res = await fetch('/api/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, hideUnreachable, autoUpdateHours })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');
+
+    showToast(data.message || 'Подписка успешно добавлена', 'success');
+    if (data.errors && data.errors.length > 0) {
+      console.warn('Предупреждения при загрузке подписки:', data.errors);
+    }
+    closeModal('modal-add-connection');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitText) submitText.textContent = 'Загрузить подписку';
+  }
+}
+
+function onAddSubTargetListChange() {
+  const targetList = document.querySelector('input[name="add-sub-target-list"]:checked')?.value || 'mixed';
+  const defaultRouting = (targetList === 'whitelist')
+    ? (appData.settings?.defaultRoutingWhitelist || 'routing_all_vpn')
+    : (appData.settings?.defaultRoutingBlacklist || 'routing_all_vpn');
+  const routingSel = document.getElementById('add-sub-routing');
+  if (routingSel && defaultRouting) {
+    routingSel.value = defaultRouting;
+  }
+}
+
+async function onAddGroupSubmit(e) {
+  e.preventDefault();
+  const name = document.getElementById('add-group-name').value.trim();
+  const targetList = document.querySelector('input[name="add-group-target-list"]:checked')?.value || 'mixed';
+  const hideUnreachable = Boolean(document.getElementById('add-group-hide-unreachable')?.checked);
+  const submitBtn = document.getElementById('btn-submit-add-group');
+
+  if (!name) {
+    showToast('Укажите название группы', 'warning');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, targetList, hideUnreachable })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка создания группы');
+
+    showToast(data.message || 'Группа успешно создана', 'success');
+    closeModal('modal-add-connection');
+    await loadData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 }
 
 // Submit Add Connection
@@ -2869,26 +3024,7 @@ function getNextDefaultGroupName() {
 
 // Open modal to create a new group
 function openCreateGroupModal() {
-  const idInput = document.getElementById('group-edit-id');
-  const titleEl = document.getElementById('group-modal-title');
-  const nameInput = document.getElementById('group-edit-name');
-  if (idInput) idInput.value = '';
-  if (titleEl) titleEl.textContent = 'Новая группа';
-  if (nameInput) nameInput.value = getNextDefaultGroupName();
-
-  const mixedRadio = document.querySelector('input[name="group-edit-target-list"][value="mixed"]');
-  if (mixedRadio) mixedRadio.checked = true;
-
-  const hideUnreachEl = document.getElementById('group-edit-hide-unreachable');
-  if (hideUnreachEl) hideUnreachEl.checked = true;
-
-  openModal('modal-group-edit');
-  setTimeout(() => {
-    if (nameInput) {
-      nameInput.focus();
-      nameInput.select();
-    }
-  }, 100);
+  openAddConnectionModal('', 'group');
 }
 
 // Open modal to rename or edit an existing group
@@ -3161,41 +3297,7 @@ function formatBytes(bytes) {
 }
 
 function openAddSubscriptionModal() {
-  const form = document.getElementById('form-subscription');
-  if (form) form.reset();
-
-  document.getElementById('sub-id').value = '';
-  document.getElementById('modal-sub-title').textContent = 'Добавить подписку';
-  document.getElementById('modal-sub-subtitle').textContent = 'Подписка будет создана как отдельная группа подключений';
-
-  const editOpts = document.getElementById('sub-edit-options');
-  if (editOpts) editOpts.classList.add('hidden');
-
-  const radioMixed = document.querySelector('input[name="sub-target-list"][value="mixed"]');
-  if (radioMixed) radioMixed.checked = true;
-
-  const subHideUnreachEl = document.getElementById('sub-hide-unreachable');
-  if (subHideUnreachEl) subHideUnreachEl.checked = true;
-
-  const subAutoUpdateEl = document.getElementById('sub-autoupdate');
-  if (subAutoUpdateEl) subAutoUpdateEl.value = '24';
-
-  populateRoutingSelects();
-  const subRoutingSel = document.getElementById('sub-routing');
-  if (subRoutingSel && appData.settings?.defaultRoutingBlacklist) {
-    subRoutingSel.value = appData.settings.defaultRoutingBlacklist;
-  }
-
-  const subNameInput = document.getElementById('sub-name');
-  if (subNameInput) {
-    const subCount = (appData.groups || []).filter(g => g.isSubscription).length;
-    subNameInput.value = `Подписка ${subCount + 1}`;
-  }
-
-  const submitText = document.getElementById('btn-submit-sub-text');
-  if (submitText) submitText.textContent = 'Загрузить подписку';
-
-  openModal('modal-subscription');
+  openAddConnectionModal('', 'subscription');
 }
 
 function openEditSubscriptionModal(groupId, event) {
@@ -3515,29 +3617,7 @@ async function onMoveCopySubmit(e) {
 // ==============================================================================
 
 function openBatchImportModal() {
-  const form = document.getElementById('form-batch-import');
-  if (form) form.reset();
-
-  populateRoutingSelects();
-  populateGroupSelects();
-
-  const radioMixed = document.querySelector('input[name="batch-target-list"][value="mixed"]');
-  if (radioMixed) radioMixed.checked = true;
-
-  const batchRoutingSel = document.getElementById('batch-routing-select');
-  if (batchRoutingSel && appData.settings?.defaultRoutingBlacklist) {
-    batchRoutingSel.value = appData.settings.defaultRoutingBlacklist;
-  }
-
-  const newNameInput = document.getElementById('batch-group-new-name');
-  if (newNameInput) newNameInput.value = getNextDefaultGroupName();
-
-  const radioNew = document.querySelector('input[name="batch-group-choice"][value="new"]');
-  if (radioNew) radioNew.checked = true;
-
-  toggleBatchGroupMode();
-  updateBatchImportCounter();
-  openModal('modal-batch-import');
+  openAddConnectionModal('', 'batch');
 }
 
 function toggleBatchGroupMode() {
@@ -3606,6 +3686,7 @@ async function onBatchImportSubmit(e) {
     if (data.errors && data.errors.length > 0) {
       console.warn('Предупреждения при импорте:', data.errors);
     }
+    closeModal('modal-add-connection');
     closeModal('modal-batch-import');
     await loadData();
   } catch (err) {
