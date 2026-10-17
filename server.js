@@ -893,6 +893,15 @@ function ensureMihomoGeodataSymlinks() {
   }
 }
 
+// Helper: Format bytes to human readable string
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
 // Helper: Get target directory for GeoSite and GeoIP files
 function getGeodataDirectory() {
   const dirs = ['/opt/etc/xray/dat', '/opt/etc/xray', '/opt/sbin', '/opt/share/xray'];
@@ -946,9 +955,22 @@ function getGeodataStatus() {
   const data = loadData();
   const lastUpdated = data.settings?.lastGeoUpdate || (geositeTime ? geositeTime.toISOString() : null);
 
+  const hasGeosite = Boolean(symInfo.hasGeosite || geositeSize > 0);
+  const hasGeoip = Boolean(symInfo.hasGeoip || geoipSize > 0);
+
   return {
-    hasGeosite: Boolean(symInfo.hasGeosite || geositeSize > 0),
-    hasGeoip: Boolean(symInfo.hasGeoip || geoipSize > 0),
+    hasGeosite,
+    hasGeoip,
+    geosite: {
+      exists: hasGeosite,
+      size: geositeSize,
+      formatted: formatBytes(geositeSize)
+    },
+    geoip: {
+      exists: hasGeoip,
+      size: geoipSize,
+      formatted: formatBytes(geoipSize)
+    },
     geositeSize,
     geoipSize,
     geositeSizeFormatted: formatBytes(geositeSize),
@@ -7325,8 +7347,13 @@ const server = http.createServer(async (req, res) => {
 
   // GET /api/geodata/status - Get status of geosite.dat and geoip.dat
   if (urlParts === '/api/geodata/status' && req.method === 'GET') {
-    const status = getGeodataStatus();
-    return sendJson(res, 200, status);
+    try {
+      const status = getGeodataStatus();
+      return sendJson(res, 200, status);
+    } catch (err) {
+      console.error('[Geodata] Ошибка получения статуса:', err.message);
+      return sendJson(res, 500, { error: err.message });
+    }
   }
 
   // POST /api/geodata/update - Download latest geosite.dat and geoip.dat
