@@ -338,7 +338,8 @@ function formatNetworkName(net) {
   if (!net) return 'TCP';
   const n = String(net).trim().toLowerCase();
   switch (n) {
-    case 'tcp': return 'TCP';
+    case 'tcp':
+    case 'raw': return 'TCP';
     case 'grpc': return 'gRPC';
     case 'ws':
     case 'websocket': return 'WebSocket';
@@ -963,6 +964,16 @@ function updateNetDropdownUi() {
   updateFilterDropdownUi();
 }
 
+function normalizeTransportKey(net) {
+  if (!net) return 'tcp';
+  const n = String(net).trim().toLowerCase();
+  if (n === 'raw' || n === 'tcp') return 'tcp';
+  if (n === 'websocket' || n === 'ws') return 'ws';
+  if (n === 'splithttp' || n === 'xhttp' || n === 'xttp') return 'xhttp';
+  if (n === 'http2' || n === 'h2') return 'h2';
+  return n;
+}
+
 function matchesSelectedTargetList(conn) {
   if (selectedTargetFilters.size === 0) return true;
   const isWl = (conn.targetList === 'whitelist');
@@ -977,14 +988,140 @@ function matchesSelectedProtocols(conn) {
 
 function matchesSelectedTransports(conn) {
   if (selectedNetFilters.size === 0) return true;
-  const net = getConnectionTransport(conn);
-  for (const filterVal of selectedNetFilters) {
-    if (filterVal === 'ws' && (net === 'ws' || net === 'websocket')) return true;
-    if (filterVal === 'h2' && (net === 'h2' || net === 'http2')) return true;
-    if (filterVal === 'xhttp' && (net === 'xhttp' || net === 'splithttp')) return true;
-    if (net === filterVal) return true;
+  const net = normalizeTransportKey(getConnectionTransport(conn));
+  return selectedNetFilters.has(net);
+}
+
+let _lastFilterDropdownSig = null;
+
+function updateAvailableFilterOptions(conns) {
+  const container = document.getElementById('dropdown-filters-unified-list');
+  if (!container) return;
+
+  const rawList = conns || (appData && appData.connections) || [];
+
+  // Collect available options from existing connections
+  const availableTargets = new Set();
+  const availableProtos = new Set();
+  const availableNets = new Set();
+
+  rawList.forEach(c => {
+    // Target
+    const isWl = (c.targetList === 'whitelist');
+    availableTargets.add(isWl ? 'whitelist' : 'blacklist');
+
+    // Protocol
+    const proto = getConnectionProtocol(c);
+    if (proto) availableProtos.add(proto);
+
+    // Transport
+    const net = normalizeTransportKey(getConnectionTransport(c));
+    if (net) availableNets.add(net);
+  });
+
+  const sortedTargets = ['blacklist', 'whitelist'].filter(t => availableTargets.has(t));
+
+  const protoOrder = ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'amneziawg', 'wireguard', 'tuic', 'socks', 'http'];
+  const sortedProtos = Array.from(availableProtos).sort((a, b) => {
+    const idxA = protoOrder.indexOf(a);
+    const idxB = protoOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  const netOrder = ['tcp', 'ws', 'grpc', 'xhttp', 'httpupgrade', 'quic', 'h2', 'udp'];
+  const sortedNets = Array.from(availableNets).sort((a, b) => {
+    const idxA = netOrder.indexOf(a);
+    const idxB = netOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  const currentSig = `${sortedTargets.join(',')}|${sortedProtos.join(',')}|${sortedNets.join(',')}`;
+  if (currentSig === _lastFilterDropdownSig) {
+    return;
   }
-  return false;
+  _lastFilterDropdownSig = currentSig;
+
+  let html = '';
+  let hasAnySection = false;
+
+  // Render Targets (Списки)
+  if (sortedTargets.length > 0) {
+    hasAnySection = true;
+    html += '<div class="dropdown-category-title">Списки</div>';
+    sortedTargets.forEach(tKey => {
+      const isBl = (tKey === 'blacklist');
+      const badgeCls = isBl ? 'badge-target-list target-blacklist' : 'badge-target-list target-whitelist';
+      const badgeText = isBl ? 'ЧС' : 'БС';
+      const titleText = isBl ? 'Черные списки' : 'Белые списки';
+      html += `
+        <label class="dropdown-check-item">
+          <input type="checkbox" class="filter-target-checkbox" value="${tKey}" onchange="onTargetMultiFilterChange()">
+          <span class="conn-badge ${badgeCls}">${badgeText}</span>
+          <span class="dropdown-item-title">${titleText}</span>
+        </label>
+      `;
+    });
+  }
+
+  // Render Protocols (Протоколы)
+  if (sortedProtos.length > 0) {
+    const spacedClass = hasAnySection ? 'dropdown-category-title-spaced' : '';
+    hasAnySection = true;
+    html += `<div class="dropdown-category-title ${spacedClass}">Протоколы</div>`;
+    sortedProtos.forEach(protoKey => {
+      let protoClass = 'badge-proto-other';
+      let protoText = protoKey.toUpperCase();
+      if (protoKey === 'vless') { protoClass = 'badge-proto-vless'; protoText = 'VLESS'; }
+      else if (protoKey === 'vmess') { protoClass = 'badge-proto-vmess'; protoText = 'VMESS'; }
+      else if (protoKey === 'trojan') { protoClass = 'badge-proto-trojan'; protoText = 'TROJAN'; }
+      else if (protoKey === 'shadowsocks') { protoClass = 'badge-proto-ss'; protoText = 'SS'; }
+      else if (protoKey === 'hysteria2') { protoClass = 'badge-proto-hy2'; protoText = 'HY2'; }
+      else if (protoKey === 'amneziawg') { protoClass = 'badge-proto-awg'; protoText = 'AWG'; }
+      else if (protoKey === 'wireguard') { protoClass = 'badge-proto-wg'; protoText = 'WG'; }
+      else if (protoKey === 'tuic') { protoClass = 'badge-proto-tuic'; protoText = 'TUIC'; }
+      else if (protoKey === 'socks') { protoClass = 'badge-proto-socks'; protoText = 'SOCKS'; }
+      else if (protoKey === 'http') { protoClass = 'badge-proto-http'; protoText = 'HTTP'; }
+
+      html += `
+        <label class="dropdown-check-item">
+          <input type="checkbox" class="filter-proto-checkbox" value="${protoKey}" onchange="onProtoMultiFilterChange()">
+          <span class="conn-badge badge-proto ${protoClass}">${protoText}</span>
+        </label>
+      `;
+    });
+  }
+
+  // Render Transports (Транспорты)
+  if (sortedNets.length > 0) {
+    const spacedClass = hasAnySection ? 'dropdown-category-title-spaced' : '';
+    hasAnySection = true;
+    html += `<div class="dropdown-category-title ${spacedClass}">Транспорты</div>`;
+    sortedNets.forEach(netKey => {
+      let netDisplay = formatNetworkName(netKey);
+      if (netKey === 'ws') netDisplay = 'WebSocket (WS)';
+      else if (netKey === 'xhttp') netDisplay = 'XHTTP / SplitHTTP';
+      else if (netKey === 'h2') netDisplay = 'HTTP/2 (H2)';
+
+      html += `
+        <label class="dropdown-check-item">
+          <input type="checkbox" class="filter-net-checkbox" value="${netKey}" onchange="onNetMultiFilterChange()">
+          <span class="conn-badge badge-net">${escapeHtml(netDisplay)}</span>
+        </label>
+      `;
+    });
+  }
+
+  if (!hasAnySection) {
+    html = '<div class="dropdown-category-title" style="text-align: center; padding: 16px 10px;">Нет подключений для фильтрации</div>';
+  }
+
+  container.innerHTML = html;
 }
 
 // Backward-compatibility wrappers
@@ -1064,6 +1201,9 @@ function renderConnections() {
   const groups = (appData.groups && appData.groups.length > 0)
     ? appData.groups
     : [{ id: 'group_default', name: 'Общие' }];
+
+  // Dynamically update available filter options from existing connections
+  updateAvailableFilterOptions(rawList);
 
   // Sync dropdown controls
   updateSortDropdownUi();
