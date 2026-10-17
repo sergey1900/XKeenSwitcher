@@ -57,6 +57,13 @@ const btnServiceStop = document.getElementById('btn-service-stop');
 const btnServiceRestart = document.getElementById('btn-service-restart');
 const toastContainer = document.getElementById('toast-container');
 
+// Syntax Highlighting Editor Pair IDs
+const editorIds = [
+  { textId: 'conn-outbound-json', codeId: 'conn-outbound-code', statusId: 'conn-outbound-status' },
+  { textId: 'edit-conn-outbound-json', codeId: 'edit-conn-outbound-code', statusId: 'edit-conn-outbound-status' },
+  { textId: 'routing-content-json', codeId: 'routing-content-code', statusId: 'routing-content-status' }
+];
+
 // ==============================================================================
 // INITIALIZATION
 // ==============================================================================
@@ -242,12 +249,14 @@ function toggleShowHiddenForGroup(groupId, event) {
     event.stopPropagation();
     event.preventDefault();
   }
+  const scrollPos = window.scrollY;
   if (revealedHiddenGroupIds.has(groupId)) {
     revealedHiddenGroupIds.delete(groupId);
   } else {
     revealedHiddenGroupIds.add(groupId);
   }
   renderConnections();
+  window.scrollTo({ top: scrollPos, behavior: 'instant' });
 }
 
 // Return sorted connections list based on currentSort
@@ -521,7 +530,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
   const isExpanded = expandedConnectionIds.has(conn.id);
 
   return `
-    <div class="conn-card glass-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''} ${isExpanded ? 'is-expanded' : ''}" id="card-conn-${conn.id}">
+    <div class="conn-card ${isActive ? 'active-conn' : ''} ${isFav ? 'is-favorite' : ''} ${isExpanded ? 'is-expanded' : ''}" id="card-conn-${conn.id}">
       <!-- CLOSED STATE VISIBLE HEADER -->
       <div class="conn-header-visible" onclick="onCardHeaderClick('${conn.id}', event)">
         <div class="conn-summary-main">
@@ -1007,9 +1016,11 @@ function showMoreGroupConns(groupId, event) {
     event.preventDefault();
     event.stopPropagation();
   }
+  const scrollPos = window.scrollY;
   const cur = groupRenderLimits.get(groupId) || 50;
   groupRenderLimits.set(groupId, cur + 50);
   renderConnections();
+  window.scrollTo({ top: scrollPos, behavior: 'instant' });
 }
 
 function showAllGroupConns(groupId, event) {
@@ -1017,8 +1028,10 @@ function showAllGroupConns(groupId, event) {
     event.preventDefault();
     event.stopPropagation();
   }
+  const scrollPos = window.scrollY;
   groupRenderLimits.set(groupId, Infinity);
   renderConnections();
+  window.scrollTo({ top: scrollPos, behavior: 'instant' });
 }
 
 function renderConnections() {
@@ -6142,11 +6155,6 @@ async function onAutoFailoverFormSubmit(e) {
 // ==============================================================================
 // SYNTAX HIGHLIGHTING & CODE EDITORS
 // ==============================================================================
-const editorIds = [
-  { textId: 'conn-outbound-json', codeId: 'conn-outbound-code', statusId: 'conn-outbound-status' },
-  { textId: 'edit-conn-outbound-json', codeId: 'edit-conn-outbound-code', statusId: 'edit-conn-outbound-status' },
-  { textId: 'routing-content-json', codeId: 'routing-content-code', statusId: 'routing-content-status' }
-];
 
 function tryParseAndApplyWireguardText(rawText) {
   try {
