@@ -126,78 +126,191 @@
     <main class="content-area" id="section-connections">
       <div class="section-title-row section-title-actions-split">
         <div class="section-actions-left">
-          <button class="btn btn-secondary" id="btn-ping-all" onclick="checkAllPing()" title="Проверить доступность всех подключений по очереди">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <button class="btn btn-secondary btn-sm" id="btn-ping-all" onclick="checkAllPing()" title="Проверить доступность всех подключений по очереди">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             <span id="btn-ping-all-text">Проверить все</span>
           </button>
-          <button class="btn btn-primary" id="btn-add-connection" onclick="openAddConnectionModal()" title="Добавить подключение">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <button class="btn btn-primary btn-sm" id="btn-add-connection" onclick="openAddConnectionModal()" title="Добавить подключение">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
             <span>Добавить</span>
           </button>
-          <button class="btn btn-secondary" id="btn-batch-import" onclick="openBatchImportModal()" title="Импортировать список ссылок (с созданием новой группы)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          <button class="btn btn-secondary btn-sm" id="btn-batch-import" onclick="openBatchImportModal()" title="Импортировать список ссылок (с созданием новой группы)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
             <span>Импорт</span>
           </button>
-          <button class="btn btn-secondary" id="btn-add-subscription" onclick="openAddSubscriptionModal()" title="Добавить подписку по ссылке (создает группу)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <button class="btn btn-secondary btn-sm" id="btn-add-subscription" onclick="openAddSubscriptionModal()" title="Добавить подписку по ссылке (создает группу)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             <span>Подписка</span>
           </button>
-          <button class="btn btn-secondary" id="btn-create-group" onclick="openCreateGroupModal()" title="Создать новую группу подключений">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+          <button class="btn btn-secondary btn-sm" id="btn-create-group" onclick="openCreateGroupModal()" title="Создать новую группу подключений">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
             <span>Группа</span>
           </button>
-        </div>
 
-        <div class="section-controls-right">
-          <!-- PROTOCOL FILTER -->
-          <div class="section-sort-wrap" title="Фильтр по протоколу">
-            <span class="filter-icon" style="font-size: 13px; line-height: 1;">⚡</span>
-            <select id="connections-proto-filter" class="sort-select" onchange="onProtoFilterChange(this.value)">
-              <option value="all">Все протоколы</option>
-              <option value="vless">VLESS</option>
-              <option value="vmess">VMess</option>
-              <option value="trojan">Trojan</option>
-              <option value="ss">Shadowsocks</option>
-              <option value="hy2">Hysteria 2</option>
-              <option value="awg">AmneziaWG</option>
-              <option value="wireguard">WireGuard</option>
-              <option value="tuic">TUIC</option>
-              <option value="socks">SOCKS</option>
-              <option value="http">HTTP</option>
-            </select>
+          <span class="toolbar-v-divider"></span>
+
+          <!-- SORT DROPDOWN BUTTON -->
+          <div class="custom-dropdown" id="dropdown-sort-wrap">
+            <button type="button" class="btn btn-secondary btn-sm btn-dropdown" id="btn-sort-dropdown" onclick="toggleCustomDropdown('dropdown-sort-wrap', event)" title="Сортировка списка подключений">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+              <span id="sort-dropdown-label">По умолчанию</span>
+              <svg class="dropdown-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="custom-dropdown-menu" id="dropdown-sort-menu">
+              <div class="dropdown-menu-header">Сортировка</div>
+              <div class="dropdown-menu-list">
+                <button type="button" class="dropdown-item active" data-sort="default" onclick="selectSortOption('default')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>По умолчанию</span>
+                </button>
+                <button type="button" class="dropdown-item" data-sort="active" onclick="selectSortOption('active')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>Сначала активное</span>
+                </button>
+                <button type="button" class="dropdown-item" data-sort="ping" onclick="selectSortOption('ping')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>По пингу (быстрые)</span>
+                </button>
+                <button type="button" class="dropdown-item" data-sort="name_asc" onclick="selectSortOption('name_asc')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>По имени (А → Я)</span>
+                </button>
+                <button type="button" class="dropdown-item" data-sort="name_desc" onclick="selectSortOption('name_desc')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>По имени (Я → А)</span>
+                </button>
+                <button type="button" class="dropdown-item" data-sort="newest" onclick="selectSortOption('newest')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>Сначала новые</span>
+                </button>
+                <button type="button" class="dropdown-item" data-sort="oldest" onclick="selectSortOption('oldest')">
+                  <span class="dropdown-item-check">✓</span>
+                  <span>Сначала старые</span>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- TRANSPORT FILTER -->
-          <div class="section-sort-wrap" title="Фильтр по транспорту (сети)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sort-icon"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            <select id="connections-net-filter" class="sort-select" onchange="onNetFilterChange(this.value)">
-              <option value="all">Все транспорты</option>
-              <option value="tcp">TCP</option>
-              <option value="grpc">gRPC</option>
-              <option value="ws">WebSocket (WS)</option>
-              <option value="h2">HTTP/2 (H2)</option>
-              <option value="xhttp">XHTTP / SplitHTTP</option>
-              <option value="udp">UDP</option>
-            </select>
+          <!-- PROTOCOL MULTI-FILTER DROPDOWN -->
+          <div class="custom-dropdown" id="dropdown-proto-wrap">
+            <button type="button" class="btn btn-secondary btn-sm btn-dropdown" id="btn-proto-dropdown" onclick="toggleCustomDropdown('dropdown-proto-wrap', event)" title="Фильтр по протоколу">
+              <span class="dropdown-icon-bullet">⚡</span>
+              <span id="proto-dropdown-label">Протокол</span>
+              <span class="dropdown-badge-count hidden" id="proto-selected-count">0</span>
+              <svg class="dropdown-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="custom-dropdown-menu" id="dropdown-proto-menu">
+              <div class="dropdown-menu-header">
+                <span>Протоколы</span>
+                <div class="dropdown-header-actions">
+                  <button type="button" class="dropdown-action-link" onclick="selectAllProtocols(true)">Все</button>
+                  <span class="dropdown-action-sep">•</span>
+                  <button type="button" class="dropdown-action-link" onclick="selectAllProtocols(false)">Сброс</button>
+                </div>
+              </div>
+              <div class="dropdown-menu-list">
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="vless" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-vless">VLESS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="vmess" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-vmess">VMESS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="trojan" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-trojan">TROJAN</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="shadowsocks" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-ss">SS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="hysteria2" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-hy2">HY2</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="amneziawg" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-awg">AWG</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="wireguard" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-wg">WG</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="tuic" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-tuic">TUIC</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="socks" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-socks">SOCKS</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-proto-checkbox" value="http" onchange="onProtoMultiFilterChange()">
+                  <span class="dropdown-proto-badge badge-proto-http">HTTP</span>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <!-- SORT SELECT -->
-          <div class="section-sort-wrap" title="Сортировка списка подключений">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sort-icon"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
-            <select id="connections-sort-select" class="sort-select" onchange="onSortChange(this.value)">
-              <option value="default">По умолчанию</option>
-              <option value="active">Сначала активное</option>
-              <option value="ping">По пингу (быстрые)</option>
-              <option value="name_asc">По имени (А → Я)</option>
-              <option value="name_desc">По имени (Я → А)</option>
-              <option value="newest">Сначала новые</option>
-              <option value="oldest">Сначала старые</option>
-            </select>
+          <!-- TRANSPORT MULTI-FILTER DROPDOWN -->
+          <div class="custom-dropdown" id="dropdown-net-wrap">
+            <button type="button" class="btn btn-secondary btn-sm btn-dropdown" id="btn-net-dropdown" onclick="toggleCustomDropdown('dropdown-net-wrap', event)" title="Фильтр по транспорту (сети)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <span id="net-dropdown-label">Транспорт</span>
+              <span class="dropdown-badge-count hidden" id="net-selected-count">0</span>
+              <svg class="dropdown-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="custom-dropdown-menu" id="dropdown-net-menu">
+              <div class="dropdown-menu-header">
+                <span>Транспорты</span>
+                <div class="dropdown-header-actions">
+                  <button type="button" class="dropdown-action-link" onclick="selectAllTransports(true)">Все</button>
+                  <span class="dropdown-action-sep">•</span>
+                  <button type="button" class="dropdown-action-link" onclick="selectAllTransports(false)">Сброс</button>
+                </div>
+              </div>
+              <div class="dropdown-menu-list">
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="tcp" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">TCP</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="ws" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">WebSocket (WS)</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="grpc" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">gRPC</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="xhttp" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">XHTTP / SplitHTTP</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="httpupgrade" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">HTTPUpgrade</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="quic" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">QUIC</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="h2" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">HTTP/2 (H2)</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-net-checkbox" value="udp" onchange="onNetMultiFilterChange()">
+                  <span class="dropdown-item-title">UDP</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <!-- RESET FILTERS BUTTON -->
-          <button type="button" class="btn btn-secondary btn-sm btn-icon hidden" id="btn-reset-filters" onclick="resetConnectionsFilters()" title="Сбросить все фильтры">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          <button type="button" class="btn btn-secondary btn-sm btn-icon hidden" id="btn-reset-filters" onclick="resetConnectionsFilters()" title="Сбросить фильтры и сортировку">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <span>Сброс</span>
           </button>
         </div>
       </div>

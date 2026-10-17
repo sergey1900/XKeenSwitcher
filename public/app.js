@@ -13,8 +13,25 @@ let appData = {
 
 let currentTab = 'connections'; // 'connections' | 'routings'
 let currentSort = localStorage.getItem('xkeen_connections_sort') || 'default';
-let currentProtoFilter = localStorage.getItem('xkeen_connections_proto_filter') || 'all';
-let currentNetFilter = localStorage.getItem('xkeen_connections_net_filter') || 'all';
+let selectedProtoFilters = new Set();
+try {
+  const savedProto = JSON.parse(localStorage.getItem('xkeen_connections_proto_filters') || '[]');
+  if (Array.isArray(savedProto)) selectedProtoFilters = new Set(savedProto);
+} catch (e) {}
+if (selectedProtoFilters.size === 0) {
+  const legacyProto = localStorage.getItem('xkeen_connections_proto_filter');
+  if (legacyProto && legacyProto !== 'all') selectedProtoFilters.add(legacyProto);
+}
+
+let selectedNetFilters = new Set();
+try {
+  const savedNet = JSON.parse(localStorage.getItem('xkeen_connections_net_filters') || '[]');
+  if (Array.isArray(savedNet)) selectedNetFilters = new Set(savedNet);
+} catch (e) {}
+if (selectedNetFilters.size === 0) {
+  const legacyNet = localStorage.getItem('xkeen_connections_net_filter');
+  if (legacyNet && legacyNet !== 'all') selectedNetFilters.add(legacyNet);
+}
 let groupRenderLimits = new Map();
 let pingingConnectionIds = new Set();
 let pingingGroupIds = new Set();
@@ -49,15 +66,10 @@ function initApp() {
   startServicePolling();
   initRoutingTextareaSync();
 
-  // Setup connections protocol and transport filters from saved state
-  const protoFilter = document.getElementById('connections-proto-filter');
-  if (protoFilter) {
-    protoFilter.value = currentProtoFilter;
-  }
-  const netFilter = document.getElementById('connections-net-filter');
-  if (netFilter) {
-    netFilter.value = currentNetFilter;
-  }
+  // Setup connections sort and filter dropdowns from saved state
+  updateSortDropdownUi();
+  updateProtoDropdownUi();
+  updateNetDropdownUi();
 
   // Setup live VLESS parser on input in add modal
   const urlInput = document.getElementById('input-vless-url');
@@ -139,11 +151,7 @@ async function loadData() {
 
 // Sorting Handler
 function onSortChange(val) {
-  currentSort = val;
-  try {
-    localStorage.setItem('xkeen_connections_sort', val);
-  } catch (e) {}
-  renderConnections();
+  selectSortOption(val);
 }
 
 // Targeted DOM update for ping results without full-page re-render
@@ -707,6 +715,248 @@ function getConnectionTransport(conn) {
   return conn._cachedNet;
 }
 
+// Dropdown Menu Management
+function toggleCustomDropdown(wrapId, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const isAlreadyOpen = wrap.classList.contains('open');
+  closeAllCustomDropdowns();
+  if (!isAlreadyOpen) {
+    wrap.classList.add('open');
+  }
+}
+
+function closeAllCustomDropdowns() {
+  document.querySelectorAll('.custom-dropdown.open').forEach(el => el.classList.remove('open'));
+}
+
+if (!window._customDropdownsInitialized) {
+  window._customDropdownsInitialized = true;
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.custom-dropdown')) {
+      closeAllCustomDropdowns();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeAllCustomDropdowns();
+    }
+  });
+}
+
+// Sort Dropdown Option Select
+const SORT_LABELS = {
+  default: 'По умолчанию',
+  active: 'Сначала активное',
+  ping: 'По пингу',
+  name_asc: 'Имя (А → Я)',
+  name_desc: 'Имя (Я → А)',
+  newest: 'Сначала новые',
+  oldest: 'Сначала старые'
+};
+
+function selectSortOption(sortKey) {
+  currentSort = sortKey || 'default';
+  try {
+    localStorage.setItem('xkeen_connections_sort', currentSort);
+  } catch (e) {}
+  updateSortDropdownUi();
+  closeAllCustomDropdowns();
+  renderConnections();
+}
+
+function updateSortDropdownUi() {
+  const labelEl = document.getElementById('sort-dropdown-label');
+  if (labelEl) {
+    labelEl.textContent = SORT_LABELS[currentSort] || 'По умолчанию';
+  }
+  const btn = document.getElementById('btn-sort-dropdown');
+  if (btn) {
+    btn.classList.toggle('filter-active', currentSort !== 'default');
+  }
+  const menu = document.getElementById('dropdown-sort-menu');
+  if (menu) {
+    menu.querySelectorAll('.dropdown-item').forEach(item => {
+      const itemSort = item.getAttribute('data-sort');
+      item.classList.toggle('active', itemSort === currentSort);
+    });
+  }
+}
+
+// Multi-select Protocol Filter Handlers
+const PROTOCOL_DISPLAY_NAMES = {
+  vless: 'VLESS',
+  vmess: 'VMess',
+  trojan: 'Trojan',
+  shadowsocks: 'SS',
+  hysteria2: 'HY2',
+  amneziawg: 'AWG',
+  wireguard: 'WG',
+  tuic: 'TUIC',
+  socks: 'SOCKS',
+  http: 'HTTP'
+};
+
+function onProtoMultiFilterChange() {
+  const checkboxes = document.querySelectorAll('.filter-proto-checkbox');
+  selectedProtoFilters.clear();
+  checkboxes.forEach(cb => {
+    if (cb.checked) selectedProtoFilters.add(cb.value);
+  });
+  saveProtoFilters();
+  updateProtoDropdownUi();
+  renderConnections();
+}
+
+function selectAllProtocols(selectAll) {
+  const checkboxes = document.querySelectorAll('.filter-proto-checkbox');
+  selectedProtoFilters.clear();
+  checkboxes.forEach(cb => {
+    cb.checked = selectAll;
+    if (selectAll) selectedProtoFilters.add(cb.value);
+  });
+  saveProtoFilters();
+  updateProtoDropdownUi();
+  renderConnections();
+}
+
+function saveProtoFilters() {
+  try {
+    localStorage.setItem('xkeen_connections_proto_filters', JSON.stringify(Array.from(selectedProtoFilters)));
+  } catch (e) {}
+}
+
+function updateProtoDropdownUi() {
+  document.querySelectorAll('.filter-proto-checkbox').forEach(cb => {
+    cb.checked = selectedProtoFilters.has(cb.value);
+  });
+  const btn = document.getElementById('btn-proto-dropdown');
+  const labelEl = document.getElementById('proto-dropdown-label');
+  const countBadge = document.getElementById('proto-selected-count');
+  const count = selectedProtoFilters.size;
+
+  if (count === 0) {
+    if (labelEl) labelEl.textContent = 'Протокол';
+    if (countBadge) {
+      countBadge.textContent = '0';
+      countBadge.classList.add('hidden');
+    }
+    if (btn) btn.classList.remove('filter-active');
+  } else if (count === 1) {
+    const singleVal = Array.from(selectedProtoFilters)[0];
+    if (labelEl) labelEl.textContent = PROTOCOL_DISPLAY_NAMES[singleVal] || singleVal.toUpperCase();
+    if (countBadge) {
+      countBadge.textContent = '1';
+      countBadge.classList.add('hidden');
+    }
+    if (btn) btn.classList.add('filter-active');
+  } else {
+    if (labelEl) labelEl.textContent = 'Протоколы';
+    if (countBadge) {
+      countBadge.textContent = String(count);
+      countBadge.classList.remove('hidden');
+    }
+    if (btn) btn.classList.add('filter-active');
+  }
+}
+
+// Multi-select Transport Filter Handlers
+const TRANSPORT_DISPLAY_NAMES = {
+  tcp: 'TCP',
+  ws: 'WS',
+  grpc: 'gRPC',
+  xhttp: 'XHTTP',
+  httpupgrade: 'HTTPUpgrade',
+  quic: 'QUIC',
+  h2: 'H2',
+  udp: 'UDP'
+};
+
+function onNetMultiFilterChange() {
+  const checkboxes = document.querySelectorAll('.filter-net-checkbox');
+  selectedNetFilters.clear();
+  checkboxes.forEach(cb => {
+    if (cb.checked) selectedNetFilters.add(cb.value);
+  });
+  saveNetFilters();
+  updateNetDropdownUi();
+  renderConnections();
+}
+
+function selectAllTransports(selectAll) {
+  const checkboxes = document.querySelectorAll('.filter-net-checkbox');
+  selectedNetFilters.clear();
+  checkboxes.forEach(cb => {
+    cb.checked = selectAll;
+    if (selectAll) selectedNetFilters.add(cb.value);
+  });
+  saveNetFilters();
+  updateNetDropdownUi();
+  renderConnections();
+}
+
+function saveNetFilters() {
+  try {
+    localStorage.setItem('xkeen_connections_net_filters', JSON.stringify(Array.from(selectedNetFilters)));
+  } catch (e) {}
+}
+
+function updateNetDropdownUi() {
+  document.querySelectorAll('.filter-net-checkbox').forEach(cb => {
+    cb.checked = selectedNetFilters.has(cb.value);
+  });
+  const btn = document.getElementById('btn-net-dropdown');
+  const labelEl = document.getElementById('net-dropdown-label');
+  const countBadge = document.getElementById('net-selected-count');
+  const count = selectedNetFilters.size;
+
+  if (count === 0) {
+    if (labelEl) labelEl.textContent = 'Транспорт';
+    if (countBadge) {
+      countBadge.textContent = '0';
+      countBadge.classList.add('hidden');
+    }
+    if (btn) btn.classList.remove('filter-active');
+  } else if (count === 1) {
+    const singleVal = Array.from(selectedNetFilters)[0];
+    if (labelEl) labelEl.textContent = TRANSPORT_DISPLAY_NAMES[singleVal] || singleVal.toUpperCase();
+    if (countBadge) {
+      countBadge.textContent = '1';
+      countBadge.classList.add('hidden');
+    }
+    if (btn) btn.classList.add('filter-active');
+  } else {
+    if (labelEl) labelEl.textContent = 'Транспорты';
+    if (countBadge) {
+      countBadge.textContent = String(count);
+      countBadge.classList.remove('hidden');
+    }
+    if (btn) btn.classList.add('filter-active');
+  }
+}
+
+function matchesSelectedProtocols(conn) {
+  if (selectedProtoFilters.size === 0) return true;
+  return selectedProtoFilters.has(getConnectionProtocol(conn));
+}
+
+function matchesSelectedTransports(conn) {
+  if (selectedNetFilters.size === 0) return true;
+  const net = getConnectionTransport(conn);
+  for (const filterVal of selectedNetFilters) {
+    if (filterVal === 'ws' && (net === 'ws' || net === 'websocket')) return true;
+    if (filterVal === 'h2' && (net === 'h2' || net === 'http2')) return true;
+    if (filterVal === 'xhttp' && (net === 'xhttp' || net === 'splithttp')) return true;
+    if (net === filterVal) return true;
+  }
+  return false;
+}
+
+// Backward-compatibility wrappers
 function matchesProtocolFilter(conn, filterVal) {
   if (!filterVal || filterVal === 'all') return true;
   return getConnectionProtocol(conn) === filterVal;
@@ -721,26 +971,33 @@ function matchesTransportFilter(conn, filterVal) {
 }
 
 function onProtoFilterChange(val) {
-  currentProtoFilter = val || 'all';
-  localStorage.setItem('xkeen_connections_proto_filter', currentProtoFilter);
+  selectedProtoFilters.clear();
+  if (val && val !== 'all') selectedProtoFilters.add(val);
+  saveProtoFilters();
+  updateProtoDropdownUi();
   renderConnections();
 }
 
 function onNetFilterChange(val) {
-  currentNetFilter = val || 'all';
-  localStorage.setItem('xkeen_connections_net_filter', currentNetFilter);
+  selectedNetFilters.clear();
+  if (val && val !== 'all') selectedNetFilters.add(val);
+  saveNetFilters();
+  updateNetDropdownUi();
   renderConnections();
 }
 
 function resetConnectionsFilters() {
-  currentProtoFilter = 'all';
-  currentNetFilter = 'all';
-  localStorage.setItem('xkeen_connections_proto_filter', 'all');
-  localStorage.setItem('xkeen_connections_net_filter', 'all');
-  const protoSelect = document.getElementById('connections-proto-filter');
-  if (protoSelect) protoSelect.value = 'all';
-  const netSelect = document.getElementById('connections-net-filter');
-  if (netSelect) netSelect.value = 'all';
+  selectedProtoFilters.clear();
+  selectedNetFilters.clear();
+  currentSort = 'default';
+  try {
+    localStorage.setItem('xkeen_connections_sort', 'default');
+  } catch (e) {}
+  saveProtoFilters();
+  saveNetFilters();
+  updateSortDropdownUi();
+  updateProtoDropdownUi();
+  updateNetDropdownUi();
   renderConnections();
 }
 
@@ -772,26 +1029,12 @@ function renderConnections() {
     ? appData.groups
     : [{ id: 'group_default', name: 'Общие' }];
 
-  const sortSelect = document.getElementById('connections-sort-select');
-  if (sortSelect && sortSelect.value !== currentSort) {
-    sortSelect.value = currentSort;
-  }
+  // Sync dropdown controls
+  updateSortDropdownUi();
+  updateProtoDropdownUi();
+  updateNetDropdownUi();
 
-  // Sync protocol & transport filter selects
-  const protoSelect = document.getElementById('connections-proto-filter');
-  if (protoSelect && protoSelect.value !== currentProtoFilter) {
-    protoSelect.value = currentProtoFilter;
-  }
-  const netSelect = document.getElementById('connections-net-filter');
-  if (netSelect && netSelect.value !== currentNetFilter) {
-    netSelect.value = currentNetFilter;
-  }
-
-  const isFilterActive = (currentProtoFilter !== 'all' || currentNetFilter !== 'all');
-  const protoWrap = document.getElementById('connections-proto-filter-wrap');
-  if (protoWrap) protoWrap.classList.toggle('filter-active', currentProtoFilter !== 'all');
-  const netWrap = document.getElementById('connections-net-filter-wrap');
-  if (netWrap) netWrap.classList.toggle('filter-active', currentNetFilter !== 'all');
+  const isFilterActive = (selectedProtoFilters.size > 0 || selectedNetFilters.size > 0 || currentSort !== 'default');
   const btnReset = document.getElementById('btn-reset-filters');
   if (btnReset) btnReset.classList.toggle('hidden', !isFilterActive);
 
@@ -812,8 +1055,8 @@ function renderConnections() {
   if (emptyConnectionsState) emptyConnectionsState.classList.add('hidden');
 
   const list = getSortedConnections(rawList, activeId);
-  const filteredList = isFilterActive
-    ? list.filter(c => matchesProtocolFilter(c, currentProtoFilter) && matchesTransportFilter(c, currentNetFilter))
+  const filteredList = (selectedProtoFilters.size > 0 || selectedNetFilters.size > 0)
+    ? list.filter(c => matchesSelectedProtocols(c) && matchesSelectedTransports(c))
     : list;
 
   if (connectionsCount) {
