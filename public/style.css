@@ -2142,15 +2142,11 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
 }
 
+/* Favorite cards retain normal border, distinguished by star icon */
 .conn-card.is-favorite {
-  border: 1.5px solid #eab308 !important;
-  box-shadow: 0 0 8px rgba(234, 179, 8, 0.18);
+  /* No yellow border - star icon is sufficient */
 }
 
-.conn-card.is-favorite.active-conn {
-  border: 1.5px solid #10b981 !important;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.28), 0 0 0 1px #eab308;
-}
 
 /* ==========================================================================
    COLLAPSIBLE ACCORDION FOR CONNECTION CARDS
@@ -2746,12 +2742,49 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 .badge-proto {
-  background: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  font-weight: 600;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
 }
 
+/* VLESS: Electric Indigo */
+.badge-proto.badge-proto-vless {
+  background: rgba(99, 102, 241, 0.16);
+  color: #a5b4fc;
+  border: 1px solid rgba(129, 140, 248, 0.42);
+}
+
+/* VMess: Deep Violet / Purple */
+.badge-proto.badge-proto-vmess {
+  background: rgba(168, 85, 247, 0.16);
+  color: #d8b4fe;
+  border: 1px solid rgba(192, 132, 252, 0.42);
+}
+
+/* Trojan: Rose / Coral Pink */
+.badge-proto.badge-proto-trojan {
+  background: rgba(244, 63, 94, 0.16);
+  color: #fda4af;
+  border: 1px solid rgba(251, 113, 133, 0.42);
+}
+
+/* Shadowsocks: Fuchsia / Magenta */
+.badge-proto.badge-proto-ss {
+  background: rgba(217, 70, 239, 0.16);
+  color: #f0abfc;
+  border: 1px solid rgba(232, 121, 249, 0.42);
+}
+
+/* Hysteria 2: Hot Pink / Deep Rose */
+.badge-proto.badge-proto-hy2 {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.25), rgba(168, 85, 247, 0.25));
+  color: #f472b6;
+  border: 1px solid rgba(244, 114, 182, 0.5);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* AmneziaWG: Violet-Indigo gradient */
 .badge-proto.badge-proto-awg {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.25));
   color: #c4b5fd;
@@ -2760,12 +2793,39 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   letter-spacing: 0.5px;
 }
 
-.badge-proto.badge-proto-hy2 {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.25), rgba(168, 85, 247, 0.25));
-  color: #f472b6;
-  border: 1px solid rgba(244, 114, 182, 0.5);
-  font-weight: 600;
-  letter-spacing: 0.5px;
+/* WireGuard: Sapphire / Royal Blue */
+.badge-proto.badge-proto-wg {
+  background: rgba(37, 99, 235, 0.18);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+}
+
+/* TUIC: Lavender / Light Violet */
+.badge-proto.badge-proto-tuic {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.42);
+}
+
+/* Socks / Socks5: Slate / Silver */
+.badge-proto.badge-proto-socks {
+  background: rgba(100, 116, 139, 0.22);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+}
+
+/* HTTP / HTTPS: Warm Taupe / Stone */
+.badge-proto.badge-proto-http {
+  background: rgba(120, 113, 108, 0.22);
+  color: #d6d3d1;
+  border: 1px solid rgba(168, 162, 158, 0.42);
+}
+
+/* Fallback / Other protocols */
+.badge-proto.badge-proto-other {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .badge-net {
@@ -4902,26 +4962,20 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   padding: 5px 12px;
   font-size: 0.8rem;
   font-weight: 600;
-  cursor: pointer;
+  cursor: default;
+  user-select: none;
   transition: all var(--transition-fast);
 }
 
-.core-status-badge:hover {
-  background: rgba(99, 102, 241, 0.22);
-  border-color: rgba(99, 102, 241, 0.45);
-  color: #ffffff;
-  transform: translateY(-1px);
+.core-status-badge.not-clickable {
+  cursor: default !important;
+  pointer-events: none;
 }
 
 .core-status-badge.core-mihomo {
   background: rgba(249, 115, 22, 0.14);
   border-color: rgba(249, 115, 22, 0.35);
   color: #fdba74;
-}
-
-.core-status-badge.core-mihomo:hover {
-  background: rgba(249, 115, 22, 0.24);
-  color: #ffffff;
 }
 
 .core-icon {
@@ -5512,5 +5566,73 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   outline: none;
 }
 
+/* SUBGRID PAGINATION & PROGRESSIVE CHUNKING */
+.subgrid-pagination-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
 
+.pagination-info {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
 
+.subgrid-pagination-bar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ACTIVE FILTER HIGHLIGHT */
+.section-sort-wrap.filter-active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.section-sort-wrap.filter-active .sort-select {
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+/* GEODATA (GEOSITE & GEOIP) BADGES */
+.geodata-info-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.geodata-pill-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.geodata-pill-info strong {
+  color: #e2e8f0;
+}
+
+.geodata-pill-info.has-file strong {
+  color: #34d399;
+}
+
+.geodata-pill-info.missing-file strong {
+  color: #f87171;
+}

@@ -13,6 +13,9 @@ let appData = {
 
 let currentTab = 'connections'; // 'connections' | 'routings'
 let currentSort = localStorage.getItem('xkeen_connections_sort') || 'default';
+let currentProtoFilter = localStorage.getItem('xkeen_connections_proto_filter') || 'all';
+let currentNetFilter = localStorage.getItem('xkeen_connections_net_filter') || 'all';
+let groupRenderLimits = new Map();
 let pingingConnectionIds = new Set();
 let pingingGroupIds = new Set();
 let updatingSubscriptionIds = new Set();
@@ -45,6 +48,16 @@ function initApp() {
   loadData();
   startServicePolling();
   initRoutingTextareaSync();
+
+  // Setup connections protocol and transport filters from saved state
+  const protoFilter = document.getElementById('connections-proto-filter');
+  if (protoFilter) {
+    protoFilter.value = currentProtoFilter;
+  }
+  const netFilter = document.getElementById('connections-net-filter');
+  if (netFilter) {
+    netFilter.value = currentNetFilter;
+  }
 
   // Setup live VLESS parser on input in add modal
   const urlInput = document.getElementById('input-vless-url');
@@ -354,7 +367,7 @@ function onCardHeaderClick(connId, ev) {
 }
 
 // Render Connections Grid
-function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, parentGroup = null) {
+function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, parentGroup = null, allRoutingsList = null) {
   const isActive = (conn.id === activeId);
   const isChecking = pingingConnectionIds.has(conn.id) || isPingingAll;
   const isAwgConn = conn.protocol === 'amneziawg' || conn.protocol === 'awg' || Boolean(conn.amneziaConfig);
@@ -379,7 +392,7 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
   }
 
   // Network / Transport
-  let connNetwork = conn.network;
+  let connNetwork = conn._cachedNet || conn.network;
   if (!connNetwork && conn.outboundContent) {
     try {
       const clean = stripComments(conn.outboundContent);
@@ -391,7 +404,11 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
       }
     } catch (e) {}
   }
-  const netFormatted = formatNetworkName(connNetwork || (isAwgConn || conn.protocol === 'wireguard' ? 'udp' : 'tcp'));
+  if (!connNetwork) {
+    connNetwork = (isAwgConn || conn.protocol === 'wireguard' ? 'udp' : 'tcp');
+  }
+  conn._cachedNet = connNetwork;
+  const netFormatted = formatNetworkName(connNetwork);
   const netBadgeHtml = `<span class="conn-badge badge-net" title="Транспорт: ${escapeHtml(netFormatted)}">${escapeHtml(netFormatted)}</span>`;
 
   // Ping status display
@@ -413,8 +430,8 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
     pingHtml = `<span class="ping-badge ping-none">Не проверялся</span>`;
   }
 
-  // Routing selector options (user configs first, protected configs under them)
-  const allRoutings = [
+  // Routing selector options (reuse precomputed list or build on demand)
+  const allRoutings = allRoutingsList || [
     ...(appData.routings || []).filter(r => !r.isSystem),
     ...(appData.routings || []).filter(r => r.isSystem)
   ];
@@ -432,18 +449,51 @@ function renderConnectionCardHtml(conn, activeId, isFavoriteSection = false, par
   const isWhitelist = (conn.targetList === 'whitelist');
   const targetBadgeHtml = `<span class="conn-badge badge-target-list ${isWhitelist ? 'target-whitelist' : 'target-blacklist'}" title="Назначение: ${isWhitelist ? 'Белые списки (БС)' : 'Черные списки (ЧС)'}">${isWhitelist ? 'БС' : 'ЧС'}</span>`;
 
-  let protoClass = '';
-  let protoText = escapeHtml((conn.protocol || 'vless').toUpperCase());
+  const rawProto = String(conn.protocol || 'vless').toLowerCase();
+  let protoClass = 'badge-proto-other';
+  let protoText = escapeHtml(rawProto.toUpperCase());
   let protoTitle = `Протокол: ${protoText}`;
 
-  if (isAwgConn) {
+  if (isAwgConn || rawProto === 'amneziawg' || rawProto === 'awg') {
     protoClass = 'badge-proto-awg';
     protoText = 'AWG';
     protoTitle = 'Протокол: AmneziaWG (ядро Mihomo)';
-  } else if (isHy2Conn) {
+  } else if (isHy2Conn || rawProto === 'hysteria2' || rawProto === 'hy2') {
     protoClass = 'badge-proto-hy2';
     protoText = 'HY2';
     protoTitle = 'Протокол: Hysteria 2 (ядро Mihomo)';
+  } else if (rawProto === 'vless') {
+    protoClass = 'badge-proto-vless';
+    protoText = 'VLESS';
+    protoTitle = 'Протокол: VLESS';
+  } else if (rawProto === 'vmess') {
+    protoClass = 'badge-proto-vmess';
+    protoText = 'VMESS';
+    protoTitle = 'Протокол: VMess';
+  } else if (rawProto === 'trojan') {
+    protoClass = 'badge-proto-trojan';
+    protoText = 'TROJAN';
+    protoTitle = 'Протокол: Trojan';
+  } else if (rawProto === 'shadowsocks' || rawProto === 'ss') {
+    protoClass = 'badge-proto-ss';
+    protoText = 'SS';
+    protoTitle = 'Протокол: Shadowsocks';
+  } else if (rawProto === 'wireguard' || rawProto === 'wg') {
+    protoClass = 'badge-proto-wg';
+    protoText = 'WG';
+    protoTitle = 'Протокол: WireGuard';
+  } else if (rawProto === 'tuic') {
+    protoClass = 'badge-proto-tuic';
+    protoText = 'TUIC';
+    protoTitle = 'Протокол: TUIC';
+  } else if (rawProto === 'socks' || rawProto === 'socks5') {
+    protoClass = 'badge-proto-socks';
+    protoText = 'SOCKS';
+    protoTitle = 'Протокол: SOCKS5';
+  } else if (rawProto === 'http' || rawProto === 'https') {
+    protoClass = 'badge-proto-http';
+    protoText = 'HTTP';
+    protoTitle = 'Протокол: HTTP';
   }
 
   // Origin info when rendered in Favorites section
@@ -594,13 +644,124 @@ function toggleGroupCollapse(groupId) {
   saveCollapsedGroups();
   const card = document.getElementById(`group-card-${groupId}`);
   const body = document.getElementById(`group-body-${groupId}`);
+  const isNowCollapsed = collapsedGroupIds.has(groupId);
   if (card && body) {
-    const isNowCollapsed = collapsedGroupIds.has(groupId);
     card.classList.toggle('collapsed', isNowCollapsed);
     body.classList.toggle('hidden', isNowCollapsed);
     const arrow = card.querySelector('.group-toggle-arrow');
     if (arrow) arrow.classList.toggle('expanded', !isNowCollapsed);
+
+    // If expanding a group whose cards were lazily omitted, render them
+    const lazySubgrid = body.querySelector('.lazy-subgrid');
+    if (!isNowCollapsed && lazySubgrid) {
+      renderConnections();
+    }
+  } else {
+    renderConnections();
   }
+}
+
+// Protocol and Transport Filter Helpers
+function getConnectionProtocol(conn) {
+  if (conn._cachedNormalizedProto) return conn._cachedNormalizedProto;
+  const rawProto = String(conn.protocol || 'vless').toLowerCase();
+  let proto = rawProto;
+  if (conn.isAwg || rawProto === 'amneziawg' || rawProto === 'awg') proto = 'amneziawg';
+  else if (conn.isHy2 || rawProto === 'hysteria2' || rawProto === 'hy2') proto = 'hysteria2';
+  else if (rawProto === 'vless') proto = 'vless';
+  else if (rawProto === 'vmess') proto = 'vmess';
+  else if (rawProto === 'trojan') proto = 'trojan';
+  else if (rawProto === 'shadowsocks' || rawProto === 'ss') proto = 'shadowsocks';
+  else if (rawProto === 'wireguard' || rawProto === 'wg') proto = 'wireguard';
+  else if (rawProto === 'tuic') proto = 'tuic';
+  else if (rawProto === 'socks' || rawProto === 'socks5') proto = 'socks';
+  else if (rawProto === 'http' || rawProto === 'https') proto = 'http';
+  conn._cachedNormalizedProto = proto;
+  return proto;
+}
+
+function getConnectionTransport(conn) {
+  if (conn._cachedNet) return conn._cachedNet;
+  let connNetwork = conn.network;
+  if (!connNetwork && conn.outboundContent) {
+    try {
+      const clean = stripComments(conn.outboundContent);
+      const parsed = JSON.parse(clean);
+      const oList = Array.isArray(parsed.outbounds) ? parsed.outbounds : [parsed];
+      const ob = oList.find(o => o && o.tag !== 'direct' && o.tag !== 'block');
+      if (ob && ob.streamSettings && ob.streamSettings.network) {
+        connNetwork = ob.streamSettings.network;
+      }
+    } catch (e) {}
+  }
+  const isAwgConn = Boolean(conn.isAwg || conn.protocol === 'amneziawg' || conn.protocol === 'awg');
+  const isHy2Conn = Boolean(conn.isHy2 || conn.protocol === 'hysteria2' || conn.protocol === 'hy2');
+  if (!connNetwork) {
+    if (isAwgConn || conn.protocol === 'wireguard' || conn.protocol === 'wg' || isHy2Conn || conn.protocol === 'tuic') {
+      connNetwork = 'udp';
+    } else {
+      connNetwork = 'tcp';
+    }
+  }
+  conn._cachedNet = String(connNetwork).toLowerCase();
+  return conn._cachedNet;
+}
+
+function matchesProtocolFilter(conn, filterVal) {
+  if (!filterVal || filterVal === 'all') return true;
+  return getConnectionProtocol(conn) === filterVal;
+}
+
+function matchesTransportFilter(conn, filterVal) {
+  if (!filterVal || filterVal === 'all') return true;
+  const net = getConnectionTransport(conn);
+  if (filterVal === 'ws') return net === 'ws' || net === 'websocket';
+  if (filterVal === 'h2') return net === 'h2' || net === 'http2';
+  return net === filterVal;
+}
+
+function onProtoFilterChange(val) {
+  currentProtoFilter = val || 'all';
+  localStorage.setItem('xkeen_connections_proto_filter', currentProtoFilter);
+  renderConnections();
+}
+
+function onNetFilterChange(val) {
+  currentNetFilter = val || 'all';
+  localStorage.setItem('xkeen_connections_net_filter', currentNetFilter);
+  renderConnections();
+}
+
+function resetConnectionsFilters() {
+  currentProtoFilter = 'all';
+  currentNetFilter = 'all';
+  localStorage.setItem('xkeen_connections_proto_filter', 'all');
+  localStorage.setItem('xkeen_connections_net_filter', 'all');
+  const protoSelect = document.getElementById('connections-proto-filter');
+  if (protoSelect) protoSelect.value = 'all';
+  const netSelect = document.getElementById('connections-net-filter');
+  if (netSelect) netSelect.value = 'all';
+  renderConnections();
+}
+
+// Group Pagination Helpers
+function showMoreGroupConns(groupId, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const cur = groupRenderLimits.get(groupId) || 50;
+  groupRenderLimits.set(groupId, cur + 50);
+  renderConnections();
+}
+
+function showAllGroupConns(groupId, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  groupRenderLimits.set(groupId, Infinity);
+  renderConnections();
 }
 
 function renderConnections() {
@@ -616,10 +777,33 @@ function renderConnections() {
     sortSelect.value = currentSort;
   }
 
-  if (connectionsCount) connectionsCount.textContent = rawList.length;
-  if (connectionsBadge) connectionsBadge.textContent = rawList.length;
+  // Sync protocol & transport filter selects
+  const protoSelect = document.getElementById('connections-proto-filter');
+  if (protoSelect && protoSelect.value !== currentProtoFilter) {
+    protoSelect.value = currentProtoFilter;
+  }
+  const netSelect = document.getElementById('connections-net-filter');
+  if (netSelect && netSelect.value !== currentNetFilter) {
+    netSelect.value = currentNetFilter;
+  }
+
+  const isFilterActive = (currentProtoFilter !== 'all' || currentNetFilter !== 'all');
+  const protoWrap = document.getElementById('connections-proto-filter-wrap');
+  if (protoWrap) protoWrap.classList.toggle('filter-active', currentProtoFilter !== 'all');
+  const netWrap = document.getElementById('connections-net-filter-wrap');
+  if (netWrap) netWrap.classList.toggle('filter-active', currentNetFilter !== 'all');
+  const btnReset = document.getElementById('btn-reset-filters');
+  if (btnReset) btnReset.classList.toggle('hidden', !isFilterActive);
+
+  // Precompute routings list once to avoid repeated array allocations
+  const allRoutingsList = [
+    ...(appData.routings || []).filter(r => !r.isSystem),
+    ...(appData.routings || []).filter(r => r.isSystem)
+  ];
 
   if (rawList.length === 0) {
+    if (connectionsCount) connectionsCount.textContent = '0';
+    if (connectionsBadge) connectionsBadge.textContent = '0';
     connectionsGrid.innerHTML = '';
     if (emptyConnectionsState) emptyConnectionsState.classList.remove('hidden');
     return;
@@ -628,7 +812,18 @@ function renderConnections() {
   if (emptyConnectionsState) emptyConnectionsState.classList.add('hidden');
 
   const list = getSortedConnections(rawList, activeId);
-  const favorites = list.filter(c => c.isFavorite);
+  const filteredList = isFilterActive
+    ? list.filter(c => matchesProtocolFilter(c, currentProtoFilter) && matchesTransportFilter(c, currentNetFilter))
+    : list;
+
+  if (connectionsCount) {
+    connectionsCount.textContent = isFilterActive ? `${filteredList.length} / ${rawList.length}` : rawList.length;
+  }
+  if (connectionsBadge) {
+    connectionsBadge.textContent = filteredList.length;
+  }
+
+  const favorites = filteredList.filter(c => c.isFavorite);
 
   let html = '';
 
@@ -657,7 +852,7 @@ function renderConnections() {
           </div>
         </div>
         <div class="connections-subgrid">
-          ${sortConnsAvailability(favorites).map(c => renderConnectionCardHtml(c, activeId, true)).join('')}
+          ${sortConnsAvailability(favorites).map(c => renderConnectionCardHtml(c, activeId, true, null, allRoutingsList)).join('')}
         </div>
       </div>
     `;
@@ -666,16 +861,17 @@ function renderConnections() {
   // 2. Groups Accordions
   html += `<div class="groups-container">`;
   groups.forEach((g, gIdx) => {
-    const groupConns = list.filter(c => (c.groupId || 'group_default') === g.id);
-    const totalCount = groupConns.length;
-    const availableCount = groupConns.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
+    const unfilteredGroupConns = list.filter(c => (c.groupId || 'group_default') === g.id);
+    const groupConns = filteredList.filter(c => (c.groupId || 'group_default') === g.id);
+    const totalCount = unfilteredGroupConns.length;
+    const availableCount = unfilteredGroupConns.filter(c => c.lastPingStatus === 'ok' && c.lastPing !== null).length;
     const isCollapsed = collapsedGroupIds.has(g.id);
     const isSub = Boolean(g.isSubscription);
-    const isPingingGroup = pingingGroupIds.has(g.id) || (isPingingAll && groupConns.some(c => pingingConnectionIds.has(c.id)));
+    const isPingingGroup = pingingGroupIds.has(g.id) || (isPingingAll && unfilteredGroupConns.some(c => pingingConnectionIds.has(c.id)));
     const isUpdatingSub = updatingSubscriptionIds.has(g.id);
 
     const sortedGroupConns = sortConnsAvailability(groupConns);
-    const shouldHideUnreachable = (g.hideUnreachable !== false);
+    const shouldHideUnreachable = isSub && (g.hideUnreachable !== false);
     const isTemporarilyRevealed = revealedHiddenGroupIds.has(g.id);
     let displayedConns = sortedGroupConns;
     let hiddenUnreachableCount = 0;
@@ -731,11 +927,36 @@ function renderConnections() {
     }
 
     let bodyContentHtml = '';
-    if (displayedConns.length > 0) {
+    if (isCollapsed) {
+      // Lazy render: skip building card DOM for collapsed groups to prevent UI lag on large lists
+      bodyContentHtml = `<div class="connections-subgrid lazy-subgrid" id="subgrid-${g.id}"></div>`;
+    } else if (displayedConns.length > 0) {
+      const renderLimit = groupRenderLimits.get(g.id) || 50;
+      const visibleConns = displayedConns.slice(0, renderLimit);
+      const hasMore = displayedConns.length > renderLimit;
+
+      let paginationHtml = '';
+      if (hasMore) {
+        paginationHtml = `
+          <div class="subgrid-pagination-bar">
+            <span class="pagination-info">Показано ${visibleConns.length} из ${displayedConns.length} подключений</span>
+            <div class="pagination-buttons">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="showMoreGroupConns('${g.id}', event)">
+                <span>Показать ещё (+50)</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="showAllGroupConns('${g.id}', event)">
+                <span>Показать все (${displayedConns.length})</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
       bodyContentHtml = `
-        <div class="connections-subgrid">
-          ${displayedConns.map(c => renderConnectionCardHtml(c, activeId, false, g)).join('')}
+        <div class="connections-subgrid" id="subgrid-${g.id}">
+          ${visibleConns.map(c => renderConnectionCardHtml(c, activeId, false, g, allRoutingsList)).join('')}
         </div>
+        ${paginationHtml}
       `;
     } else if (groupConns.length > 0) {
       const showBtnLabel = isTemporarilyRevealed ? 'Скрыть обратно' : ('Показать недоступные (' + hiddenUnreachableCount + ')');
@@ -744,6 +965,15 @@ function renderConnections() {
           <span>Все подключения (${totalCount}) недоступны и скрыты настройкой</span>
           <button type="button" class="btn btn-secondary btn-sm" onclick="toggleShowHiddenForGroup('${g.id}', event)">
             <span>${showBtnLabel}</span>
+          </button>
+        </div>
+      `;
+    } else if (unfilteredGroupConns.length > 0 && isFilterActive) {
+      bodyContentHtml = `
+        <div class="group-empty-state">
+          <span>Нет подключений, соответствующих выбранным фильтрам (${unfilteredGroupConns.length} скрыто)</span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="resetConnectionsFilters()">
+            <span>Сбросить фильтры</span>
           </button>
         </div>
       `;
@@ -760,6 +990,13 @@ function renderConnections() {
       `;
     }
 
+    const countBadgeTitle = isFilterActive
+      ? `Отфильтровано: ${groupConns.length} из ${totalCount} (доступно: ${availableCount})`
+      : `Доступно: ${availableCount} из ${totalCount} подключений`;
+    const countBadgeContent = isFilterActive
+      ? `<span class="count-available ${availableCount > 0 ? 'has-online' : 'no-online'}">● ${availableCount}</span> / <span class="count-total">${groupConns.length} (${totalCount})</span>`
+      : `<span class="count-available ${availableCount > 0 ? 'has-online' : 'no-online'}">● ${availableCount}</span> / <span class="count-total">${totalCount}</span>`;
+
     html += `
       <div class="group-accordion-card ${isSub ? 'subscription-group-card' : ''} ${isCollapsed ? 'collapsed' : ''}" id="group-card-${g.id}">
         <div class="group-header" onclick="toggleGroupCollapse('${g.id}')">
@@ -772,7 +1009,7 @@ function renderConnections() {
             ${groupTargetBadgeHtml}
             ${subInfoHtml}
             ${isSub && g.autoUpdateHours > 0 ? `<span class="group-autoupdate-badge" title="Автообновление каждые ${g.autoUpdateHours} ч">🔄 ${g.autoUpdateHours}ч</span>` : ''}
-            <span class="group-count-badge" title="Доступно: ${availableCount} из ${totalCount} подключений"><span class="count-available ${availableCount > 0 ? 'has-online' : 'no-online'}">● ${availableCount}</span> / <span class="count-total">${totalCount}</span></span>
+            <span class="group-count-badge" title="${escapeHtml(countBadgeTitle)}">${countBadgeContent}</span>
           </div>
           <div class="group-actions" onclick="event.stopPropagation()">
             <!-- Group Move Up / Down -->
@@ -3708,6 +3945,8 @@ function collectBuilderConfig() {
   const bypassPrivate = Boolean(document.getElementById('builder-bypass-private')?.checked);
   const blockNetbios = Boolean(document.getElementById('builder-block-netbios')?.checked);
   const blockAds = Boolean(document.getElementById('builder-block-ads')?.checked);
+  const geositeExtraProxy = Boolean(document.getElementById('builder-geosite-extra-proxy')?.checked);
+  const geoAutoUpdate = Boolean(document.getElementById('builder-geo-autoupdate')?.checked);
 
   const parseLines = (id) => {
     const val = document.getElementById(id)?.value || '';
@@ -3723,6 +3962,8 @@ function collectBuilderConfig() {
     bypassPrivate,
     blockNetbios,
     blockAds,
+    geositeExtraProxy,
+    geoAutoUpdate,
     customProxyDomains: parseLines('builder-custom-proxy-domains'),
     customProxyIps: parseLines('builder-custom-proxy-ips'),
     customDirectDomains: parseLines('builder-custom-direct-domains'),
@@ -3824,6 +4065,21 @@ function generateBuilderJson(cfg) {
   if (cleanProxyIps.length > 0) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cleanProxyIps });
   }
+  if (cfg.geositeExtraProxy) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      domain: [
+        'geosite:google',
+        'geosite:telegram',
+        'geosite:twitter',
+        'geosite:meta',
+        'geosite:discord',
+        'geosite:openai'
+      ]
+    });
+  }
   rules.push({
     type: 'field',
     inboundTag: inbounds,
@@ -3863,6 +4119,8 @@ function populateBuilderForm(cfg = {}) {
   setCheck('builder-bypass-private', cfg.bypassPrivate !== undefined ? cfg.bypassPrivate : true);
   setCheck('builder-block-netbios', cfg.blockNetbios !== undefined ? cfg.blockNetbios : true);
   setCheck('builder-block-ads', cfg.blockAds !== undefined ? cfg.blockAds : false);
+  setCheck('builder-geo-autoupdate', cfg.geoAutoUpdate !== undefined ? cfg.geoAutoUpdate : true);
+  setCheck('builder-geosite-extra-proxy', cfg.geositeExtraProxy !== undefined ? cfg.geositeExtraProxy : false);
 
   const setText = (id, arr) => {
     const el = document.getElementById(id);
@@ -3875,6 +4133,70 @@ function populateBuilderForm(cfg = {}) {
   setText('builder-custom-direct-ips', cfg.customDirectIps);
   setText('builder-custom-block-domains', cfg.customBlockDomains);
   setText('builder-custom-block-ips', cfg.customBlockIps);
+}
+
+// Check status of geosite.dat and geoip.dat
+async function checkGeodataStatus() {
+  try {
+    const res = await fetch('/api/geodata/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    const siteBadge = document.getElementById('geodata-badge-geosite');
+    const ipBadge = document.getElementById('geodata-badge-geoip');
+    const updateBadge = document.getElementById('geodata-badge-updated');
+
+    if (siteBadge) {
+      if (data.geosite && data.geosite.exists) {
+        siteBadge.innerHTML = `GeoSite: <strong style="color: #4ade80;">OK (${formatBytes(data.geosite.size)})</strong>`;
+      } else {
+        siteBadge.innerHTML = `GeoSite: <strong style="color: #f87171;">Отсутствует</strong>`;
+      }
+    }
+
+    if (ipBadge) {
+      if (data.geoip && data.geoip.exists) {
+        ipBadge.innerHTML = `GeoIP: <strong style="color: #4ade80;">OK (${formatBytes(data.geoip.size)})</strong>`;
+      } else {
+        ipBadge.innerHTML = `GeoIP: <strong style="color: #f87171;">Отсутствует</strong>`;
+      }
+    }
+
+    if (updateBadge) {
+      if (data.lastUpdated) {
+        const d = new Date(data.lastUpdated);
+        updateBadge.innerHTML = `Обновлено: <strong>${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>`;
+      } else {
+        updateBadge.innerHTML = `Обновлено: <strong>Никогда</strong>`;
+      }
+    }
+  } catch (err) {
+    console.error('Ошибка проверки статуса geodata:', err);
+  }
+}
+
+// Download latest geosite.dat and geoip.dat manually
+async function updateGeodataNow(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const btn = document.getElementById('btn-update-geodata');
+  const btnText = document.getElementById('btn-update-geodata-text');
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.textContent = 'Загрузка...';
+
+  try {
+    const res = await fetch('/api/geodata/update', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка загрузки баз');
+    showToast('Базы GeoSite и GeoIP успешно обновлены!', 'success');
+    await checkGeodataStatus();
+  } catch (err) {
+    showToast(`Ошибка обновления баз: ${err.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = 'Обновить базы сейчас';
+  }
 }
 
 // Open Add Routing Modal
@@ -3900,7 +4222,7 @@ function openAddRoutingModal() {
     chkWhitelist.disabled = false;
   }
 
-  // Set default builder options (BitTorrent direct, QUIC block, VoIP direct, Bypass RU on)
+  // Set default builder options (BitTorrent direct, QUIC block, VoIP direct, Bypass RU on, GeoSite extra off, GeoAutoUpdate on)
   populateBuilderForm({
     defaultAction: 'proxy',
     bittorrent: 'direct',
@@ -3909,7 +4231,9 @@ function openAddRoutingModal() {
     bypassRu: true,
     bypassPrivate: true,
     blockNetbios: true,
-    blockAds: false
+    blockAds: false,
+    geositeExtraProxy: false,
+    geoAutoUpdate: true
   });
 
   const hiddenMode = document.getElementById('routing-mode');
@@ -3920,6 +4244,7 @@ function openAddRoutingModal() {
   setEditorContent('routing-content-json', initialJson);
 
   openModal('modal-routing');
+  checkGeodataStatus();
   setTimeout(initRoutingTextareaSync, 50);
 }
 
@@ -3980,6 +4305,7 @@ function openRoutingModal(id) {
 
   setEditorContent('routing-content-json', routing.content);
   openModal('modal-routing');
+  checkGeodataStatus();
   setTimeout(initRoutingTextareaSync, 50);
 }
 

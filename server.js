@@ -430,6 +430,23 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
     });
   }
 
+  // 9. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI)
+  if (cfg.geositeExtraProxy) {
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      domain: [
+        'geosite:google',
+        'geosite:telegram',
+        'geosite:twitter',
+        'geosite:meta',
+        'geosite:discord',
+        'geosite:openai'
+      ]
+    });
+  }
+
   // 10. Default Fallback
   const finalTag = (cfg.defaultAction === 'direct') ? 'direct' : proxyTag;
   rules.push({
@@ -586,7 +603,17 @@ function compileMihomoRules(cfg) {
     if (r) lines.push(r);
   }
 
-  // 11. Match Default
+  // 11. Extra GeoSite Proxy services
+  if (cfg.geositeExtraProxy) {
+    lines.push('  - GEOSITE,google,PROXY');
+    lines.push('  - GEOSITE,telegram,PROXY');
+    lines.push('  - GEOSITE,twitter,PROXY');
+    lines.push('  - GEOSITE,meta,PROXY');
+    lines.push('  - GEOSITE,discord,PROXY');
+    lines.push('  - GEOSITE,openai,PROXY');
+  }
+
+  // 12. Match Default
   if (cfg.defaultAction === 'direct') {
     lines.push('  - MATCH,DIRECT');
   } else {
@@ -864,6 +891,147 @@ function ensureMihomoGeodataSymlinks() {
   } catch (e) {
     return { hasGeosite: false, hasGeoip: false };
   }
+}
+
+// Helper: Get target directory for GeoSite and GeoIP files
+function getGeodataDirectory() {
+  const dirs = ['/opt/etc/xray/dat', '/opt/etc/xray', '/opt/sbin', '/opt/share/xray'];
+  for (const d of dirs) {
+    if (fs.existsSync(d)) return d;
+  }
+  const fallback = path.join(__dirname, 'data', 'geodata');
+  if (!fs.existsSync(fallback)) {
+    try { fs.mkdirSync(fallback, { recursive: true }); } catch (e) {}
+  }
+  return fallback;
+}
+
+// Helper: Inspect current GeoSite and GeoIP files status
+function getGeodataStatus() {
+  const symInfo = ensureMihomoGeodataSymlinks();
+  const datDir = getGeodataDirectory();
+  let geositeSize = 0;
+  let geoipSize = 0;
+  let geositeTime = null;
+  let geoipTime = null;
+
+  const geositeFiles = ['geosite.dat', 'geosite_v2fly.dat', 'GeoSite.dat'];
+  for (const name of geositeFiles) {
+    const p = path.join(datDir, name);
+    if (fs.existsSync(p)) {
+      try {
+        const stat = fs.statSync(p);
+        if (stat.size > geositeSize) {
+          geositeSize = stat.size;
+          geositeTime = stat.mtime;
+        }
+      } catch (e) {}
+    }
+  }
+
+  const geoipFiles = ['geoip.dat', 'geoip_v2fly.dat', 'geoip_zkeenip.dat', 'GeoIP.dat'];
+  for (const name of geoipFiles) {
+    const p = path.join(datDir, name);
+    if (fs.existsSync(p)) {
+      try {
+        const stat = fs.statSync(p);
+        if (stat.size > geoipSize) {
+          geoipSize = stat.size;
+          geoipTime = stat.mtime;
+        }
+      } catch (e) {}
+    }
+  }
+
+  const data = loadData();
+  const lastUpdated = data.settings?.lastGeoUpdate || (geositeTime ? geositeTime.toISOString() : null);
+
+  return {
+    hasGeosite: Boolean(symInfo.hasGeosite || geositeSize > 0),
+    hasGeoip: Boolean(symInfo.hasGeoip || geoipSize > 0),
+    geositeSize,
+    geoipSize,
+    geositeSizeFormatted: formatBytes(geositeSize),
+    geoipSizeFormatted: formatBytes(geoipSize),
+    lastUpdated,
+    autoUpdate: Boolean(data.settings?.geoAutoUpdate !== false)
+  };
+}
+
+// Helper: Download a file safely with fallback to curl and validation
+async function downloadGeodataFile(url, destPath) {
+  const tmpPath = destPath + '.tmp_' + Date.now();
+  let downloaded = false;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length > 50000) {
+        fs.writeFileSync(tmpPath, buffer);
+        fs.renameSync(tmpPath, destPath);
+        downloaded = true;
+      }
+    }
+  } catch (e) {}
+
+  if (!downloaded) {
+    const curlEscaped = `'${url.replace(/'/g, "'\\''")}'`;
+    const tmpEscaped = `'${tmpPath.replace(/'/g, "'\\''")}'`;
+    await runShellCommand(`curl -sSL -k --max-time 60 ${curlEscaped} -o ${tmpEscaped}`, 65000);
+    if (fs.existsSync(tmpPath)) {
+      const stat = fs.statSync(tmpPath);
+      if (stat.size > 50000) {
+        fs.renameSync(tmpPath, destPath);
+        downloaded = true;
+      } else {
+        try { fs.unlinkSync(tmpPath); } catch (e) {}
+      }
+    }
+  }
+
+  if (!downloaded) {
+    throw new Error(`Не удалось загрузить базу данных из ${url}`);
+  }
+}
+
+// Helper: Download and update GeoSite and GeoIP databases
+async function updateGeodataDatabases() {
+  const datDir = getGeodataDirectory();
+  if (!fs.existsSync(datDir)) {
+    try { fs.mkdirSync(datDir, { recursive: true }); } catch (e) {}
+  }
+
+  const geositeUrl = 'https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat';
+  const geoipUrl = 'https://github.com/v2fly/geoip/releases/latest/download/geoip.dat';
+
+  const geositeDest = path.join(datDir, 'geosite.dat');
+  const geoipDest = path.join(datDir, 'geoip.dat');
+
+  console.log('[GeoData] Начинаем загрузку geosite.dat и geoip.dat...');
+  await downloadGeodataFile(geositeUrl, geositeDest);
+  try {
+    const altGeosite = path.join(datDir, 'geosite_v2fly.dat');
+    if (!fs.existsSync(altGeosite)) fs.copyFileSync(geositeDest, altGeosite);
+  } catch (e) {}
+
+  await downloadGeodataFile(geoipUrl, geoipDest);
+  try {
+    const altGeoip = path.join(datDir, 'geoip_v2fly.dat');
+    if (!fs.existsSync(altGeoip)) fs.copyFileSync(geoipDest, altGeoip);
+  } catch (e) {}
+
+  ensureMihomoGeodataSymlinks();
+
+  const data = loadData();
+  data.settings.lastGeoUpdate = new Date().toISOString();
+  saveData(data);
+  console.log('[GeoData] Базы GeoSite и GeoIP успешно обновлены');
+
+  return getGeodataStatus();
 }
 
 // Helper: Detect active proxy core from S05xkeen and binaries
@@ -2272,9 +2440,14 @@ ${dnsYaml}${mtuLine}${awgOptionStr}`;
   }
 
   const geodataStatus = ensureMihomoGeodataSymlinks();
-  const geodataHeader = (geodataStatus.hasGeosite || geodataStatus.hasGeoip)
-    ? 'geodata-mode: true\ngeodata-loader: memconservative\n'
-    : '';
+  let geodataHeader = '';
+  if (geodataStatus.hasGeosite || geodataStatus.hasGeoip) {
+    geodataHeader = 'geodata-mode: true\ngeodata-loader: memconservative\n';
+    const isAutoUpdate = Boolean(routing?.builderConfig?.geoAutoUpdate || data?.settings?.geoAutoUpdate);
+    if (isAutoUpdate) {
+      geodataHeader += 'geo-auto-update: true\ngeo-update-interval: 24\ngeox-url:\n  geoip: "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"\n  geosite: "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"\n';
+    }
+  }
 
   const yamlContent = `# Generated by XKeenSwitcher for ${connName}
 mixed-port: 7890
@@ -2483,7 +2656,7 @@ async function fetchSubscriptionContent(urlStr) {
   // Try native fetch first
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     const res = await fetch(cleanUrl, {
       headers: {
         'User-Agent': 'INCY/3.8.8 v2rayN/6.23 clash/1.0 v2ray/5.0',
@@ -2508,9 +2681,9 @@ async function fetchSubscriptionContent(urlStr) {
 
   if (!fetchSucceeded) {
     const curlEscaped = `'${cleanUrl.replace(/'/g, "'\\''")}'`;
-    const curlRes = await runShellCommand(`curl -sSL -k -A "INCY/3.8.8" -H "x-hwid: ${deviceHwid}" -D - --max-time 15 ${curlEscaped}`, 18000);
+    const curlRes = await runShellCommand(`curl -sSL -k -A "INCY/3.8.8" -H "x-hwid: ${deviceHwid}" -D - --max-time 30 ${curlEscaped}`, 35000);
     if (!curlRes.success && !curlRes.stdout) {
-      throw new Error('Не удалось загрузить подписку по указанному URL');
+      throw new Error('Не удалось загрузить подписку по указанному URL (таймаут или сетевая ошибка)');
     }
     const stdout = curlRes.stdout || '';
     const parts = stdout.split(/\r?\n\r?\n/);
@@ -2530,7 +2703,7 @@ async function fetchSubscriptionContent(urlStr) {
     throw new Error('Ответ сервера подписки пуст');
   }
 
-  let textContent = rawBody.trim();
+  let textContent = rawBody.replace(/^\uFEFF/, '').trim();
   let jsonConfigs = [];
 
   // 1. Direct JSON array (like INCY / Remnawave)
@@ -2545,26 +2718,64 @@ async function fetchSubscriptionContent(urlStr) {
     } catch (e) {}
   }
 
-  // 2. Decode Base64 if needed
-  if (jsonConfigs.length === 0 && !textContent.includes('://')) {
-    try {
-      const decoded = Buffer.from(textContent, 'base64').toString('utf8');
-      if (decoded.includes('://')) {
-        textContent = decoded;
-      } else if (decoded.startsWith('[') || decoded.startsWith('{')) {
-        const parsed = JSON.parse(decoded);
-        if (Array.isArray(parsed)) {
-          jsonConfigs = parsed.filter(item => item && (item.outbounds || item.settings));
-        } else if (parsed && parsed.outbounds) {
-          jsonConfigs = [parsed];
+  // 2. Decode Base64 if needed (handles comments containing https://, padded lines, url-safe base64)
+  if (jsonConfigs.length === 0) {
+    const rawLines = textContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const nonCommentLines = rawLines.filter(l => !l.startsWith('#') && !l.startsWith('//'));
+    const hasDirectProxyUrls = nonCommentLines.some(l => 
+      l.startsWith('vless://') || l.startsWith('vmess://') || l.startsWith('trojan://') || 
+      l.startsWith('ss://') || l.startsWith('hysteria2://') || l.startsWith('hy2://') || 
+      l.startsWith('tuic://') || l.startsWith('wireguard://') || l.startsWith('awg://') ||
+      l.startsWith('vpn://') || l.includes('[Interface]')
+    );
+
+    if (!hasDirectProxyUrls) {
+      // Body or combined non-comment lines might be Base64
+      const candidateCombined = nonCommentLines.join('');
+      const decoded = decodeBase64Safe(candidateCombined) || decodeBase64Safe(textContent);
+      if (decoded) {
+        if (decoded.startsWith('[') || decoded.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(decoded);
+            if (Array.isArray(parsed)) {
+              jsonConfigs = parsed.filter(item => item && (item.outbounds || item.settings));
+            } else if (parsed && parsed.outbounds) {
+              jsonConfigs = [parsed];
+            }
+          } catch (e) {}
+        }
+        if (jsonConfigs.length === 0 && (decoded.includes('://') || decoded.includes('[Interface]'))) {
+          textContent = decoded;
         }
       }
-    } catch (e) {}
+    }
   }
 
-  const lines = jsonConfigs.length > 0 ? [] : textContent.split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
+  // 3. Extract and sanitize individual lines
+  let lines = [];
+  if (jsonConfigs.length === 0) {
+    const rawSplit = textContent.split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !l.startsWith('#') && !l.startsWith('//'));
+
+    for (const l of rawSplit) {
+      if (l.startsWith('vless://') || l.startsWith('vmess://') || l.startsWith('trojan://') || 
+          l.startsWith('ss://') || l.startsWith('hysteria2://') || l.startsWith('hy2://') || 
+          l.startsWith('tuic://') || l.startsWith('wireguard://') || l.startsWith('awg://') ||
+          l.startsWith('vpn://') || l.includes('[Interface]')) {
+        lines.push(l);
+      } else {
+        // Test if this individual line is Base64 encoded
+        const dec = decodeBase64Safe(l);
+        if (dec && (dec.startsWith('vless://') || dec.startsWith('vmess://') || dec.startsWith('trojan://') || dec.startsWith('ss://') || dec.includes('://'))) {
+          const subLines = dec.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith('#'));
+          lines.push(...subLines);
+        } else {
+          lines.push(l);
+        }
+      }
+    }
+  }
 
   return { lines, jsonConfigs, userInfo };
 }
@@ -5052,10 +5263,27 @@ async function syncSubscriptionById(id) {
 
     let found = existingConns.find(c =>
       !matchedIds.has(c.id) &&
+      c.name === item.name &&
       c.serverAddress === host &&
-      String(c.serverPort) === String(port) &&
-      (c.sni === item.sni || c.name === item.name)
+      String(c.serverPort) === String(port)
     );
+
+    if (!found) {
+      found = existingConns.find(c =>
+        !matchedIds.has(c.id) &&
+        c.name === item.name
+      );
+    }
+
+    if (!found) {
+      found = existingConns.find(c =>
+        !matchedIds.has(c.id) &&
+        c.serverAddress === host &&
+        String(c.serverPort) === String(port) &&
+        c.protocol === item.protocol &&
+        c.outboundContent === item.outboundJson
+      );
+    }
 
     if (found) {
       matchedIds.add(found.id);
@@ -5187,6 +5415,49 @@ async function subscriptionSchedulerTick() {
     console.error('[SubScheduler] Error in scheduler tick:', err);
   } finally {
     subscriptionSchedulerRunning = false;
+  }
+}
+
+// ==============================================================================
+// GEODATA (GEOSITE & GEOIP) AUTO-UPDATE SCHEDULER
+// ==============================================================================
+let geodataSchedulerTimer = null;
+let geodataSchedulerRunning = false;
+
+function startGeodataAutoUpdateScheduler() {
+  if (geodataSchedulerTimer) clearInterval(geodataSchedulerTimer);
+  geodataSchedulerTimer = setInterval(geodataSchedulerTick, 1800000); // Check every 30 minutes
+  console.log('[GeoScheduler] Планировщик автообновления баз GeoSite и GeoIP запущен (проверка каждые 30 мин)');
+  setTimeout(geodataSchedulerTick, 45000); // Check after 45s on startup
+}
+
+async function geodataSchedulerTick() {
+  if (geodataSchedulerRunning) return;
+  geodataSchedulerRunning = true;
+
+  try {
+    const data = loadData();
+    const isAutoUpdateEnabled = Boolean(
+      data.settings?.geoAutoUpdate ||
+      (data.routings || []).some(r => r.builderConfig && r.builderConfig.geoAutoUpdate)
+    );
+
+    if (!isAutoUpdateEnabled) {
+      return;
+    }
+
+    const lastUpdated = data.settings?.lastGeoUpdate ? new Date(data.settings.lastGeoUpdate).getTime() : 0;
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    if (!lastUpdated || (now - lastUpdated >= oneDayMs)) {
+      console.log('[GeoScheduler] Истек 24ч интервал, запускаем автообновление GeoSite и GeoIP...');
+      await updateGeodataDatabases();
+    }
+  } catch (err) {
+    console.error('[GeoScheduler] Ошибка автообновления GeoSite и GeoIP:', err.message);
+  } finally {
+    geodataSchedulerRunning = false;
   }
 }
 
@@ -6791,6 +7062,8 @@ const server = http.createServer(async (req, res) => {
           bypassPrivate: Boolean(body.builderConfig.bypassPrivate),
           blockAds: Boolean(body.builderConfig.blockAds),
           blockNetbios: Boolean(body.builderConfig.blockNetbios),
+          geositeExtraProxy: Boolean(body.builderConfig.geositeExtraProxy),
+          geoAutoUpdate: (typeof body.builderConfig.geoAutoUpdate !== 'undefined') ? Boolean(body.builderConfig.geoAutoUpdate) : true,
           customProxyDomains: parseList(body.builderConfig.customProxyDomains),
           customDirectDomains: parseList(body.builderConfig.customDirectDomains),
           customBlockDomains: parseList(body.builderConfig.customBlockDomains),
@@ -6939,6 +7212,8 @@ const server = http.createServer(async (req, res) => {
           bypassPrivate: Boolean(body.builderConfig.bypassPrivate),
           blockAds: Boolean(body.builderConfig.blockAds),
           blockNetbios: Boolean(body.builderConfig.blockNetbios),
+          geositeExtraProxy: Boolean(body.builderConfig.geositeExtraProxy),
+          geoAutoUpdate: (typeof body.builderConfig.geoAutoUpdate !== 'undefined') ? Boolean(body.builderConfig.geoAutoUpdate) : true,
           customProxyDomains: parseList(body.builderConfig.customProxyDomains),
           customDirectDomains: parseList(body.builderConfig.customDirectDomains),
           customBlockDomains: parseList(body.builderConfig.customBlockDomains),
@@ -7044,6 +7319,27 @@ const server = http.createServer(async (req, res) => {
     data.routings.splice(index, 1);
     saveData(data);
     return sendJson(res, 200, { message: 'Конфигурация маршрутизации удалена' });
+  }
+
+  // --- GEODATA ROUTES (GEOSITE & GEOIP) ---
+
+  // GET /api/geodata/status - Get status of geosite.dat and geoip.dat
+  if (urlParts === '/api/geodata/status' && req.method === 'GET') {
+    const status = getGeodataStatus();
+    return sendJson(res, 200, status);
+  }
+
+  // POST /api/geodata/update - Download latest geosite.dat and geoip.dat
+  if (urlParts === '/api/geodata/update' && req.method === 'POST') {
+    try {
+      const status = await updateGeodataDatabases();
+      return sendJson(res, 200, {
+        message: 'Базы GeoSite и GeoIP успешно обновлены',
+        ...status
+      });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message || 'Ошибка обновления баз GeoSite и GeoIP' });
+    }
   }
 
   // --- BACKUP & RESTORE ROUTES ---
@@ -7667,6 +7963,7 @@ server.listen(PORT, HOST, () => {
   startFailoverWatchdog();
   startAutoFailoverWatchdog();
   startSubscriptionScheduler();
+  startGeodataAutoUpdateScheduler();
   setTimeout(sweepGeoIpForConnections, 2000);
   setTimeout(autoRepairOutdatedSubscriptions, 3000);
 });

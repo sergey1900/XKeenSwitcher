@@ -70,10 +70,10 @@
           <span class="status-text" id="service-status-text">Проверка...</span>
         </button>
 
-        <button class="core-status-badge" id="core-status-badge" onclick="openCoreSettingsTab()" title="Текущее ядро проксирования XKeen (нажмите для смены Xray / Mihomo)">
+        <div class="core-status-badge not-clickable" id="core-status-badge" title="Текущее ядро проксирования XKeen">
           <span class="core-icon">⚡</span>
           <span id="core-status-text">Ядро: Xray</span>
-        </button>
+        </div>
 
         <button class="failover-badge hidden" id="failover-status-badge" onclick="openFailoverSettings()" title="Белые Списки (нажмите для настройки)">
           <span class="failover-dot"></span>
@@ -149,6 +149,39 @@
         </div>
 
         <div class="section-controls-right">
+          <!-- PROTOCOL FILTER -->
+          <div class="section-sort-wrap" title="Фильтр по протоколу">
+            <span class="filter-icon" style="font-size: 13px; line-height: 1;">⚡</span>
+            <select id="connections-proto-filter" class="sort-select" onchange="onProtoFilterChange(this.value)">
+              <option value="all">Все протоколы</option>
+              <option value="vless">VLESS</option>
+              <option value="vmess">VMess</option>
+              <option value="trojan">Trojan</option>
+              <option value="ss">Shadowsocks</option>
+              <option value="hy2">Hysteria 2</option>
+              <option value="awg">AmneziaWG</option>
+              <option value="wireguard">WireGuard</option>
+              <option value="tuic">TUIC</option>
+              <option value="socks">SOCKS</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
+
+          <!-- TRANSPORT FILTER -->
+          <div class="section-sort-wrap" title="Фильтр по транспорту (сети)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sort-icon"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <select id="connections-net-filter" class="sort-select" onchange="onNetFilterChange(this.value)">
+              <option value="all">Все транспорты</option>
+              <option value="tcp">TCP</option>
+              <option value="grpc">gRPC</option>
+              <option value="ws">WebSocket (WS)</option>
+              <option value="h2">HTTP/2 (H2)</option>
+              <option value="xhttp">XHTTP / SplitHTTP</option>
+              <option value="udp">UDP</option>
+            </select>
+          </div>
+
+          <!-- SORT SELECT -->
           <div class="section-sort-wrap" title="Сортировка списка подключений">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sort-icon"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
             <select id="connections-sort-select" class="sort-select" onchange="onSortChange(this.value)">
@@ -161,6 +194,11 @@
               <option value="oldest">Сначала старые</option>
             </select>
           </div>
+
+          <!-- RESET FILTERS BUTTON -->
+          <button type="button" class="btn btn-secondary btn-sm btn-icon hidden" id="btn-reset-filters" onclick="resetConnectionsFilters()" title="Сбросить все фильтры">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
         </div>
       </div>
 
@@ -661,6 +699,40 @@
               </label>
             </div>
           </div>
+          <!-- GEODATA (GEOSITE & GEOIP) + AUTO-UPDATE -->
+          <div class="routing-card">
+            <div class="routing-card-header">
+              <span class="routing-card-title">🌍 Базы GeoSite и GeoIP (геолокация)</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-update-geodata" onclick="updateGeodataNow(event)" title="Загрузить свежие базы geosite.dat и geoip.dat">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                <span id="btn-update-geodata-text">Обновить базы сейчас</span>
+              </button>
+            </div>
+
+            <div class="geodata-info-badge-row" id="geodata-info-badges">
+              <span class="geodata-pill-info" id="geodata-badge-geosite">GeoSite: <strong>Проверка...</strong></span>
+              <span class="geodata-pill-info" id="geodata-badge-geoip">GeoIP: <strong>Проверка...</strong></span>
+              <span class="geodata-pill-info" id="geodata-badge-updated">Обновлено: <strong>-</strong></span>
+            </div>
+
+            <div class="routing-checks-grid" style="margin-top: 12px;">
+              <label class="routing-check-item">
+                <input type="checkbox" id="builder-geo-autoupdate" checked>
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🔄 Автообновление баз GeoSite и GeoIP</span>
+                  <span class="routing-check-item-desc">Автоматически обновлять базы geosite.dat и geoip.dat каждые 24 часа</span>
+                </div>
+              </label>
+
+              <label class="routing-check-item">
+                <input type="checkbox" id="builder-geosite-extra-proxy">
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🛡️ Зарубежные сервисы через туннель (GeoSite)</span>
+                  <span class="routing-check-item-desc">Google, Telegram, Twitter, Meta/Insta, Discord, OpenAI через VPN</span>
+                </div>
+              </label>
+            </div>
+          </div>
 
           <!-- CUSTOM LISTS (COLLAPSIBLE) -->
           <div class="routing-card">
@@ -1066,12 +1138,6 @@
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 16px;">
-          <label class="checkbox-label" title="Не показывать недоступные подключения в списке этой группы">
-            <input type="checkbox" id="group-edit-hide-unreachable" checked>
-            <span>Скрывать недоступные подключения (по умолчанию)</span>
-          </label>
-        </div>
 
         <div class="modal-footer">
           <button type="submit" class="btn btn-primary" id="btn-save-group">Сохранить</button>
