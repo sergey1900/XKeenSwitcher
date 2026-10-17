@@ -208,43 +208,43 @@
                   <div class="dropdown-menu-list">
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="vless" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-vless">VLESS</span>
+                      <span class="conn-badge badge-proto badge-proto-vless">VLESS</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="vmess" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-vmess">VMESS</span>
+                      <span class="conn-badge badge-proto badge-proto-vmess">VMESS</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="trojan" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-trojan">TROJAN</span>
+                      <span class="conn-badge badge-proto badge-proto-trojan">TROJAN</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="shadowsocks" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-ss">SS</span>
+                      <span class="conn-badge badge-proto badge-proto-ss">SS</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="hysteria2" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-hy2">HY2</span>
+                      <span class="conn-badge badge-proto badge-proto-hy2">HY2</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="amneziawg" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-awg">AWG</span>
+                      <span class="conn-badge badge-proto badge-proto-awg">AWG</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="wireguard" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-wg">WG</span>
+                      <span class="conn-badge badge-proto badge-proto-wg">WG</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="tuic" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-tuic">TUIC</span>
+                      <span class="conn-badge badge-proto badge-proto-tuic">TUIC</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="socks" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-socks">SOCKS</span>
+                      <span class="conn-badge badge-proto badge-proto-socks">SOCKS</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-proto-checkbox" value="http" onchange="onProtoMultiFilterChange()">
-                      <span class="dropdown-proto-badge badge-proto-http">HTTP</span>
+                      <span class="conn-badge badge-proto badge-proto-http">HTTP</span>
                     </label>
                   </div>
                 </div>
@@ -264,47 +264,41 @@
                   <div class="dropdown-menu-list">
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="tcp" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">TCP</span>
+                      <span class="conn-badge badge-net">TCP</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="ws" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">WebSocket (WS)</span>
+                      <span class="conn-badge badge-net">WebSocket (WS)</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="grpc" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">gRPC</span>
+                      <span class="conn-badge badge-net">gRPC</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="xhttp" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">XHTTP / SplitHTTP</span>
+                      <span class="conn-badge badge-net">XHTTP / SplitHTTP</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="httpupgrade" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">HTTPUpgrade</span>
+                      <span class="conn-badge badge-net">HTTPUpgrade</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="quic" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">QUIC</span>
+                      <span class="conn-badge badge-net">QUIC</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="h2" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">HTTP/2 (H2)</span>
+                      <span class="conn-badge badge-net">HTTP/2 (H2)</span>
                     </label>
                     <label class="dropdown-check-item">
                       <input type="checkbox" class="filter-net-checkbox" value="udp" onchange="onNetMultiFilterChange()">
-                      <span class="dropdown-item-title">UDP</span>
+                      <span class="conn-badge badge-net">UDP</span>
                     </label>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
-          <!-- RESET FILTERS BUTTON -->
-          <button type="button" class="btn btn-secondary btn-sm btn-icon hidden" id="btn-reset-filters" onclick="resetConnectionsFilters()" title="Сбросить фильтры и сортировку">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            <span>Сброс</span>
-          </button>
         </div>
       </div>
 

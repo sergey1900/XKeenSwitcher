@@ -889,9 +889,13 @@ function saveNetFilters() {
 function updateFilterDropdownUi() {
   document.querySelectorAll('.filter-proto-checkbox').forEach(cb => {
     cb.checked = selectedProtoFilters.has(cb.value);
+    const item = cb.closest('.dropdown-check-item');
+    if (item) item.classList.toggle('selected', cb.checked);
   });
   document.querySelectorAll('.filter-net-checkbox').forEach(cb => {
     cb.checked = selectedNetFilters.has(cb.value);
+    const item = cb.closest('.dropdown-check-item');
+    if (item) item.classList.toggle('selected', cb.checked);
   });
 
   const btn = document.getElementById('btn-filter-dropdown');

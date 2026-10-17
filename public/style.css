@@ -2756,35 +2756,40 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 /* VLESS: Electric Indigo */
-.badge-proto.badge-proto-vless {
+.badge-proto.badge-proto-vless,
+.badge-proto-vless {
   background: rgba(99, 102, 241, 0.16);
   color: #a5b4fc;
   border: 1px solid rgba(129, 140, 248, 0.42);
 }
 
 /* VMess: Deep Violet / Purple */
-.badge-proto.badge-proto-vmess {
+.badge-proto.badge-proto-vmess,
+.badge-proto-vmess {
   background: rgba(168, 85, 247, 0.16);
   color: #d8b4fe;
   border: 1px solid rgba(192, 132, 252, 0.42);
 }
 
 /* Trojan: Rose / Coral Pink */
-.badge-proto.badge-proto-trojan {
+.badge-proto.badge-proto-trojan,
+.badge-proto-trojan {
   background: rgba(244, 63, 94, 0.16);
   color: #fda4af;
   border: 1px solid rgba(251, 113, 133, 0.42);
 }
 
 /* Shadowsocks: Fuchsia / Magenta */
-.badge-proto.badge-proto-ss {
+.badge-proto.badge-proto-ss,
+.badge-proto-ss {
   background: rgba(217, 70, 239, 0.16);
   color: #f0abfc;
   border: 1px solid rgba(232, 121, 249, 0.42);
 }
 
 /* Hysteria 2: Hot Pink / Deep Rose */
-.badge-proto.badge-proto-hy2 {
+.badge-proto.badge-proto-hy2,
+.badge-proto-hy2 {
   background: linear-gradient(135deg, rgba(236, 72, 153, 0.25), rgba(168, 85, 247, 0.25));
   color: #f472b6;
   border: 1px solid rgba(244, 114, 182, 0.5);
@@ -2793,7 +2798,8 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 /* AmneziaWG: Violet-Indigo gradient */
-.badge-proto.badge-proto-awg {
+.badge-proto.badge-proto-awg,
+.badge-proto-awg {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.25));
   color: #c4b5fd;
   border: 1px solid rgba(167, 139, 250, 0.5);
@@ -2802,35 +2808,40 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
 }
 
 /* WireGuard: Sapphire / Royal Blue */
-.badge-proto.badge-proto-wg {
+.badge-proto.badge-proto-wg,
+.badge-proto-wg {
   background: rgba(37, 99, 235, 0.18);
   color: #93c5fd;
   border: 1px solid rgba(96, 165, 250, 0.45);
 }
 
 /* TUIC: Lavender / Light Violet */
-.badge-proto.badge-proto-tuic {
+.badge-proto.badge-proto-tuic,
+.badge-proto-tuic {
   background: rgba(139, 92, 246, 0.18);
   color: #c4b5fd;
   border: 1px solid rgba(167, 139, 250, 0.42);
 }
 
 /* Socks / Socks5: Slate / Silver */
-.badge-proto.badge-proto-socks {
+.badge-proto.badge-proto-socks,
+.badge-proto-socks {
   background: rgba(100, 116, 139, 0.22);
   color: #cbd5e1;
   border: 1px solid rgba(148, 163, 184, 0.42);
 }
 
 /* HTTP / HTTPS: Warm Taupe / Stone */
-.badge-proto.badge-proto-http {
+.badge-proto.badge-proto-http,
+.badge-proto-http {
   background: rgba(120, 113, 108, 0.22);
   color: #d6d3d1;
   border: 1px solid rgba(168, 162, 158, 0.42);
 }
 
 /* Fallback / Other protocols */
-.badge-proto.badge-proto-other {
+.badge-proto.badge-proto-other,
+.badge-proto-other {
   background: rgba(255, 255, 255, 0.08);
   color: #e2e8f0;
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -4339,12 +4350,17 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   padding: 6px 10px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: all var(--transition-fast);
   user-select: none;
 }
 
 .dropdown-check-item:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.dropdown-check-item.selected,
+.dropdown-check-item:has(input:checked) {
+  background: rgba(99, 102, 241, 0.14);
 }
 
 .dropdown-check-item input[type="checkbox"] {
@@ -4356,17 +4372,17 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   flex-shrink: 0;
 }
 
+.dropdown-check-item .conn-badge {
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  height: 22px !important;
+  line-height: 1 !important;
+}
+
 .dropdown-check-item .dropdown-item-title {
   font-size: 0.82rem;
   color: var(--text-main);
-}
-
-.dropdown-proto-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
-  letter-spacing: 0.4px;
 }
 
 /* Legacy compatibility classes */
