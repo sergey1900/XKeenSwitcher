@@ -195,7 +195,19 @@
                 </div>
               </div>
               <div class="dropdown-menu-list dropdown-filters-unified-list">
-                <div class="dropdown-category-title">Протоколы</div>
+                <div class="dropdown-category-title">Списки</div>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-target-checkbox" value="blacklist" onchange="onTargetMultiFilterChange()">
+                  <span class="conn-badge badge-target-list target-blacklist">ЧС</span>
+                  <span class="dropdown-item-title">Черные списки</span>
+                </label>
+                <label class="dropdown-check-item">
+                  <input type="checkbox" class="filter-target-checkbox" value="whitelist" onchange="onTargetMultiFilterChange()">
+                  <span class="conn-badge badge-target-list target-whitelist">БС</span>
+                  <span class="dropdown-item-title">Белые списки</span>
+                </label>
+
+                <div class="dropdown-category-title dropdown-category-title-spaced">Протоколы</div>
                 <label class="dropdown-check-item">
                   <input type="checkbox" class="filter-proto-checkbox" value="vless" onchange="onProtoMultiFilterChange()">
                   <span class="conn-badge badge-proto badge-proto-vless">VLESS</span>

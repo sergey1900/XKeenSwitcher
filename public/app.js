@@ -32,6 +32,12 @@ if (selectedNetFilters.size === 0) {
   const legacyNet = localStorage.getItem('xkeen_connections_net_filter');
   if (legacyNet && legacyNet !== 'all') selectedNetFilters.add(legacyNet);
 }
+
+let selectedTargetFilters = new Set();
+try {
+  const savedTarget = JSON.parse(localStorage.getItem('xkeen_connections_target_filters') || '[]');
+  if (Array.isArray(savedTarget)) selectedTargetFilters = new Set(savedTarget);
+} catch (e) {}
 let groupRenderLimits = new Map();
 let pingingConnectionIds = new Set();
 let pingingGroupIds = new Set();
@@ -886,7 +892,29 @@ function saveNetFilters() {
   } catch (e) {}
 }
 
+function onTargetMultiFilterChange() {
+  const checkboxes = document.querySelectorAll('.filter-target-checkbox');
+  selectedTargetFilters.clear();
+  checkboxes.forEach(cb => {
+    if (cb.checked) selectedTargetFilters.add(cb.value);
+  });
+  saveTargetFilters();
+  updateFilterDropdownUi();
+  renderConnections();
+}
+
+function saveTargetFilters() {
+  try {
+    localStorage.setItem('xkeen_connections_target_filters', JSON.stringify(Array.from(selectedTargetFilters)));
+  } catch (e) {}
+}
+
 function updateFilterDropdownUi() {
+  document.querySelectorAll('.filter-target-checkbox').forEach(cb => {
+    cb.checked = selectedTargetFilters.has(cb.value);
+    const item = cb.closest('.dropdown-check-item');
+    if (item) item.classList.toggle('selected', cb.checked);
+  });
   document.querySelectorAll('.filter-proto-checkbox').forEach(cb => {
     cb.checked = selectedProtoFilters.has(cb.value);
     const item = cb.closest('.dropdown-check-item');
@@ -901,7 +929,7 @@ function updateFilterDropdownUi() {
   const btn = document.getElementById('btn-filter-dropdown');
   const labelEl = document.getElementById('filter-dropdown-label');
   const countBadge = document.getElementById('filter-selected-count');
-  const totalCount = selectedProtoFilters.size + selectedNetFilters.size;
+  const totalCount = selectedTargetFilters.size + selectedProtoFilters.size + selectedNetFilters.size;
 
   if (labelEl) labelEl.textContent = 'Фильтры';
 
@@ -933,6 +961,13 @@ function updateProtoDropdownUi() {
 
 function updateNetDropdownUi() {
   updateFilterDropdownUi();
+}
+
+function matchesSelectedTargetList(conn) {
+  if (selectedTargetFilters.size === 0) return true;
+  const isWl = (conn.targetList === 'whitelist');
+  const targetKey = isWl ? 'whitelist' : 'blacklist';
+  return selectedTargetFilters.has(targetKey);
 }
 
 function matchesSelectedProtocols(conn) {
@@ -983,12 +1018,14 @@ function onNetFilterChange(val) {
 }
 
 function resetConnectionsFilters() {
+  selectedTargetFilters.clear();
   selectedProtoFilters.clear();
   selectedNetFilters.clear();
   currentSort = 'default';
   try {
     localStorage.setItem('xkeen_connections_sort', 'default');
   } catch (e) {}
+  saveTargetFilters();
   saveProtoFilters();
   saveNetFilters();
   updateSortDropdownUi();
@@ -1033,7 +1070,7 @@ function renderConnections() {
   updateProtoDropdownUi();
   updateNetDropdownUi();
 
-  const isFilterActive = (selectedProtoFilters.size > 0 || selectedNetFilters.size > 0 || currentSort !== 'default');
+  const isFilterActive = (selectedTargetFilters.size > 0 || selectedProtoFilters.size > 0 || selectedNetFilters.size > 0 || currentSort !== 'default');
   const btnReset = document.getElementById('btn-reset-filters');
   if (btnReset) btnReset.classList.toggle('hidden', !isFilterActive);
 
@@ -1054,8 +1091,8 @@ function renderConnections() {
   if (emptyConnectionsState) emptyConnectionsState.classList.add('hidden');
 
   const list = getSortedConnections(rawList, activeId);
-  const filteredList = (selectedProtoFilters.size > 0 || selectedNetFilters.size > 0)
-    ? list.filter(c => matchesSelectedProtocols(c) && matchesSelectedTransports(c))
+  const filteredList = (selectedTargetFilters.size > 0 || selectedProtoFilters.size > 0 || selectedNetFilters.size > 0)
+    ? list.filter(c => matchesSelectedTargetList(c) && matchesSelectedProtocols(c) && matchesSelectedTransports(c))
     : list;
 
   if (connectionsCount) {
