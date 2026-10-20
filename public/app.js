@@ -4831,6 +4831,17 @@ function generateBuilderJson(cfg) {
   if (cleanDirectIps.length > 0) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', ip: cleanDirectIps });
   }
+
+  // Explicit user proxy rules (DOMAINS & IPS) take priority over general bypass rules
+  const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
+  if (cleanProxyDomains.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, domain: cleanProxyDomains });
+  }
+  const cleanProxyIps = extractCleanTargets(cfg.customProxyIps);
+  if (cleanProxyIps.length > 0) {
+    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cleanProxyIps });
+  }
+
   if (cfg.bypassRu) {
     const ruDomains = [
       'regexp:^([\\w\\-\\.]+\\.)ru$',
@@ -4915,14 +4926,6 @@ function generateBuilderJson(cfg) {
         ip: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', 'fc00::/7', 'fe80::/10']
       });
     }
-  }
-  const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
-  if (cleanProxyDomains.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, domain: cleanProxyDomains });
-  }
-  const cleanProxyIps = extractCleanTargets(cfg.customProxyIps);
-  if (cleanProxyIps.length > 0) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cleanProxyIps });
   }
   if (cfg.geositeExtraProxy) {
     if (useGeosite) {

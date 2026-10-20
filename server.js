@@ -237,6 +237,9 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
   const rules = [];
   const inbounds = ['redirect', 'tproxy'];
 
+  const useGeosite = (cfg.useGeosite !== false);
+  const useGeoip = (cfg.useGeoip !== false);
+
   // 1. NetBIOS dangerous ports
   if (cfg.blockNetbios) {
     rules.push({
@@ -250,12 +253,28 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
 
   // 2. Ad blocking
   if (cfg.blockAds) {
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: 'block',
-      domain: ['geosite:category-ads-all']
-    });
+    if (useGeosite) {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'block',
+        domain: ['geosite:category-ads-all']
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'block',
+        domain: [
+          'regexp:^([\\w\\-\\.]+\\.)?ad(s|service|server|system)?\\.',
+          'domain:doubleclick.net',
+          'domain:googleadservices.com',
+          'domain:googlesyndication.com',
+          'domain:adservice.google.com',
+          'domain:an.yandex.ru'
+        ]
+      });
+    }
   }
 
   // 3. Custom Block domains & IPs (with comment support)
@@ -369,48 +388,7 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
     });
   }
 
-  // 8. Bypass RU (Domains & IPs)
-  if (cfg.bypassRu) {
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: 'direct',
-      domain: [
-        'regexp:^([\\w\\-\\.]+\\.)ru$',
-        'regexp:^([\\w\\-\\.]+\\.)su$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
-        'regexp:^([\\w\\-\\.]+\\.)moscow$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$',
-        'ext:geosite_v2fly.dat:category-gov-ru',
-        'ext:geosite_v2fly.dat:yandex',
-        'ext:geosite_v2fly.dat:vk',
-        'ext:geosite_v2fly.dat:steam'
-      ]
-    });
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: 'direct',
-      ip: [
-        'geoip:private',
-        'ext:geoip_zkeenip.dat:ru'
-      ]
-    });
-  } else if (cfg.bypassPrivate) {
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: 'direct',
-      ip: ['geoip:private']
-    });
-  }
-
-  // 9. Custom Proxy domains & IPs (with comment support)
+  // 8. Custom Proxy domains & IPs (PRIORITY over Bypass RU!)
   const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
   if (cleanProxyDomains.length > 0) {
     rules.push({
@@ -430,24 +408,135 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
     });
   }
 
-  // 9. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI)
-  if (cfg.geositeExtraProxy) {
+  // 9. Bypass RU (Domains & IPs)
+  if (cfg.bypassRu) {
+    const ruDomains = [
+      'regexp:^([\\w\\-\\.]+\\.)ru$',
+      'regexp:^([\\w\\-\\.]+\\.)su$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
+      'regexp:^([\\w\\-\\.]+\\.)moscow$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$'
+    ];
+
+    if (useGeosite) {
+      ruDomains.push(
+        'ext:geosite_v2fly.dat:category-gov-ru',
+        'ext:geosite_v2fly.dat:yandex',
+        'ext:geosite_v2fly.dat:vk',
+        'ext:geosite_v2fly.dat:steam'
+      );
+    } else {
+      ruDomains.push(
+        'domain:gosuslugi.ru',
+        'domain:yandex.ru',
+        'domain:ya.ru',
+        'domain:vk.com',
+        'domain:vkvideo.ru',
+        'domain:mail.ru',
+        'domain:dzen.ru',
+        'domain:sberbank.ru',
+        'domain:tbank.ru',
+        'domain:tinkoff.ru',
+        'domain:ozon.ru',
+        'domain:wildberries.ru',
+        'domain:avito.ru',
+        'domain:kinopoisk.ru',
+        'domain:steamcommunity.com'
+      );
+    }
+
     rules.push({
       type: 'field',
       inboundTag: inbounds,
-      outboundTag: proxyTag,
-      domain: [
-        'geosite:google',
-        'geosite:telegram',
-        'geosite:twitter',
-        'geosite:meta',
-        'geosite:discord',
-        'geosite:openai'
-      ]
+      outboundTag: 'direct',
+      domain: ruDomains
     });
+
+    const ruIps = [];
+    if (useGeoip) {
+      ruIps.push('geoip:private', 'ext:geoip_zkeenip.dat:ru');
+    } else {
+      ruIps.push(
+        '10.0.0.0/8',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+        '127.0.0.0/8',
+        'fc00::/7',
+        'fe80::/10'
+      );
+    }
+
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: ruIps
+    });
+  } else if (cfg.bypassPrivate) {
+    if (useGeoip) {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'direct',
+        ip: ['geoip:private']
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'direct',
+        ip: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', 'fc00::/7', 'fe80::/10']
+      });
+    }
   }
 
-  // 10. Default Fallback
+  // 10. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI)
+  if (cfg.geositeExtraProxy) {
+    if (useGeosite) {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'geosite:google',
+          'geosite:telegram',
+          'geosite:twitter',
+          'geosite:meta',
+          'geosite:discord',
+          'geosite:openai'
+        ]
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'domain:google.com',
+          'domain:youtube.com',
+          'domain:googlevideo.com',
+          'domain:t.me',
+          'domain:telegram.org',
+          'domain:twitter.com',
+          'domain:x.com',
+          'domain:instagram.com',
+          'domain:facebook.com',
+          'domain:cdninstagram.com',
+          'domain:discord.com',
+          'domain:discordapp.com',
+          'domain:openai.com',
+          'domain:chatgpt.com'
+        ]
+      });
+    }
+  }
+
+  // 11. Default Fallback
   const finalTag = (cfg.defaultAction === 'direct') ? 'direct' : proxyTag;
   rules.push({
     type: 'field',
