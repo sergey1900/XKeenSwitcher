@@ -4402,29 +4402,45 @@ function updatePillStyles(radioInput) {
   });
 }
 
-// Switch between Visual Builder and Raw JSON mode
-function switchRoutingMode(mode) {
-  const hiddenMode = document.getElementById('routing-mode');
-  if (hiddenMode) hiddenMode.value = mode;
+// Current state of Routing Host Lists
+let currentRoutingTarget = 'proxy';     // 'proxy' | 'direct' | 'block'
+let currentRoutingDataType = 'domains'; // 'domains' | 'ips'
 
-  const tabBuilder = document.getElementById('tab-routing-builder');
+// Switch between Routing Editor Tabs: 'lists' | 'rules' | 'raw'
+function switchRoutingTab(tab) {
+  const hiddenMode = document.getElementById('routing-mode');
+  
+  const tabLists = document.getElementById('tab-routing-lists');
+  const tabRules = document.getElementById('tab-routing-rules');
   const tabJson = document.getElementById('tab-routing-json');
-  const sectionBuilder = document.getElementById('routing-builder-section');
-  const sectionJson = document.getElementById('routing-json-section');
+
+  const secLists = document.getElementById('routing-section-lists');
+  const secRules = document.getElementById('routing-section-rules');
+  const secJson = document.getElementById('routing-json-section');
   const formatBtn = document.getElementById('btn-format-routing');
 
-  if (mode === 'builder') {
-    if (tabBuilder) tabBuilder.classList.add('active');
-    if (tabJson) tabJson.classList.remove('active');
-    if (sectionBuilder) sectionBuilder.classList.remove('hidden');
-    if (sectionJson) sectionJson.classList.add('hidden');
-    if (formatBtn) formatBtn.classList.add('hidden');
-  } else {
-    if (tabBuilder) tabBuilder.classList.remove('active');
-    if (tabJson) tabJson.classList.add('active');
-    if (sectionBuilder) sectionBuilder.classList.add('hidden');
-    if (sectionJson) sectionJson.classList.remove('hidden');
-    if (formatBtn) formatBtn.classList.remove('hidden');
+  [tabLists, tabRules, tabJson].forEach(t => t?.classList.remove('active'));
+  [secLists, secRules, secJson].forEach(s => s?.classList.add('hidden'));
+
+  if (tab === 'lists') {
+    if (hiddenMode) hiddenMode.value = 'builder';
+    tabLists?.classList.add('active');
+    secLists?.classList.remove('hidden');
+    formatBtn?.classList.add('hidden');
+    updateRoutingListCounters();
+    setTimeout(() => {
+      document.getElementById('routing-quick-add-input')?.focus();
+    }, 50);
+  } else if (tab === 'rules') {
+    if (hiddenMode) hiddenMode.value = 'builder';
+    tabRules?.classList.add('active');
+    secRules?.classList.remove('hidden');
+    formatBtn?.classList.add('hidden');
+  } else if (tab === 'raw') {
+    if (hiddenMode) hiddenMode.value = 'raw';
+    tabJson?.classList.add('active');
+    secJson?.classList.remove('hidden');
+    formatBtn?.classList.remove('hidden');
 
     // Auto-compile current builder settings to JSON editor when switching to Expert mode
     const currentJson = document.getElementById('routing-content-json')?.value || '';
@@ -4435,6 +4451,241 @@ function switchRoutingMode(mode) {
       }
     }
   }
+}
+
+// Backward compatibility alias
+function switchRoutingMode(mode) {
+  if (mode === 'raw') {
+    switchRoutingTab('raw');
+  } else {
+    switchRoutingTab('lists');
+  }
+}
+
+// Target direction: 'proxy' | 'direct' | 'block'
+function selectRoutingTarget(target) {
+  currentRoutingTarget = target;
+  
+  const btnProxy = document.getElementById('target-btn-proxy');
+  const btnDirect = document.getElementById('target-btn-direct');
+  const btnBlock = document.getElementById('target-btn-block');
+
+  [btnProxy, btnDirect, btnBlock].forEach(b => {
+    b?.classList.remove('active-proxy', 'active-direct', 'active-block');
+  });
+
+  if (target === 'proxy') btnProxy?.classList.add('active-proxy');
+  else if (target === 'direct') btnDirect?.classList.add('active-direct');
+  else if (target === 'block') btnBlock?.classList.add('active-block');
+
+  updateRoutingPaneVisibility();
+  updateRoutingListCounters();
+}
+
+// Data type: 'domains' | 'ips'
+function selectRoutingDataType(dataType) {
+  currentRoutingDataType = dataType;
+
+  const subDomains = document.getElementById('subtab-domains');
+  const subIps = document.getElementById('subtab-ips');
+
+  if (dataType === 'domains') {
+    subDomains?.classList.add('active');
+    subIps?.classList.remove('active');
+  } else {
+    subDomains?.classList.remove('active');
+    subIps?.classList.add('active');
+  }
+
+  updateRoutingPaneVisibility();
+  updateRoutingListCounters();
+}
+
+// Update visible textarea pane based on target & dataType
+function updateRoutingPaneVisibility() {
+  const panes = [
+    'pane-proxy-domains', 'pane-proxy-ips',
+    'pane-direct-domains', 'pane-direct-ips',
+    'pane-block-domains', 'pane-block-ips'
+  ];
+  panes.forEach(id => {
+    document.getElementById(id)?.classList.add('hidden');
+  });
+
+  const activePaneId = `pane-${currentRoutingTarget}-${currentRoutingDataType}`;
+  const activePane = document.getElementById(activePaneId);
+  if (activePane) {
+    activePane.classList.remove('hidden');
+  }
+
+  const quickInput = document.getElementById('routing-quick-add-input');
+  if (quickInput) {
+    if (currentRoutingDataType === 'domains') {
+      if (currentRoutingTarget === 'proxy') quickInput.placeholder = 'Введите домен для туннеля (например: xda-developers.com) и нажмите Enter...';
+      else if (currentRoutingTarget === 'direct') quickInput.placeholder = 'Введите домен для прямого доступа (например: kinopoisk.ru) и нажмите Enter...';
+      else quickInput.placeholder = 'Введите домен для блокировки (например: ads.com) и нажмите Enter...';
+    } else {
+      quickInput.placeholder = 'Введите IP или подсеть CIDR (например: 1.1.1.1 или 192.168.0.0/16) и нажмите Enter...';
+    }
+  }
+}
+
+// Helper: count non-comment, non-empty lines in a textarea
+function getValidLinesCount(textareaId) {
+  const el = document.getElementById(textareaId);
+  if (!el || !el.value) return 0;
+  return el.value.split('\n')
+    .map(s => s.trim())
+    .filter(s => s.length > 0 && !s.startsWith('#') && !s.startsWith('//') && !s.startsWith(';'))
+    .length;
+}
+
+// Update badges on target buttons and subtabs
+function updateRoutingListCounters() {
+  const proxyD = getValidLinesCount('builder-custom-proxy-domains');
+  const proxyI = getValidLinesCount('builder-custom-proxy-ips');
+  const directD = getValidLinesCount('builder-custom-direct-domains');
+  const directI = getValidLinesCount('builder-custom-direct-ips');
+  const blockD = getValidLinesCount('builder-custom-block-domains');
+  const blockI = getValidLinesCount('builder-custom-block-ips');
+
+  const bProxy = document.getElementById('badge-count-proxy');
+  const bDirect = document.getElementById('badge-count-direct');
+  const bBlock = document.getElementById('badge-count-block');
+  if (bProxy) bProxy.textContent = proxyD + proxyI;
+  if (bDirect) bDirect.textContent = directD + directI;
+  if (bBlock) bBlock.textContent = blockD + blockI;
+
+  const total = proxyD + proxyI + directD + directI + blockD + blockI;
+  const bTotal = document.getElementById('routing-total-hosts-badge');
+  if (bTotal) bTotal.textContent = total;
+
+  let activeD = 0;
+  let activeI = 0;
+  if (currentRoutingTarget === 'proxy') {
+    activeD = proxyD; activeI = proxyI;
+  } else if (currentRoutingTarget === 'direct') {
+    activeD = directD; activeI = directI;
+  } else {
+    activeD = blockD; activeI = blockI;
+  }
+
+  const sD = document.getElementById('subtab-count-domains');
+  const sI = document.getElementById('subtab-count-ips');
+  if (sD) sD.textContent = activeD;
+  if (sI) sI.textContent = activeI;
+}
+
+// Quick Add handler on Enter
+function handleQuickAddKey(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    submitQuickAdd();
+  }
+}
+
+// Clean pasted or typed host
+function cleanInputHost(raw, isIp) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  if (!s) return '';
+
+  if (s.startsWith('http://') || s.startsWith('https://')) {
+    try {
+      const url = new URL(s);
+      s = url.hostname;
+    } catch (_) {
+      s = s.replace(/^https?:\/\//i, '').split('/')[0];
+    }
+  } else {
+    s = s.split('/')[0];
+  }
+
+  if (!isIp && s.includes(':') && !s.includes('[')) {
+    s = s.split(':')[0];
+  }
+  return s.trim().toLowerCase();
+}
+
+// Submit single host from Quick Add
+function submitQuickAdd() {
+  const input = document.getElementById('routing-quick-add-input');
+  if (!input) return;
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  const isIp = (currentRoutingDataType === 'ips');
+  const cleaned = cleanInputHost(raw, isIp);
+  if (!cleaned) return;
+
+  const activeTextareaId = `builder-custom-${currentRoutingTarget}-${currentRoutingDataType}`;
+  const textarea = document.getElementById(activeTextareaId);
+  if (!textarea) return;
+
+  const lines = textarea.value.split('\n').map(l => l.trim().toLowerCase());
+  const existingHosts = lines.map(l => l.split(/#|\/\/|;/)[0].trim());
+  if (existingHosts.includes(cleaned)) {
+    showToast(`Запись «${cleaned}» уже есть в этом списке!`, 'info');
+    input.value = '';
+    return;
+  }
+
+  const curVal = textarea.value.trimEnd();
+  textarea.value = curVal ? (curVal + '\n' + cleaned) : cleaned;
+  
+  updateRoutingListCounters();
+  showToast(`Добавлено: ${cleaned}`, 'success');
+  input.value = '';
+  input.focus();
+
+  textarea.scrollTop = textarea.scrollHeight;
+}
+
+// Sort active list A-Z and deduplicate
+function sortActiveRoutingList() {
+  const activeTextareaId = `builder-custom-${currentRoutingTarget}-${currentRoutingDataType}`;
+  const textarea = document.getElementById(activeTextareaId);
+  if (!textarea) return;
+
+  const lines = textarea.value.split('\n');
+  const uniqueMap = new Map();
+  const commentsAndEmpty = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith(';')) {
+      commentsAndEmpty.push(trimmed);
+      continue;
+    }
+    const cleanKey = trimmed.split(/#|\/\/|;/)[0].trim().toLowerCase();
+    if (!uniqueMap.has(cleanKey)) {
+      uniqueMap.set(cleanKey, trimmed);
+    }
+  }
+
+  const sortedValues = Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b));
+  const finalLines = [...commentsAndEmpty, ...sortedValues];
+  textarea.value = finalLines.join('\n');
+
+  updateRoutingListCounters();
+  showToast('Список отсортирован по алфавиту, дубликаты удалены', 'success');
+}
+
+// Remove empty lines
+function clearEmptyLinesActiveList() {
+  const activeTextareaId = `builder-custom-${currentRoutingTarget}-${currentRoutingDataType}`;
+  const textarea = document.getElementById(activeTextareaId);
+  if (!textarea) return;
+
+  textarea.value = textarea.value
+    .split('\n')
+    .map(l => l.trimEnd())
+    .filter(l => l.trim().length > 0)
+    .join('\n');
+
+  updateRoutingListCounters();
+  showToast('Пустые строки удалены', 'info');
 }
 
 // Clean domains and IPs from comments (# or // or ;), preserving valid rules
@@ -4651,6 +4902,8 @@ function populateBuilderForm(cfg = {}) {
   setText('builder-custom-direct-ips', cfg.customDirectIps);
   setText('builder-custom-block-domains', cfg.customBlockDomains);
   setText('builder-custom-block-ips', cfg.customBlockIps);
+
+  updateRoutingListCounters();
 }
 
 // Check status of geosite.dat and geoip.dat
@@ -4757,13 +5010,18 @@ function openAddRoutingModal() {
   const hiddenMode = document.getElementById('routing-mode');
   if (hiddenMode) hiddenMode.dataset.dirty = 'false';
 
-  switchRoutingMode('builder');
+  selectRoutingTarget('proxy');
+  selectRoutingDataType('domains');
+  switchRoutingTab('lists');
+  const quickInput = document.getElementById('routing-quick-add-input');
+  if (quickInput) quickInput.value = '';
+
   const initialJson = generateBuilderJson();
   setEditorContent('routing-content-json', initialJson);
 
   openModal('modal-routing');
   checkGeodataStatus();
-  setTimeout(initRoutingTextareaSync, 50);
+  updateRoutingListCounters();
 }
 
 // Open Edit / View Routing Modal
@@ -4813,18 +5071,23 @@ function openRoutingModal(id) {
     saveBtn.textContent = 'Сохранить маршрутизацию';
   }
 
+  const quickInput = document.getElementById('routing-quick-add-input');
+  if (quickInput) quickInput.value = '';
+
   // Populate Builder or JSON Editor
   if (routing.builderConfig) {
     populateBuilderForm(routing.builderConfig);
-    switchRoutingMode('builder');
+    selectRoutingTarget('proxy');
+    selectRoutingDataType('domains');
+    switchRoutingTab('lists');
   } else {
-    switchRoutingMode('raw');
+    switchRoutingTab('raw');
   }
 
   setEditorContent('routing-content-json', routing.content);
   openModal('modal-routing');
   checkGeodataStatus();
-  setTimeout(initRoutingTextareaSync, 50);
+  updateRoutingListCounters();
 }
 
 // Submit Add or Edit Routing

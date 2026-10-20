@@ -794,18 +794,120 @@
 
         <!-- ROUTING MODE TABS -->
         <div class="routing-mode-tabs" role="tablist">
-          <button type="button" class="routing-mode-tab active" id="tab-routing-builder" onclick="switchRoutingMode('builder')">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-            Конструктор правил
+          <button type="button" class="routing-mode-tab active" id="tab-routing-lists" onclick="switchRoutingTab('lists')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            📋 Списки сайтов
+            <span class="tab-badge" id="routing-total-hosts-badge" style="margin-left: 6px;">0</span>
           </button>
-          <button type="button" class="routing-mode-tab" id="tab-routing-json" onclick="switchRoutingMode('raw')">
+          <button type="button" class="routing-mode-tab" id="tab-routing-rules" onclick="switchRoutingTab('rules')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            ⚙️ Протоколы и сервисы
+          </button>
+          <button type="button" class="routing-mode-tab" id="tab-routing-json" onclick="switchRoutingTab('raw')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-            Экспертный режим JSON
+            💻 JSON
           </button>
         </div>
 
-        <!-- VISUAL BUILDER SECTION -->
-        <div id="routing-builder-section" class="routing-builder-section">
+        <!-- TAB 1: LISTS OF HOSTS (DOMAINS / IPS) -->
+        <div id="routing-section-lists" class="routing-builder-section">
+          <div class="routing-card routing-card-main-lists">
+            <!-- TARGET DIRECTION SELECTOR -->
+            <div class="routing-target-nav">
+              <button type="button" class="routing-target-btn active-proxy" id="target-btn-proxy" onclick="selectRoutingTarget('proxy')">
+                <span class="target-btn-icon">🛡️</span>
+                <span class="target-btn-text">В туннель (VPN)</span>
+                <span class="target-btn-badge" id="badge-count-proxy">0</span>
+              </button>
+              <button type="button" class="routing-target-btn" id="target-btn-direct" onclick="selectRoutingTarget('direct')">
+                <span class="target-btn-icon">⚡</span>
+                <span class="target-btn-text">Напрямую (Bypass)</span>
+                <span class="target-btn-badge" id="badge-count-direct">0</span>
+              </button>
+              <button type="button" class="routing-target-btn" id="target-btn-block" onclick="selectRoutingTarget('block')">
+                <span class="target-btn-icon">🛑</span>
+                <span class="target-btn-text">Блокировать (Reject)</span>
+                <span class="target-btn-badge" id="badge-count-block">0</span>
+              </button>
+            </div>
+
+            <!-- SUB-BAR: DATATYPE TOGGLE & TOOLS -->
+            <div class="routing-datatype-row">
+              <div class="routing-sub-tabs">
+                <button type="button" class="routing-sub-tab active" id="subtab-domains" onclick="selectRoutingDataType('domains')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  <span>Домены</span>
+                  <span class="subtab-badge" id="subtab-count-domains">0</span>
+                </button>
+                <button type="button" class="routing-sub-tab" id="subtab-ips" onclick="selectRoutingDataType('ips')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                  <span>IP-адреса и CIDR</span>
+                  <span class="subtab-badge" id="subtab-count-ips">0</span>
+                </button>
+              </div>
+
+              <div class="routing-list-tools">
+                <button type="button" class="btn-text-action" onclick="sortActiveRoutingList()" title="Отсортировать список по алфавиту и удалить дубликаты">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="10" x2="7" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="7" y2="18"/></svg>
+                  Сортировка А-Я
+                </button>
+                <button type="button" class="btn-text-action" onclick="clearEmptyLinesActiveList()" title="Удалить пустые строки">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                  Убрать пустые
+                </button>
+              </div>
+            </div>
+
+            <!-- QUICK ADD ROW -->
+            <div class="routing-quick-add-group">
+              <div class="quick-add-input-wrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="quick-add-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                <input type="text" id="routing-quick-add-input" class="quick-add-input" placeholder="Введите домен или URL (например: xda-developers.com) и нажмите Enter..." onkeydown="handleQuickAddKey(event)">
+              </div>
+              <button type="button" class="btn btn-primary btn-sm btn-quick-add" onclick="submitQuickAdd()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Добавить
+              </button>
+            </div>
+
+            <!-- TEXTAREA PANES (HEIGHT 380px) -->
+            <div class="routing-textareas-container">
+              <!-- PROXY DOMAINS -->
+              <div class="routing-text-pane" id="pane-proxy-domains">
+                <textarea id="builder-custom-proxy-domains" class="routing-textarea-large" placeholder="instagram.com # Соцсети&#10;youtube.com&#10;xda-developers.com&#10;xdaimages.com&#10;valnetcdn.com&#10;notion.so" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+              </div>
+              <!-- PROXY IPS -->
+              <div class="routing-text-pane hidden" id="pane-proxy-ips">
+                <textarea id="builder-custom-proxy-ips" class="routing-textarea-large" placeholder="1.1.1.1 # Cloudflare&#10;8.8.8.8&#10;104.16.0.0/12 # CDN" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+              </div>
+
+              <!-- DIRECT DOMAINS -->
+              <div class="routing-text-pane hidden" id="pane-direct-domains">
+                <textarea id="builder-custom-direct-domains" class="routing-textarea-large" placeholder="kinopoisk.ru # Онлайн-кинотеатр&#10;gosuslugi.ru&#10;sberbank.ru" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+              </div>
+              <!-- DIRECT IPS -->
+              <div class="routing-text-pane hidden" id="pane-direct-ips">
+                <textarea id="builder-custom-direct-ips" class="routing-textarea-large" placeholder="192.168.10.0/24 # Локальная подсеть" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+              </div>
+
+              <!-- BLOCK DOMAINS -->
+              <div class="routing-text-pane hidden" id="pane-block-domains">
+                <textarea id="builder-custom-block-domains" class="routing-textarea-large" placeholder="analytics.google.com # Метрика&#10;ads.example.com" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+              </div>
+              <!-- BLOCK IPS -->
+              <div class="routing-text-pane hidden" id="pane-block-ips">
+                <textarea id="builder-custom-block-ips" class="routing-textarea-large" placeholder="" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+              </div>
+            </div>
+
+            <div class="routing-list-footer-hint">
+              <span>💡 Вставляйте по одному значению на строку. Можно указывать комментарии через <code>#</code> или <code>//</code> (например: <code>notion.so # Работа</code>).</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: RULES AND PROTOCOLS -->
+        <div id="routing-section-rules" class="routing-builder-section hidden">
           <!-- PROTOCOL 1: BITTORRENT -->
           <div class="routing-card">
             <div class="routing-card-header">
@@ -943,63 +1045,6 @@
                   <span class="routing-check-item-desc">Google, Telegram, Twitter, Meta/Insta, Discord, OpenAI через VPN</span>
                 </div>
               </label>
-            </div>
-          </div>
-
-          <!-- CUSTOM LISTS (COLLAPSIBLE) -->
-          <div class="routing-card">
-            <span class="routing-card-title" style="margin-bottom: 10px;">📋 Пользовательские списки доменов и IP</span>
-            <div class="routing-lists-group">
-              <details class="routing-list-details">
-                <summary class="routing-list-summary">
-                  <span>🛡️ Направлять в туннель (через VPN)</span>
-                  <span class="badge" style="font-size: 0.72rem; opacity: 0.7;">Развернуть</span>
-                </summary>
-                <div class="routing-list-content">
-                  <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (поддерживаются # и // комментарии):</label>
-                    <textarea id="builder-custom-proxy-domains" class="routing-textarea" rows="3" placeholder="instagram.com # Соцсети&#10;youtube.com&#10;# Рабочие сервисы&#10;notion.so"></textarea>
-                  </div>
-                  <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (поддерживаются # и // комментарии):</label>
-                    <textarea id="builder-custom-proxy-ips" class="routing-textarea" rows="3" placeholder="1.1.1.1 # Cloudflare&#10;8.8.8.8&#10;104.16.0.0/12 # CDN"></textarea>
-                  </div>
-                </div>
-              </details>
-
-              <details class="routing-list-details">
-                <summary class="routing-list-summary">
-                  <span>⚡ Направлять напрямую (мимо VPN)</span>
-                  <span class="badge" style="font-size: 0.72rem; opacity: 0.7;">Развернуть</span>
-                </summary>
-                <div class="routing-list-content">
-                  <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (поддерживаются # и // комментарии):</label>
-                    <textarea id="builder-custom-direct-domains" class="routing-textarea" rows="3" placeholder="kinopoisk.ru # Онлайн-кинотеатр&#10;gosuslugi.ru"></textarea>
-                  </div>
-                  <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (поддерживаются # и // комментарии):</label>
-                    <textarea id="builder-custom-direct-ips" class="routing-textarea" rows="3" placeholder="192.168.10.0/24 # Локальная подсеть"></textarea>
-                  </div>
-                </div>
-              </details>
-
-              <details class="routing-list-details">
-                <summary class="routing-list-summary">
-                  <span>🛑 Заблокировать (Reject)</span>
-                  <span class="badge" style="font-size: 0.72rem; opacity: 0.7;">Развернуть</span>
-                </summary>
-                <div class="routing-list-content">
-                  <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Домены (поддерживаются # и // комментарии):</label>
-                    <textarea id="builder-custom-block-domains" class="routing-textarea" rows="2" placeholder="analytics.google.com # Метрика"></textarea>
-                  </div>
-                  <div>
-                    <label style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 4px;">IP-адреса / CIDR (поддерживаются # и // комментарии):</label>
-                    <textarea id="builder-custom-block-ips" class="routing-textarea" rows="2" placeholder=""></textarea>
-                  </div>
-                </div>
-              </details>
             </div>
           </div>
 
