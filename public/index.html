@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.13">
+  <link rel="stylesheet" href="style.css?v=2.9.14">
 </head>
 <body>
   <div class="app-background"></div>
@@ -1031,18 +1031,34 @@
 
             <div class="routing-checks-grid" style="margin-top: 12px;">
               <label class="routing-check-item">
-                <input type="checkbox" id="builder-geo-autoupdate" checked>
+                <input type="checkbox" id="builder-use-geosite" checked onchange="updateGeodataCheckboxes()">
                 <div class="routing-check-item-text">
-                  <span class="routing-check-item-title">🔄 Автообновление баз GeoSite и GeoIP</span>
-                  <span class="routing-check-item-desc">Автоматически обновлять базы geosite.dat и geoip.dat каждые 24 часа</span>
+                  <span class="routing-check-item-title">🌐 Использовать базу GeoSite</span>
+                  <span class="routing-check-item-desc">Категории сайтов РФ, реклама и сервисы через geosite.dat</span>
                 </div>
               </label>
 
               <label class="routing-check-item">
+                <input type="checkbox" id="builder-use-geoip" checked onchange="updateGeodataCheckboxes()">
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🗺️ Использовать базу GeoIP</span>
+                  <span class="routing-check-item-desc">Диапазоны IP-адресов РФ и локальные сети через geoip.dat</span>
+                </div>
+              </label>
+
+              <label class="routing-check-item" id="wrap-geo-autoupdate">
+                <input type="checkbox" id="builder-geo-autoupdate" checked>
+                <div class="routing-check-item-text">
+                  <span class="routing-check-item-title">🔄 Автообновление баз каждые 24 часа</span>
+                  <span class="routing-check-item-desc">Автоматически скачивать свежие базы geosite.dat и geoip.dat</span>
+                </div>
+              </label>
+
+              <label class="routing-check-item" id="wrap-geosite-extra-proxy">
                 <input type="checkbox" id="builder-geosite-extra-proxy">
                 <div class="routing-check-item-text">
-                  <span class="routing-check-item-title">🛡️ Зарубежные сервисы через туннель (GeoSite)</span>
-                  <span class="routing-check-item-desc">Google, Telegram, Twitter, Meta/Insta, Discord, OpenAI через VPN</span>
+                  <span class="routing-check-item-title">🛡️ Зарубежные сервисы через туннель</span>
+                  <span class="routing-check-item-desc">Google, Telegram, Twitter/X, Meta, Discord, OpenAI через VPN</span>
                 </div>
               </label>
             </div>
@@ -2099,6 +2115,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.13"></script>
+  <script src="app.js?v=2.9.14"></script>
 </body>
 </html>

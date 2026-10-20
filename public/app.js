@@ -4714,6 +4714,8 @@ function collectBuilderConfig() {
   const bypassPrivate = Boolean(document.getElementById('builder-bypass-private')?.checked);
   const blockNetbios = Boolean(document.getElementById('builder-block-netbios')?.checked);
   const blockAds = Boolean(document.getElementById('builder-block-ads')?.checked);
+  const useGeosite = Boolean(document.getElementById('builder-use-geosite')?.checked);
+  const useGeoip = Boolean(document.getElementById('builder-use-geoip')?.checked);
   const geositeExtraProxy = Boolean(document.getElementById('builder-geosite-extra-proxy')?.checked);
   const geoAutoUpdate = Boolean(document.getElementById('builder-geo-autoupdate')?.checked);
 
@@ -4731,6 +4733,8 @@ function collectBuilderConfig() {
     bypassPrivate,
     blockNetbios,
     blockAds,
+    useGeosite,
+    useGeoip,
     geositeExtraProxy,
     geoAutoUpdate,
     customProxyDomains: parseLines('builder-custom-proxy-domains'),
@@ -4742,6 +4746,24 @@ function collectBuilderConfig() {
   };
 }
 
+// Update dependency state for geodata checkboxes
+function updateGeodataCheckboxes() {
+  const useGeosite = Boolean(document.getElementById('builder-use-geosite')?.checked);
+  const useGeoip = Boolean(document.getElementById('builder-use-geoip')?.checked);
+
+  const wrapAuto = document.getElementById('wrap-geo-autoupdate');
+  const chkAuto = document.getElementById('builder-geo-autoupdate');
+  if (wrapAuto && chkAuto) {
+    if (!useGeosite && !useGeoip) {
+      wrapAuto.classList.add('disabled');
+      chkAuto.disabled = true;
+    } else {
+      wrapAuto.classList.remove('disabled');
+      chkAuto.disabled = false;
+    }
+  }
+}
+
 // Compile builder config into Xray JSON
 function generateBuilderJson(cfg) {
   if (!cfg) cfg = collectBuilderConfig();
@@ -4749,11 +4771,30 @@ function generateBuilderJson(cfg) {
   const inbounds = ['redirect', 'tproxy'];
   const proxyTag = 'vless-reality';
 
+  const useGeosite = (cfg.useGeosite !== false);
+  const useGeoip = (cfg.useGeoip !== false);
+
   if (cfg.blockNetbios) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', network: 'udp', port: '135,137,138,139' });
   }
   if (cfg.blockAds) {
-    rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: ['geosite:category-ads-all'] });
+    if (useGeosite) {
+      rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', domain: ['geosite:category-ads-all'] });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'block',
+        domain: [
+          'regexp:^([\\w\\-\\.]+\\.)?ad(s|service|server|system)?\\.',
+          'domain:doubleclick.net',
+          'domain:googleadservices.com',
+          'domain:googlesyndication.com',
+          'domain:adservice.google.com',
+          'domain:an.yandex.ru'
+        ]
+      });
+    }
   }
   const cleanBlockDomains = extractCleanTargets(cfg.customBlockDomains);
   if (cleanBlockDomains.length > 0) {
@@ -4791,40 +4832,89 @@ function generateBuilderJson(cfg) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'direct', ip: cleanDirectIps });
   }
   if (cfg.bypassRu) {
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: 'direct',
-      domain: [
-        'regexp:^([\\w\\-\\.]+\\.)ru$',
-        'regexp:^([\\w\\-\\.]+\\.)su$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
-        'regexp:^([\\w\\-\\.]+\\.)moscow$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$',
+    const ruDomains = [
+      'regexp:^([\\w\\-\\.]+\\.)ru$',
+      'regexp:^([\\w\\-\\.]+\\.)su$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
+      'regexp:^([\\w\\-\\.]+\\.)moscow$',
+      'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$'
+    ];
+
+    if (useGeosite) {
+      ruDomains.push(
         'ext:geosite_v2fly.dat:category-gov-ru',
         'ext:geosite_v2fly.dat:yandex',
         'ext:geosite_v2fly.dat:vk',
         'ext:geosite_v2fly.dat:steam'
-      ]
-    });
+      );
+    } else {
+      ruDomains.push(
+        'domain:gosuslugi.ru',
+        'domain:yandex.ru',
+        'domain:ya.ru',
+        'domain:vk.com',
+        'domain:vkvideo.ru',
+        'domain:mail.ru',
+        'domain:dzen.ru',
+        'domain:sberbank.ru',
+        'domain:tbank.ru',
+        'domain:tinkoff.ru',
+        'domain:ozon.ru',
+        'domain:wildberries.ru',
+        'domain:avito.ru',
+        'domain:kinopoisk.ru',
+        'domain:steamcommunity.com'
+      );
+    }
+
     rules.push({
       type: 'field',
       inboundTag: inbounds,
       outboundTag: 'direct',
-      ip: ['geoip:private', 'ext:geoip_zkeenip.dat:ru']
+      domain: ruDomains
+    });
+
+    const ruIps = [];
+    if (useGeoip) {
+      ruIps.push('geoip:private', 'ext:geoip_zkeenip.dat:ru');
+    } else {
+      ruIps.push(
+        '10.0.0.0/8',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+        '127.0.0.0/8',
+        'fc00::/7',
+        'fe80::/10'
+      );
+    }
+
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: 'direct',
+      ip: ruIps
     });
   } else if (cfg.bypassPrivate) {
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: 'direct',
-      ip: ['geoip:private']
-    });
+    if (useGeoip) {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'direct',
+        ip: ['geoip:private']
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: 'direct',
+        ip: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', 'fc00::/7', 'fe80::/10']
+      });
+    }
   }
   const cleanProxyDomains = extractCleanTargets(cfg.customProxyDomains);
   if (cleanProxyDomains.length > 0) {
@@ -4835,19 +4925,43 @@ function generateBuilderJson(cfg) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: proxyTag, ip: cleanProxyIps });
   }
   if (cfg.geositeExtraProxy) {
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: proxyTag,
-      domain: [
-        'geosite:google',
-        'geosite:telegram',
-        'geosite:twitter',
-        'geosite:meta',
-        'geosite:discord',
-        'geosite:openai'
-      ]
-    });
+    if (useGeosite) {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'geosite:google',
+          'geosite:telegram',
+          'geosite:twitter',
+          'geosite:meta',
+          'geosite:discord',
+          'geosite:openai'
+        ]
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'domain:google.com',
+          'domain:youtube.com',
+          'domain:googlevideo.com',
+          'domain:t.me',
+          'domain:telegram.org',
+          'domain:twitter.com',
+          'domain:x.com',
+          'domain:instagram.com',
+          'domain:facebook.com',
+          'domain:cdninstagram.com',
+          'domain:discord.com',
+          'domain:discordapp.com',
+          'domain:openai.com',
+          'domain:chatgpt.com'
+        ]
+      });
+    }
   }
   rules.push({
     type: 'field',
@@ -4888,8 +5002,11 @@ function populateBuilderForm(cfg = {}) {
   setCheck('builder-bypass-private', cfg.bypassPrivate !== undefined ? cfg.bypassPrivate : true);
   setCheck('builder-block-netbios', cfg.blockNetbios !== undefined ? cfg.blockNetbios : true);
   setCheck('builder-block-ads', cfg.blockAds !== undefined ? cfg.blockAds : false);
+  setCheck('builder-use-geosite', cfg.useGeosite !== undefined ? cfg.useGeosite : (cfg.useGeodata !== undefined ? cfg.useGeodata : true));
+  setCheck('builder-use-geoip', cfg.useGeoip !== undefined ? cfg.useGeoip : (cfg.useGeodata !== undefined ? cfg.useGeodata : true));
   setCheck('builder-geo-autoupdate', cfg.geoAutoUpdate !== undefined ? cfg.geoAutoUpdate : true);
   setCheck('builder-geosite-extra-proxy', cfg.geositeExtraProxy !== undefined ? cfg.geositeExtraProxy : false);
+  updateGeodataCheckboxes();
 
   const setText = (id, arr) => {
     const el = document.getElementById(id);
@@ -5003,6 +5120,8 @@ function openAddRoutingModal() {
     bypassPrivate: true,
     blockNetbios: true,
     blockAds: false,
+    useGeosite: true,
+    useGeoip: true,
     geositeExtraProxy: false,
     geoAutoUpdate: true
   });

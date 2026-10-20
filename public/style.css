@@ -5862,6 +5862,12 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   line-height: 1.25;
 }
 
+.routing-check-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Modern Routing Lists (Host / Domain Editor) */
 .routing-card-main-lists {
   padding: 16px;
