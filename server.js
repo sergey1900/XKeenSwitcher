@@ -5938,32 +5938,22 @@ const server = http.createServer(async (req, res) => {
 
       // 10. Отложенный перезапуск веб-сервера
       const initScript = '/opt/etc/init.d/S99xkeen-switcher';
-      if (fs.existsSync(initScript)) {
+      const nodeBin = process.execPath || process.argv[0] || 'node';
+      const scriptPath = path.join(__dirname, 'server.js');
+      const restartCmd = fs.existsSync(initScript)
+        ? `sleep 1.5 && ${initScript} restart`
+        : `sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}'`;
+
+      try {
+        const child = spawn('/bin/sh', ['-c', `( ${restartCmd} ) >> /opt/var/log/xkeen-switcher.log 2>&1 &`], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        child.unref();
+      } catch (e) {
         try {
-          exec(`nohup sh -c "sleep 1.5 && ${initScript} restart" >> /opt/var/log/xkeen-switcher.log 2>&1 &`);
-        } catch (e) {
-          try {
-            const child = spawn('sh', ['-c', `sleep 1.5 && ${initScript} restart >/dev/null 2>&1`], {
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.unref();
-          } catch (err) {}
-        }
-      } else {
-        const nodeBin = process.execPath || process.argv[0] || 'node';
-        const scriptPath = path.join(__dirname, 'server.js');
-        try {
-          exec(`nohup sh -c "sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}'" >> /opt/var/log/xkeen-switcher.log 2>&1 &`);
-        } catch (e) {
-          try {
-            const child = spawn('sh', ['-c', `sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}' >/dev/null 2>&1`], {
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.unref();
-          } catch (err) {}
-        }
+          exec(`( ${restartCmd} ) >> /opt/var/log/xkeen-switcher.log 2>&1 &`);
+        } catch (e2) {}
       }
 
       setTimeout(() => {

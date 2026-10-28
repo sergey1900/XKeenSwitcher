@@ -7380,31 +7380,65 @@ async function checkForUpdates(currentVersion) {
   if (currentVersion) currentAppVersion = String(currentVersion).trim();
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch('https://api.github.com/repos/sergey1900/XKeenSwitcher/releases/latest', {
-      headers: { 'Accept': 'application/vnd.github.v3+json' },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) return;
+    let latestTag = '';
+    let releaseInfo = null;
 
-    const release = await res.json();
-    if (!release || !release.tag_name) return;
+    // 1. Check published release
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('https://api.github.com/repos/sergey1900/XKeenSwitcher/releases/latest', {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const release = await res.json();
+        if (release && release.tag_name) {
+          latestTag = release.tag_name;
+          releaseInfo = release;
+        }
+      }
+    } catch (e) {}
 
-    const latestTag = release.tag_name;
+    // 2. Also check tags API because git tags are created for every release
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const resTags = await fetch('https://api.github.com/repos/sergey1900/XKeenSwitcher/tags', {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (resTags.ok) {
+        const tags = await resTags.json();
+        if (Array.isArray(tags) && tags.length > 0 && tags[0].name) {
+          const topTag = tags[0].name;
+          if (!latestTag || isNewerVersion(topTag, latestTag)) {
+            latestTag = topTag;
+            releaseInfo = {
+              tag_name: topTag,
+              name: topTag,
+              tarball_url: tags[0].tarball_url || `https://github.com/sergey1900/XKeenSwitcher/archive/refs/tags/${topTag}.tar.gz`,
+              html_url: `https://github.com/sergey1900/XKeenSwitcher/releases/tag/${topTag}`,
+              body: `Обновление ${topTag} с исправлениями и улучшениями.`
+            };
+          }
+        }
+      }
+    } catch (e) {}
+
     const curVer = currentAppVersion || '2.0.0';
-
-    if (isNewerVersion(latestTag, curVer)) {
-      latestReleaseInfo = release;
+    if (latestTag && releaseInfo && isNewerVersion(latestTag, curVer)) {
+      latestReleaseInfo = releaseInfo;
       const group = document.getElementById('app-update-group');
       const badge = document.getElementById('app-update-badge');
       const text = document.getElementById('app-update-text');
 
       const displayVer = latestTag.startsWith('v') ? latestTag : `v${latestTag}`;
       if (text) text.textContent = `Доступна ${displayVer}`;
-      if (badge && release.html_url) {
-        badge.href = release.html_url;
+      if (badge && releaseInfo.html_url) {
+        badge.href = releaseInfo.html_url;
       }
 
       if (group) {

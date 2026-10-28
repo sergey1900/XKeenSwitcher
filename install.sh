@@ -287,7 +287,11 @@ start() {
   fi
 
   cd "$APP_DIR" || exit 1
-  nohup node "$SERVER_JS" >> "$LOGFILE" 2>&1 &
+  if command -v nohup >/dev/null 2>&1; then
+    nohup node "$SERVER_JS" >> "$LOGFILE" 2>&1 &
+  else
+    (node "$SERVER_JS" >> "$LOGFILE" 2>&1 &)
+  fi
   PID=$!
   echo $PID > "$PIDFILE"
   echo "done (pid $PID)."
