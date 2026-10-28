@@ -5756,25 +5756,29 @@ const server = http.createServer(async (req, res) => {
       const initScript = '/opt/etc/init.d/S99xkeen-switcher';
       if (fs.existsSync(initScript)) {
         try {
-          const child = spawn('sh', ['-c', `sleep 1.5 && ${initScript} restart >/dev/null 2>&1`], {
-            detached: true,
-            stdio: 'ignore'
-          });
-          child.unref();
+          exec(`nohup sh -c "sleep 1.5 && ${initScript} restart" >> /opt/var/log/xkeen-switcher.log 2>&1 &`);
         } catch (e) {
-          exec(`nohup sh -c "sleep 1.5 && ${initScript} restart" >/dev/null 2>&1 &`);
+          try {
+            const child = spawn('sh', ['-c', `sleep 1.5 && ${initScript} restart >/dev/null 2>&1`], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.unref();
+          } catch (err) {}
         }
       } else {
         const nodeBin = process.execPath || process.argv[0] || 'node';
         const scriptPath = path.join(__dirname, 'server.js');
         try {
-          const child = spawn('sh', ['-c', `sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}' >/dev/null 2>&1`], {
-            detached: true,
-            stdio: 'ignore'
-          });
-          child.unref();
+          exec(`nohup sh -c "sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}'" >> /opt/var/log/xkeen-switcher.log 2>&1 &`);
         } catch (e) {
-          exec(`nohup sh -c "sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}'" >/dev/null 2>&1 &`);
+          try {
+            const child = spawn('sh', ['-c', `sleep 1.5 && kill -9 ${process.pid} && '${nodeBin}' '${scriptPath}' >/dev/null 2>&1`], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.unref();
+          } catch (err) {}
         }
       }
 
