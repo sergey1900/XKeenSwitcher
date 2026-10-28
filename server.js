@@ -225,6 +225,23 @@ function extractProxyTag(conn) {
   return 'proxy';
 }
 
+// Extract server hostname if connection uses domain name instead of IP
+function extractServerDomain(conn) {
+  if (!conn) return null;
+  if (conn.address && typeof conn.address === 'string' && !net.isIP(conn.address.trim())) {
+    return conn.address.trim();
+  }
+  if (conn.outboundContent) {
+    try {
+      const meta = extractOutboundMetadata(conn.outboundContent);
+      if (meta && meta.serverAddress && !net.isIP(meta.serverAddress.trim())) {
+        return meta.serverAddress.trim();
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
 // Clean domains and IPs from comments (# or // or ;), preserving valid rules
 function extractCleanTargets(arr) {
   if (!Array.isArray(arr)) return [];
@@ -266,7 +283,27 @@ function compileXrayDns(cfg, conn, dnsServersList) {
     return { address: idOrAddr, port: 53 };
   };
 
+  const isLocalAddr = (addr) => {
+    if (!addr) return true;
+    if (addr === 'localhost' || addr === '127.0.0.1' || addr === '192.168.1.1') return true;
+    if (addr.startsWith('192.168.') || addr.startsWith('10.') || addr.startsWith('172.16.') || addr.startsWith('127.')) return true;
+    return false;
+  };
+
   const servers = [];
+
+  // 0. Ensure active VPN server domain resolves via local/direct DNS to prevent connection deadlocks
+  const vpnHost = extractServerDomain(conn);
+  if (vpnHost) {
+    servers.push({
+      address: '192.168.1.1',
+      port: 53,
+      tag: 'dns-direct',
+      domains: [`full:${vpnHost}`],
+      skipFallback: true
+    });
+  }
+
   const rules = Array.isArray(dnsConfig.rules) ? dnsConfig.rules : [];
 
   for (let idx = 0; idx < rules.length; idx++) {
@@ -275,8 +312,10 @@ function compileXrayDns(cfg, conn, dnsServersList) {
     const srv = findServer(r.server);
     if (!srv.address) continue;
 
+    const isLocal = isLocalAddr(srv.address);
     const serverObj = {
-      address: srv.address
+      address: srv.address,
+      tag: isLocal ? 'dns-direct' : 'dns-remote'
     };
     if (srv.port && srv.port !== 53 && !srv.address.startsWith('https://')) {
       serverObj.port = Number(srv.port);
@@ -316,6 +355,7 @@ function compileXrayDns(cfg, conn, dnsServersList) {
     servers.push({
       address: localSrv.address || '192.168.1.1',
       port: Number(localSrv.port) || 53,
+      tag: 'dns-direct',
       domains: [
         'regexp:^([\\w\\-\\.]+\\.)ru$',
         'regexp:^([\\w\\-\\.]+\\.)su$',
@@ -342,31 +382,32 @@ function compileXrayDns(cfg, conn, dnsServersList) {
   // Default DNS server (for everything else)
   const defSrv = findServer(dnsConfig.defaultServer || 'dns_local');
   if (defSrv.address) {
+    const isDefLocal = isLocalAddr(defSrv.address);
+    const defObj = {
+      address: defSrv.address,
+      tag: isDefLocal ? 'dns-direct' : 'dns-remote'
+    };
     if (defSrv.port && defSrv.port !== 53 && !defSrv.address.startsWith('https://')) {
-      servers.push({ address: defSrv.address, port: Number(defSrv.port) });
-    } else {
-      servers.push(defSrv.address);
+      defObj.port = Number(defSrv.port);
     }
+    servers.push(defObj);
   }
   // Localhost fallback
-  servers.push('localhost');
+  servers.push({
+    address: 'localhost',
+    tag: 'dns-direct'
+  });
 
   return JSON.stringify({
     dns: {
       servers: servers,
       queryStrategy: 'UseIPv4'
-    },
-    outbounds: [
-      {
-        protocol: 'dns',
-        tag: 'dns-out'
-      }
-    ]
+    }
   }, null, 2);
 }
 
 // Universal Xray Routing Compiler
-function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList) {
+function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, conn) {
   if (!cfg || typeof cfg !== 'object') {
     return SYSTEM_ROUTING_ALL_VPN.content;
   }
@@ -376,70 +417,26 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList) {
   const useGeosite = (cfg.useGeosite !== false);
   const useGeoip = (cfg.useGeoip !== false);
 
-  // 0. DNS interception & routing (if Split-DNS enabled)
+  // 0. Always route active VPN server domain to direct to prevent connection deadlocks
+  const vpnHost = extractServerDomain(conn);
+  if (vpnHost) {
+    rules.push({
+      type: 'field',
+      domain: [`full:${vpnHost}`],
+      outboundTag: 'direct'
+    });
+  }
+
+  // 1. Split-DNS internal routing (if Split-DNS enabled)
   if (cfg.dnsConfig && cfg.dnsConfig.enabled) {
     rules.push({
       type: 'field',
-      inboundTag: inbounds,
-      port: '53',
-      outboundTag: 'dns-out'
-    });
-    rules.push({
-      type: 'field',
-      inboundTag: ['dns-out'],
+      inboundTag: ['dns-remote'],
       outboundTag: proxyTag
     });
-
-    const serversPool = Array.isArray(dnsServersList) && dnsServersList.length > 0
-      ? dnsServersList
-      : DEFAULT_DNS_PRESETS;
-    const remoteIps = new Set();
-    const localIps = new Set(['192.168.1.1/32']);
-
-    const checkAddr = (addr) => {
-      if (!addr) return;
-      if (addr.startsWith('https://')) {
-        try {
-          const u = new URL(addr);
-          if (net.isIP(u.hostname)) remoteIps.add(`${u.hostname}/32`);
-        } catch (e) {}
-      } else if (net.isIP(addr)) {
-        if (addr.startsWith('192.168.') || addr.startsWith('10.') || addr.startsWith('127.')) {
-          localIps.add(`${addr}/32`);
-        } else {
-          remoteIps.add(`${addr}/32`);
-        }
-      }
-    };
-
-    if (Array.isArray(cfg.dnsConfig.rules)) {
-      for (const r of cfg.dnsConfig.rules) {
-        const srv = serversPool.find(s => s.id === r.server || s.address === r.server);
-        if (srv) checkAddr(srv.address);
-        if (Array.isArray(r.fallbacks)) {
-          for (const fb of r.fallbacks) {
-            const fbSrv = serversPool.find(s => s.id === fb || s.address === fb);
-            if (fbSrv) checkAddr(fbSrv.address);
-          }
-        }
-      }
-    }
-    // Include Cloudflare and Google DoH IPs
-    remoteIps.add('1.1.1.1/32');
-    remoteIps.add('1.0.0.1/32');
-    remoteIps.add('8.8.8.8/32');
-    remoteIps.add('8.8.4.4/32');
-
-    if (remoteIps.size > 0) {
-      rules.push({
-        type: 'field',
-        ip: Array.from(remoteIps),
-        outboundTag: proxyTag
-      });
-    }
     rules.push({
       type: 'field',
-      ip: Array.from(localIps),
+      inboundTag: ['dns-direct'],
       outboundTag: 'direct'
     });
   }
@@ -1000,7 +997,7 @@ function compileRoutingForXray(routing, conn, dnsServersList) {
   if (!routing) return SYSTEM_ROUTING_ALL_VPN.content;
   const proxyTag = extractProxyTag(conn);
   if (routing.builderConfig) {
-    return compileXrayRouting(routing.builderConfig, proxyTag, dnsServersList);
+    return compileXrayRouting(routing.builderConfig, proxyTag, dnsServersList, conn);
   }
   if (routing.content) {
     try {
@@ -1039,10 +1036,11 @@ async function syncXrayDns(routing, conn, settings) {
     const dnsContent = compileXrayDns(routing.builderConfig, conn, dnsServers);
     if (dnsContent) {
       writeTargetFile(dnsPath, dnsContent);
+      // Ensure xkeen -dns is off to prevent router port 53 interception loops
       try {
-        await runShellCommand('xkeen -dns on');
+        await runShellCommand('xkeen -dns off');
       } catch (e) {
-        console.warn('Could not run xkeen -dns on:', e.message);
+        console.warn('Could not run xkeen -dns off:', e.message);
       }
       return true;
     }

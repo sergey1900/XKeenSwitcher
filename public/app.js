@@ -4825,12 +4825,10 @@ function generateBuilderJson(cfg) {
   const useGeosite = (cfg.useGeosite !== false);
   const useGeoip = (cfg.useGeoip !== false);
 
-  // Split-DNS interception & routing
+  // Split-DNS internal routing
   if (cfg.dnsConfig && cfg.dnsConfig.enabled) {
-    rules.push({ type: 'field', inboundTag: inbounds, port: '53', outboundTag: 'dns-out' });
-    rules.push({ type: 'field', inboundTag: ['dns-out'], outboundTag: proxyTag });
-    rules.push({ type: 'field', ip: ['1.1.1.1/32', '1.0.0.1/32', '8.8.8.8/32', '8.8.4.4/32'], outboundTag: proxyTag });
-    rules.push({ type: 'field', ip: ['192.168.1.1/32'], outboundTag: 'direct' });
+    rules.push({ type: 'field', inboundTag: ['dns-remote'], outboundTag: proxyTag });
+    rules.push({ type: 'field', inboundTag: ['dns-direct'], outboundTag: 'direct' });
   }
 
   if (cfg.blockNetbios) {
