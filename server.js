@@ -313,9 +313,10 @@ function compileXrayDns(cfg, conn, dnsServersList) {
     if (!srv.address) continue;
 
     const isLocal = isLocalAddr(srv.address);
+    const shouldProxy = Boolean(r.queryViaProxy);
     const serverObj = {
       address: srv.address,
-      tag: isLocal ? 'dns-direct' : 'dns-remote'
+      tag: shouldProxy ? 'dns-remote' : 'dns-direct'
     };
     if (srv.port && srv.port !== 53 && !srv.address.startsWith('https://')) {
       serverObj.port = Number(srv.port);
@@ -440,15 +441,39 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, con
       inboundTag: ['dns-direct'],
       outboundTag: 'direct'
     });
-    // Unconditionally route remote public DNS IPs via tunnel to prevent ISP/TSPU port 53 hijacking
+
+    // If any Split-DNS rule explicitly requests query via proxy, route that resolver's IP via tunnel
+    const proxyDnsIps = new Set();
+    const directDnsIps = new Set(['192.168.1.1/32', '127.0.0.1/32']);
+    const serversPool = Array.isArray(dnsServersList) && dnsServersList.length > 0 ? dnsServersList : DEFAULT_DNS_PRESETS;
+
+    if (Array.isArray(cfg.dnsConfig.rules)) {
+      for (const r of cfg.dnsConfig.rules) {
+        if (!r.queryViaProxy) continue;
+        const srv = serversPool.find(s => s.id === r.server || s.address === r.server);
+        if (srv && srv.address && net.isIP(srv.address)) {
+          proxyDnsIps.add(`${srv.address}/32`);
+        }
+        if (Array.isArray(r.fallbacks)) {
+          for (const fb of r.fallbacks) {
+            const fbSrv = serversPool.find(s => s.id === fb || s.address === fb);
+            if (fbSrv && fbSrv.address && net.isIP(fbSrv.address)) {
+              proxyDnsIps.add(`${fbSrv.address}/32`);
+            }
+          }
+        }
+      }
+    }
+    if (proxyDnsIps.size > 0) {
+      rules.push({
+        type: 'field',
+        ip: Array.from(proxyDnsIps),
+        outboundTag: proxyTag
+      });
+    }
     rules.push({
       type: 'field',
-      ip: ['1.1.1.1/32', '1.0.0.1/32', '8.8.8.8/32', '8.8.4.4/32', '9.9.9.9/32'],
-      outboundTag: proxyTag
-    });
-    rules.push({
-      type: 'field',
-      ip: ['192.168.1.1/32', '127.0.0.1/32'],
+      ip: Array.from(directDnsIps),
       outboundTag: 'direct'
     });
   }

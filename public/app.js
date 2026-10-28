@@ -4638,31 +4638,6 @@ function submitQuickAdd() {
     return;
   }
 
-  // Smart expansion for ChatGPT / OpenAI (adds companion domains oaistatic, oaiusercontent, etc.)
-  const chatgptTriggers = ['chatgpt.com', 'openai.com', 'chat.openai.com'];
-  if (currentRoutingTarget === 'proxy' && !isIp && chatgptTriggers.includes(cleaned)) {
-    const companions = ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'chat.com', 'sora.com'];
-    const toAdd = [];
-    for (const comp of companions) {
-      if (!existingHosts.includes(comp)) {
-        toAdd.push(comp);
-      }
-    }
-    if (toAdd.length === 0) {
-      showToast(`Все домены ChatGPT уже есть в списке!`, 'info');
-      input.value = '';
-      return;
-    }
-    const curVal = textarea.value.trimEnd();
-    textarea.value = curVal ? (curVal + '\n' + toAdd.join('\n')) : toAdd.join('\n');
-    updateRoutingListCounters();
-    showToast(`Добавлен ChatGPT со всеми ресурсами (${toAdd.join(', ')})`, 'success');
-    input.value = '';
-    input.focus();
-    textarea.scrollTop = textarea.scrollHeight;
-    return;
-  }
-
   const curVal = textarea.value.trimEnd();
   textarea.value = curVal ? (curVal + '\n' + cleaned) : cleaned;
   
@@ -4771,6 +4746,7 @@ function collectBuilderConfig() {
       const domainsText = el.querySelector('.dns-rule-domains')?.value || '';
       const domains = domainsText.split('\n').map(s => s.trimEnd()).filter(s => s.trim().length > 0);
       const autoProxy = Boolean(el.querySelector('.dns-rule-auto-proxy')?.checked);
+      const queryViaProxy = Boolean(el.querySelector('.dns-rule-query-via-proxy')?.checked);
       
       const fallbackBadges = el.querySelectorAll('.dns-fallback-chip');
       const fallbacks = [];
@@ -4783,7 +4759,8 @@ function collectBuilderConfig() {
           server,
           fallbacks,
           domains,
-          autoProxyDomains: autoProxy
+          autoProxyDomains: autoProxy,
+          queryViaProxy
         });
       }
     });
@@ -4854,8 +4831,34 @@ function generateBuilderJson(cfg) {
   if (cfg.dnsConfig && cfg.dnsConfig.enabled) {
     rules.push({ type: 'field', inboundTag: ['dns-remote'], outboundTag: proxyTag });
     rules.push({ type: 'field', inboundTag: ['dns-direct'], outboundTag: 'direct' });
-    rules.push({ type: 'field', ip: ['1.1.1.1/32', '1.0.0.1/32', '8.8.8.8/32', '8.8.4.4/32', '9.9.9.9/32'], outboundTag: proxyTag });
-    rules.push({ type: 'field', ip: ['192.168.1.1/32', '127.0.0.1/32'], outboundTag: 'direct' });
+
+    const proxyDnsIps = new Set();
+    const directDnsIps = new Set(['192.168.1.1/32', '127.0.0.1/32']);
+    if (Array.isArray(cfg.dnsConfig.rules)) {
+      for (const r of cfg.dnsConfig.rules) {
+        if (!r.queryViaProxy) continue;
+        const srv = (typeof availableDnsServers !== 'undefined')
+          ? availableDnsServers.find(s => s.id === r.server || s.address === r.server)
+          : null;
+        if (srv && srv.address && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(srv.address)) {
+          proxyDnsIps.add(`${srv.address}/32`);
+        }
+        if (Array.isArray(r.fallbacks)) {
+          for (const fb of r.fallbacks) {
+            const fbSrv = (typeof availableDnsServers !== 'undefined')
+              ? availableDnsServers.find(s => s.id === fb || s.address === fb)
+              : null;
+            if (fbSrv && fbSrv.address && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(fbSrv.address)) {
+              proxyDnsIps.add(`${fbSrv.address}/32`);
+            }
+          }
+        }
+      }
+    }
+    if (proxyDnsIps.size > 0) {
+      rules.push({ type: 'field', ip: Array.from(proxyDnsIps), outboundTag: proxyTag });
+    }
+    rules.push({ type: 'field', ip: Array.from(directDnsIps), outboundTag: 'direct' });
   }
 
   if (cfg.blockNetbios) {
@@ -5287,6 +5290,7 @@ function addDnsRule(ruleData = {}) {
   const primaryId = ruleData.server || 'dns_cf_doh';
   const domainsStr = Array.isArray(ruleData.domains) ? ruleData.domains.join('\n') : (ruleData.domains || '');
   const autoProxy = ruleData.autoProxyDomains !== false;
+  const queryViaProxy = Boolean(ruleData.queryViaProxy);
   const fallbacks = Array.isArray(ruleData.fallbacks) ? ruleData.fallbacks : [];
 
   const card = document.createElement('div');
@@ -5294,11 +5298,15 @@ function addDnsRule(ruleData = {}) {
 
   card.innerHTML = `
     <div class="dns-rule-header">
-      <div class="dns-rule-title-group">
+      <div class="dns-rule-title-group" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <span class="dns-rule-badge">Правило №${ruleIndex}</span>
         <label class="routing-check-item" style="padding: 2px 6px; font-size: 0.78rem;">
           <input type="checkbox" class="dns-rule-auto-proxy" ${autoProxy ? 'checked' : ''}>
           <span>Включать домены из списка «В туннель»</span>
+        </label>
+        <label class="routing-check-item" style="padding: 2px 6px; font-size: 0.78rem;">
+          <input type="checkbox" class="dns-rule-query-via-proxy" ${queryViaProxy ? 'checked' : ''}>
+          <span>🛡️ Запросы к резолверу через туннель</span>
         </label>
       </div>
       <button type="button" class="btn-text-action" onclick="removeDnsRule(this)" style="color:#f87171;" title="Удалить правило">
