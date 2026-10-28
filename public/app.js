@@ -4638,6 +4638,31 @@ function submitQuickAdd() {
     return;
   }
 
+  // Smart expansion for ChatGPT / OpenAI (adds companion domains oaistatic, oaiusercontent, etc.)
+  const chatgptTriggers = ['chatgpt.com', 'openai.com', 'chat.openai.com'];
+  if (currentRoutingTarget === 'proxy' && !isIp && chatgptTriggers.includes(cleaned)) {
+    const companions = ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'chat.com', 'sora.com'];
+    const toAdd = [];
+    for (const comp of companions) {
+      if (!existingHosts.includes(comp)) {
+        toAdd.push(comp);
+      }
+    }
+    if (toAdd.length === 0) {
+      showToast(`Все домены ChatGPT уже есть в списке!`, 'info');
+      input.value = '';
+      return;
+    }
+    const curVal = textarea.value.trimEnd();
+    textarea.value = curVal ? (curVal + '\n' + toAdd.join('\n')) : toAdd.join('\n');
+    updateRoutingListCounters();
+    showToast(`Добавлен ChatGPT со всеми ресурсами (${toAdd.join(', ')})`, 'success');
+    input.value = '';
+    input.focus();
+    textarea.scrollTop = textarea.scrollHeight;
+    return;
+  }
+
   const curVal = textarea.value.trimEnd();
   textarea.value = curVal ? (curVal + '\n' + cleaned) : cleaned;
   
@@ -4829,6 +4854,8 @@ function generateBuilderJson(cfg) {
   if (cfg.dnsConfig && cfg.dnsConfig.enabled) {
     rules.push({ type: 'field', inboundTag: ['dns-remote'], outboundTag: proxyTag });
     rules.push({ type: 'field', inboundTag: ['dns-direct'], outboundTag: 'direct' });
+    rules.push({ type: 'field', ip: ['1.1.1.1/32', '1.0.0.1/32', '8.8.8.8/32', '8.8.4.4/32', '9.9.9.9/32'], outboundTag: proxyTag });
+    rules.push({ type: 'field', ip: ['192.168.1.1/32', '127.0.0.1/32'], outboundTag: 'direct' });
   }
 
   if (cfg.blockNetbios) {
@@ -4985,43 +5012,45 @@ function generateBuilderJson(cfg) {
     }
   }
   if (cfg.geositeExtraProxy) {
+    const extraDomains = [];
     if (useGeosite) {
-      rules.push({
-        type: 'field',
-        inboundTag: inbounds,
-        outboundTag: proxyTag,
-        domain: [
-          'geosite:google',
-          'geosite:telegram',
-          'geosite:twitter',
-          'geosite:meta',
-          'geosite:discord',
-          'geosite:openai'
-        ]
-      });
-    } else {
-      rules.push({
-        type: 'field',
-        inboundTag: inbounds,
-        outboundTag: proxyTag,
-        domain: [
-          'domain:google.com',
-          'domain:youtube.com',
-          'domain:googlevideo.com',
-          'domain:t.me',
-          'domain:telegram.org',
-          'domain:twitter.com',
-          'domain:x.com',
-          'domain:instagram.com',
-          'domain:facebook.com',
-          'domain:cdninstagram.com',
-          'domain:discord.com',
-          'domain:discordapp.com',
-          'domain:openai.com',
-          'domain:chatgpt.com'
-        ]
-      });
+      extraDomains.push(
+        'geosite:google',
+        'geosite:telegram',
+        'geosite:twitter',
+        'geosite:meta',
+        'geosite:discord',
+        'geosite:openai'
+      );
     }
+    // Complete coverage including all OpenAI / ChatGPT assets
+    extraDomains.push(
+      'domain:google.com',
+      'domain:youtube.com',
+      'domain:googlevideo.com',
+      'domain:t.me',
+      'domain:telegram.org',
+      'domain:twitter.com',
+      'domain:x.com',
+      'domain:instagram.com',
+      'domain:facebook.com',
+      'domain:cdninstagram.com',
+      'domain:discord.com',
+      'domain:discordapp.com',
+      'domain:openai.com',
+      'domain:chatgpt.com',
+      'domain:oaistatic.com',
+      'domain:oaiusercontent.com',
+      'domain:chat.com',
+      'domain:sora.com',
+      'domain:livekit.cloud'
+    );
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      domain: extraDomains
+    });
   }
   rules.push({
     type: 'field',

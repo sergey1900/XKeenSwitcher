@@ -400,6 +400,7 @@ function compileXrayDns(cfg, conn, dnsServersList) {
 
   return JSON.stringify({
     dns: {
+      tag: 'dns-remote',
       servers: servers,
       queryStrategy: 'UseIPv4'
     }
@@ -437,6 +438,17 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, con
     rules.push({
       type: 'field',
       inboundTag: ['dns-direct'],
+      outboundTag: 'direct'
+    });
+    // Unconditionally route remote public DNS IPs via tunnel to prevent ISP/TSPU port 53 hijacking
+    rules.push({
+      type: 'field',
+      ip: ['1.1.1.1/32', '1.0.0.1/32', '8.8.8.8/32', '8.8.4.4/32', '9.9.9.9/32'],
+      outboundTag: proxyTag
+    });
+    rules.push({
+      type: 'field',
+      ip: ['192.168.1.1/32', '127.0.0.1/32'],
       outboundTag: 'direct'
     });
   }
@@ -696,45 +708,47 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, con
     }
   }
 
-  // 10. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI)
+  // 10. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI / ChatGPT)
   if (cfg.geositeExtraProxy) {
+    const extraDomains = [];
     if (useGeosite) {
-      rules.push({
-        type: 'field',
-        inboundTag: inbounds,
-        outboundTag: proxyTag,
-        domain: [
-          'geosite:google',
-          'geosite:telegram',
-          'geosite:twitter',
-          'geosite:meta',
-          'geosite:discord',
-          'geosite:openai'
-        ]
-      });
-    } else {
-      rules.push({
-        type: 'field',
-        inboundTag: inbounds,
-        outboundTag: proxyTag,
-        domain: [
-          'domain:google.com',
-          'domain:youtube.com',
-          'domain:googlevideo.com',
-          'domain:t.me',
-          'domain:telegram.org',
-          'domain:twitter.com',
-          'domain:x.com',
-          'domain:instagram.com',
-          'domain:facebook.com',
-          'domain:cdninstagram.com',
-          'domain:discord.com',
-          'domain:discordapp.com',
-          'domain:openai.com',
-          'domain:chatgpt.com'
-        ]
-      });
+      extraDomains.push(
+        'geosite:google',
+        'geosite:telegram',
+        'geosite:twitter',
+        'geosite:meta',
+        'geosite:discord',
+        'geosite:openai'
+      );
     }
+    // Full domain fallback & complete coverage (including all essential OpenAI/ChatGPT web & voice assets)
+    extraDomains.push(
+      'domain:google.com',
+      'domain:youtube.com',
+      'domain:googlevideo.com',
+      'domain:t.me',
+      'domain:telegram.org',
+      'domain:twitter.com',
+      'domain:x.com',
+      'domain:instagram.com',
+      'domain:facebook.com',
+      'domain:cdninstagram.com',
+      'domain:discord.com',
+      'domain:discordapp.com',
+      'domain:openai.com',
+      'domain:chatgpt.com',
+      'domain:oaistatic.com',
+      'domain:oaiusercontent.com',
+      'domain:chat.com',
+      'domain:sora.com',
+      'domain:livekit.cloud'
+    );
+    rules.push({
+      type: 'field',
+      inboundTag: inbounds,
+      outboundTag: proxyTag,
+      domain: extraDomains
+    });
   }
 
   // 11. Default Fallback
@@ -901,6 +915,14 @@ function compileMihomoRules(cfg) {
     lines.push('  - GEOSITE,meta,PROXY');
     lines.push('  - GEOSITE,discord,PROXY');
     lines.push('  - GEOSITE,openai,PROXY');
+    // Ensure all essential OpenAI / ChatGPT domains are proxied even if geosite is missing
+    lines.push('  - DOMAIN-SUFFIX,openai.com,PROXY');
+    lines.push('  - DOMAIN-SUFFIX,chatgpt.com,PROXY');
+    lines.push('  - DOMAIN-SUFFIX,oaistatic.com,PROXY');
+    lines.push('  - DOMAIN-SUFFIX,oaiusercontent.com,PROXY');
+    lines.push('  - DOMAIN-SUFFIX,chat.com,PROXY');
+    lines.push('  - DOMAIN-SUFFIX,sora.com,PROXY');
+    lines.push('  - DOMAIN-SUFFIX,livekit.cloud,PROXY');
   }
 
   // 12. Match Default
