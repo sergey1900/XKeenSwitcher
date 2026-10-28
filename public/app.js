@@ -101,6 +101,29 @@ function initApp() {
     });
   }
 
+  // Setup live subscription title detector on URL input in add & edit modals
+  const addSubUrl = document.getElementById('add-sub-url');
+  const addSubName = document.getElementById('add-sub-name');
+  if (addSubUrl) {
+    ['input', 'change', 'paste', 'blur', 'keyup'].forEach(evt => {
+      addSubUrl.addEventListener(evt, () => onSubscriptionUrlInput('add-sub-url', 'add-sub-name', 'add-sub-url-hint'));
+    });
+  }
+  if (addSubName) {
+    addSubName.addEventListener('input', () => { addSubName.dataset.autoFilled = 'false'; });
+  }
+
+  const subUrl = document.getElementById('sub-url');
+  const subName = document.getElementById('sub-name');
+  if (subUrl) {
+    ['input', 'change', 'paste', 'blur', 'keyup'].forEach(evt => {
+      subUrl.addEventListener(evt, () => onSubscriptionUrlInput('sub-url', 'sub-name', 'sub-url-hint'));
+    });
+  }
+  if (subName) {
+    subName.addEventListener('input', () => { subName.dataset.autoFilled = 'false'; });
+  }
+
   // Setup Drag & Drop for backup dropzone
   const dropzone = document.getElementById('backup-dropzone');
   if (dropzone) {
@@ -2926,6 +2949,71 @@ function openAddConnectionModal(defaultGroupId = '', initialTab = 'connection') 
   }, 100);
 }
 
+let subInspectDebounce = null;
+async function onSubscriptionUrlInput(urlInputId, nameInputId, hintId) {
+  const urlEl = document.getElementById(urlInputId);
+  const nameEl = document.getElementById(nameInputId);
+  const hintEl = hintId ? document.getElementById(hintId) : null;
+  if (!urlEl) return;
+
+  const url = (urlEl.value || '').trim();
+  if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    if (hintEl) {
+      hintEl.style.display = 'none';
+      hintEl.textContent = '';
+    }
+    return;
+  }
+
+  // Quick fallback name from URL pathname if name input is empty or was auto-filled or is default placeholder
+  if (nameEl && (!nameEl.value.trim() || nameEl.dataset.autoFilled === 'true' || /^Подписка\s*\d*$/i.test(nameEl.value.trim()))) {
+    try {
+      const u = new URL(url);
+      const fn = u.pathname.split('/').filter(Boolean).pop();
+      if (fn) {
+        const cleanFn = fn.replace(/\.(txt|ya?ml|json|conf|sub)$/i, '').trim();
+        const genericNames = ['sub', 'subscribe', 'subscription', 'config', 'configs', 'link', 'raw', 'all', 'index', 'default'];
+        if (cleanFn && !genericNames.includes(cleanFn.toLowerCase())) {
+          nameEl.value = cleanFn;
+          nameEl.dataset.autoFilled = 'true';
+        }
+      }
+    } catch (e) {}
+  }
+
+  clearTimeout(subInspectDebounce);
+  subInspectDebounce = setTimeout(async () => {
+    try {
+      if (hintEl) {
+        hintEl.style.display = 'block';
+        hintEl.textContent = '⏳ Определение подписки...';
+      }
+      const res = await fetch('/api/subscriptions/inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.title && nameEl && (!nameEl.value.trim() || nameEl.dataset.autoFilled === 'true' || /^Подписка\s*\d*$/i.test(nameEl.value.trim()))) {
+          nameEl.value = data.title;
+          nameEl.dataset.autoFilled = 'true';
+        }
+        if (hintEl) {
+          hintEl.style.display = 'block';
+          const countInfo = data.count ? `Подключений: ${data.count}` : '';
+          const titleInfo = data.title ? `«${data.title}»` : '';
+          hintEl.textContent = `✓ Название: ${titleInfo || 'Определено'} ${countInfo ? `(${countInfo})` : ''}`.trim();
+        }
+      } else if (hintEl) {
+        hintEl.style.display = 'none';
+      }
+    } catch (e) {
+      if (hintEl) hintEl.style.display = 'none';
+    }
+  }, 400);
+}
+
 function switchAddModalTab(tabName) {
   const tabs = ['connection', 'batch', 'subscription', 'group'];
   tabs.forEach(t => {
@@ -2950,9 +3038,18 @@ function switchAddModalTab(tabName) {
       addSubRouting.value = appData.settings.defaultRoutingBlacklist;
     }
     const nameInput = document.getElementById('add-sub-name');
-    if (nameInput && !nameInput.value) {
-      const subCount = (appData.groups || []).filter(g => g.isSubscription).length;
-      nameInput.value = `Подписка ${subCount + 1}`;
+    if (nameInput) {
+      nameInput.value = '';
+      nameInput.dataset.autoFilled = 'false';
+    }
+    const hintEl = document.getElementById('add-sub-url-hint');
+    if (hintEl) {
+      hintEl.style.display = 'none';
+      hintEl.textContent = '';
+    }
+    const urlInput = document.getElementById('add-sub-url');
+    if (urlInput && urlInput.value.trim()) {
+      onSubscriptionUrlInput('add-sub-url', 'add-sub-name', 'add-sub-url-hint');
     }
   } else if (tabName === 'group') {
     const nameInput = document.getElementById('add-group-name');
@@ -2965,7 +3062,10 @@ function switchAddModalTab(tabName) {
 async function onAddSubscriptionSubmit(e) {
   e.preventDefault();
   const url = document.getElementById('add-sub-url').value.trim();
-  const name = document.getElementById('add-sub-name').value.trim();
+  let name = document.getElementById('add-sub-name').value.trim();
+  if (/^Подписка\s*\d*$/i.test(name)) {
+    name = '';
+  }
   const targetList = document.querySelector('input[name="add-sub-target-list"]:checked')?.value || 'mixed';
   const routingId = document.getElementById('add-sub-routing').value;
   const hideUnreachable = Boolean(document.getElementById('add-sub-hide-unreachable')?.checked);
@@ -3498,6 +3598,13 @@ function openEditSubscriptionModal(groupId, event) {
 
   document.getElementById('sub-url').value = group.subscriptionUrl || '';
   document.getElementById('sub-name').value = group.name || '';
+  const subNameInput = document.getElementById('sub-name');
+  if (subNameInput) subNameInput.dataset.autoFilled = 'false';
+  const subHintEl = document.getElementById('sub-url-hint');
+  if (subHintEl) {
+    subHintEl.style.display = 'none';
+    subHintEl.textContent = '';
+  }
 
   const targetRadio = document.querySelector(`input[name="sub-target-list"][value="${group.targetList || 'mixed'}"]`);
   if (targetRadio) targetRadio.checked = true;
@@ -3592,10 +3699,14 @@ async function onSubscriptionSubmit(e) {
       await loadData();
     } else {
       // Create new subscription
+      let subNameToSend = name;
+      if (/^Подписка\s*\d*$/i.test(subNameToSend)) {
+        subNameToSend = '';
+      }
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, subscriptionUrl: url, name, targetList, routingId, hideUnreachable, autoUpdateHours })
+        body: JSON.stringify({ url, subscriptionUrl: url, name: subNameToSend, targetList, routingId, hideUnreachable, autoUpdateHours })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');

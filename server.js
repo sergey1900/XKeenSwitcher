@@ -2766,6 +2766,138 @@ function parseSubscriptionUserInfo(headerStr) {
   return Object.keys(info).length > 0 ? info : null;
 }
 
+// Helper: Decode subscription title from various header/text encodings (RFC 2047, RFC 5987, Base64, URL-encode, UTF-8)
+function decodeSubscriptionTitle(rawTitle) {
+  if (!rawTitle || typeof rawTitle !== 'string') return '';
+  let str = rawTitle.trim();
+  // Strip enclosing quotes
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1).trim();
+  }
+  // Check RFC 5987: UTF-8''encoded_value
+  const rfc5987Match = str.match(/^utf-8''(.+)$/i);
+  if (rfc5987Match) {
+    try {
+      return decodeURIComponent(rfc5987Match[1]);
+    } catch (e) {}
+  }
+  // Check base64: prefix
+  if (str.toLowerCase().startsWith('base64:')) {
+    const b64 = str.slice(7).trim();
+    try {
+      const dec = Buffer.from(b64, 'base64').toString('utf8');
+      if (dec && !dec.includes('\ufffd')) return dec.trim();
+    } catch (e) {}
+  }
+  // Check RFC 2047: =?UTF-8?B?...?= or =?UTF-8?Q?...?=
+  const rfc2047Match = str.match(/^=\?([a-zA-Z0-9_-]+)\?([bBqQ])\?([^\?]+)\?=$/);
+  if (rfc2047Match) {
+    const encoding = rfc2047Match[2].toUpperCase();
+    const payload = rfc2047Match[3];
+    if (encoding === 'B') {
+      try {
+        const dec = Buffer.from(payload, 'base64').toString('utf8');
+        if (dec && !dec.includes('\ufffd')) return dec.trim();
+      } catch (e) {}
+    }
+  }
+  // Check percent-encoding
+  if (/%[0-9a-fA-F]{2}/.test(str)) {
+    try {
+      return decodeURIComponent(str).trim();
+    } catch (e) {
+      try {
+        return decodeURI(str).trim();
+      } catch (e2) {}
+    }
+  }
+  return str;
+}
+
+// Helper: Extract profile title from subscription body lines/comments
+function extractTitleFromContent(textContent) {
+  if (!textContent || typeof textContent !== 'string') return '';
+  const lines = textContent.split(/\r?\n/);
+  const maxLines = Math.min(lines.length, 60);
+
+  // Priority 1: profile-title / subscription-title in comments
+  for (let i = 0; i < maxLines; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const ptMatch = line.match(/^\s*(?:#|\/\/|;)\s*(?:profile[-_ ]title|subscription[-_ ]title)\s*[:=]\s*(.+)$/i);
+    if (ptMatch && ptMatch[1].trim()) {
+      const title = decodeSubscriptionTitle(ptMatch[1].trim());
+      if (title) return title;
+    }
+  }
+
+  // Priority 2: YAML style without comments: profile-title: ...
+  for (let i = 0; i < maxLines; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const yamlPt = line.match(/^(?:profile[-_ ]title|subscription[-_ ]title)\s*[:=]\s*(.+)$/i);
+    if (yamlPt && yamlPt[1].trim()) {
+      const title = decodeSubscriptionTitle(yamlPt[1].trim());
+      if (title) return title;
+    }
+  }
+
+  // Priority 3: generic title / name in comments: # title: ..., # name: ...
+  for (let i = 0; i < maxLines; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const titleMatch = line.match(/^\s*(?:#|\/\/|;)\s*(?:title|name|remark|remarks)\s*[:=]\s*(.+)$/i);
+    if (titleMatch && titleMatch[1].trim()) {
+      const title = decodeSubscriptionTitle(titleMatch[1].trim());
+      if (title) return title;
+    }
+  }
+
+  return '';
+}
+
+// Helper: Extract filename from Content-Disposition header
+function extractTitleFromContentDisposition(dispHeader) {
+  if (!dispHeader || typeof dispHeader !== 'string') return '';
+  const utf8Match = dispHeader.match(/filename\*\s*=\s*UTF-8''([^;\r\n]+)/i);
+  if (utf8Match) {
+    try {
+      const name = decodeURIComponent(utf8Match[1].trim());
+      return name.replace(/\.(txt|ya?ml|json|conf|sub)$/i, '').trim();
+    } catch (e) {}
+  }
+  const fnMatch = dispHeader.match(/filename\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s]+))/i);
+  if (fnMatch) {
+    const raw = fnMatch[1] || fnMatch[2] || fnMatch[3] || '';
+    const clean = raw.replace(/\.(txt|ya?ml|json|conf|sub)$/i, '').trim();
+    if (clean && !['sub', 'download', 'config'].includes(clean.toLowerCase())) {
+      return decodeSubscriptionTitle(clean);
+    }
+  }
+  return '';
+}
+
+// Helper: Extract name fallback from subscription URL
+function extractTitleFromUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const queryName = u.searchParams.get('name') || u.searchParams.get('title') || u.searchParams.get('remarks');
+    if (queryName && queryName.trim()) {
+      return decodeSubscriptionTitle(queryName.trim());
+    }
+    const pathname = u.pathname.replace(/\/+$/, '');
+    const filename = path.basename(pathname);
+    if (filename) {
+      const cleanName = filename.replace(/\.(txt|ya?ml|json|conf|sub)$/i, '').trim();
+      const genericNames = ['sub', 'subscribe', 'subscription', 'config', 'configs', 'link', 'raw', 'all', 'index', 'default'];
+      if (cleanName && !genericNames.includes(cleanName.toLowerCase())) {
+        return cleanName;
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
 // Helper: Fetch remote subscription contents, handles redirects, Base64 decoding, user-agent
 async function fetchSubscriptionContent(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') {
@@ -2778,6 +2910,9 @@ async function fetchSubscriptionContent(urlStr) {
 
   let rawBody = '';
   let userInfo = null;
+  let rawProfileTitleHeader = '';
+  let contentDispositionHeader = '';
+  let decodedBody = '';
   let fetchSucceeded = false;
 
   let deviceHwid = 'e7c234a5-6b89-4d12-9e34-5f67a8b9c0d1';
@@ -2807,6 +2942,8 @@ async function fetchSubscriptionContent(urlStr) {
       if (userInfoHeader) {
         userInfo = parseSubscriptionUserInfo(userInfoHeader);
       }
+      rawProfileTitleHeader = res.headers.get('profile-title') || res.headers.get('subscription-title') || '';
+      contentDispositionHeader = res.headers.get('content-disposition') || '';
       rawBody = await res.text();
       fetchSucceeded = true;
     }
@@ -2828,6 +2965,14 @@ async function fetchSubscriptionContent(urlStr) {
       const match = headersText.match(/subscription-userinfo:\s*([^\r\n]+)/i);
       if (match) {
         userInfo = parseSubscriptionUserInfo(match[1]);
+      }
+      const matchTitle = headersText.match(/(?:profile-title|subscription-title):\s*([^\r\n]+)/i);
+      if (matchTitle) {
+        rawProfileTitleHeader = matchTitle[1].trim();
+      }
+      const matchDisp = headersText.match(/content-disposition:\s*([^\r\n]+)/i);
+      if (matchDisp) {
+        contentDispositionHeader = matchDisp[1].trim();
       }
     } else {
       rawBody = stdout;
@@ -2869,6 +3014,7 @@ async function fetchSubscriptionContent(urlStr) {
       const candidateCombined = nonCommentLines.join('');
       const decoded = decodeBase64Safe(candidateCombined) || decodeBase64Safe(textContent);
       if (decoded) {
+        decodedBody = decoded;
         if (decoded.startsWith('[') || decoded.startsWith('{')) {
           try {
             const parsed = JSON.parse(decoded);
@@ -2912,7 +3058,39 @@ async function fetchSubscriptionContent(urlStr) {
     }
   }
 
-  return { lines, jsonConfigs, userInfo };
+  // 4. Resolve subscription title from all available metadata sources
+  let profileTitle = '';
+  if (rawProfileTitleHeader) {
+    profileTitle = decodeSubscriptionTitle(rawProfileTitleHeader);
+  }
+  if (!profileTitle && rawBody) {
+    profileTitle = extractTitleFromContent(rawBody);
+  }
+  if (!profileTitle && textContent && textContent !== rawBody) {
+    profileTitle = extractTitleFromContent(textContent);
+  }
+  if (!profileTitle && decodedBody) {
+    profileTitle = extractTitleFromContent(decodedBody);
+  }
+  if (!profileTitle && contentDispositionHeader) {
+    profileTitle = extractTitleFromContentDisposition(contentDispositionHeader);
+  }
+  if (!profileTitle && jsonConfigs && jsonConfigs.length > 0) {
+    for (const cfg of jsonConfigs) {
+      if (cfg && (cfg['profile-title'] || cfg.remarks || cfg.name)) {
+        const candidate = cfg['profile-title'] || cfg.remarks || cfg.name;
+        if (typeof candidate === 'string' && candidate.trim() && !candidate.startsWith('Узел ')) {
+          profileTitle = safeDecodeUriMulti(candidate.trim());
+          break;
+        }
+      }
+    }
+  }
+  if (!profileTitle) {
+    profileTitle = extractTitleFromUrl(cleanUrl);
+  }
+
+  return { lines, jsonConfigs, userInfo, profileTitle };
 }
 
 // Helper: Measure TCP handshake latency (ping in ms) to host:port
@@ -5342,9 +5520,15 @@ async function syncSubscriptionById(id) {
     throw new Error('У подписки не указан URL');
   }
 
-  const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(group.subscriptionUrl);
+  const { lines, jsonConfigs, userInfo, profileTitle } = await fetchSubscriptionContent(group.subscriptionUrl);
   if (userInfo) {
     group.userInfo = userInfo;
+  }
+  if (profileTitle) {
+    group.profileTitle = profileTitle;
+    if (!group.name || /^Подписка\s*\d*$/i.test(group.name.trim())) {
+      group.name = profileTitle;
+    }
   }
   group.lastUpdated = new Date().toISOString();
 
@@ -6905,6 +7089,36 @@ const server = http.createServer(async (req, res) => {
 
   // --- SUBSCRIPTIONS ROUTES ---
 
+  // POST or GET /api/subscriptions/inspect - Preview title, nodes count and metadata before importing
+  if (urlParts === '/api/subscriptions/inspect' && (req.method === 'POST' || req.method === 'GET')) {
+    try {
+      let rawUrl = '';
+      if (req.method === 'POST') {
+        const body = await parseJsonBody(req).catch(() => ({}));
+        rawUrl = body.url || body.subscriptionUrl;
+      } else {
+        const u = new URL(req.url, 'http://localhost');
+        rawUrl = u.searchParams.get('url') || u.searchParams.get('subscriptionUrl');
+      }
+
+      if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+        return sendJson(res, 400, { error: 'Укажите URL подписки' });
+      }
+
+      const { lines, jsonConfigs, userInfo, profileTitle } = await fetchSubscriptionContent(rawUrl.trim());
+      const count = (jsonConfigs && jsonConfigs.length > 0) ? jsonConfigs.length : lines.length;
+
+      return sendJson(res, 200, {
+        success: true,
+        title: profileTitle || '',
+        count,
+        userInfo: userInfo || null
+      });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message || 'Ошибка проверки подписки' });
+    }
+  }
+
   // POST /api/subscriptions - Add a new subscription
   if (urlParts === '/api/subscriptions' && req.method === 'POST') {
     try {
@@ -6927,17 +7141,30 @@ const server = http.createServer(async (req, res) => {
         ? routingId
         : defaultRouting;
 
-      const subName = (name && name.trim()) ? name.trim() : `Подписка ${data.groups.filter(g => g.isSubscription).length + 1}`;
+      const { lines, jsonConfigs, userInfo, profileTitle } = await fetchSubscriptionContent(url);
 
-      const { lines, jsonConfigs, userInfo } = await fetchSubscriptionContent(url.trim());
+      const trimmedName = (name && typeof name === 'string') ? name.trim() : '';
+      const isDefaultOrEmptyName = !trimmedName || /^Подписка\s*\d*$/i.test(trimmedName);
+
+      let subName = '';
+      if (!isDefaultOrEmptyName) {
+        subName = trimmedName;
+      } else if (profileTitle) {
+        subName = profileTitle;
+      } else if (trimmedName) {
+        subName = trimmedName;
+      } else {
+        subName = `Подписка ${data.groups.filter(g => g.isSubscription).length + 1}`;
+      }
 
       const hideUnreachable = (typeof body.hideUnreachable !== 'undefined') ? Boolean(body.hideUnreachable) : true;
       const autoUpdateHours = (typeof body.autoUpdateHours !== 'undefined') ? Math.max(0, parseInt(body.autoUpdateHours, 10) || 0) : 0;
       const subGroup = {
         id: 'group_sub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         name: subName,
+        profileTitle: profileTitle || null,
         isSubscription: true,
-        subscriptionUrl: url.trim(),
+        subscriptionUrl: url,
         targetList: targetList,
         hideUnreachable: hideUnreachable,
         autoUpdateHours: autoUpdateHours,

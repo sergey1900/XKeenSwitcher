@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.19">
+  <link rel="stylesheet" href="style.css?v=2.9.20">
 </head>
 <body>
   <div class="app-background"></div>
@@ -549,12 +549,13 @@
           <div class="form-group">
             <label for="add-sub-url">URL подписки <span class="req">*</span></label>
             <input type="url" id="add-sub-url" placeholder="https://provider.com/sub/..." required>
+            <small id="add-sub-url-hint" class="help-text" style="color: var(--accent-green); margin-top: 4px; display: none;"></small>
           </div>
 
           <div class="form-row">
             <div class="form-group flex-1">
-              <label for="add-sub-name">Название подписки / группы <span class="req">*</span></label>
-              <input type="text" id="add-sub-name" placeholder="Например: Мой провайдер" required>
+              <label for="add-sub-name">Название подписки / группы</label>
+              <input type="text" id="add-sub-name" placeholder="Автоматически из подписки (или введите своё)">
             </div>
 
             <div class="form-group flex-1">
@@ -1162,12 +1163,13 @@
         <div class="form-group">
           <label for="sub-url">URL подписки <span class="req">*</span></label>
           <input type="url" id="sub-url" placeholder="https://provider.com/sub/..." required>
+          <small id="sub-url-hint" class="help-text" style="color: var(--accent-green); margin-top: 4px; display: none;"></small>
         </div>
 
         <div class="form-row">
           <div class="form-group flex-1">
-            <label for="sub-name">Название подписки / группы <span class="req">*</span></label>
-            <input type="text" id="sub-name" placeholder="Например: Мой провайдер" required>
+            <label for="sub-name">Название подписки / группы</label>
+            <input type="text" id="sub-name" placeholder="Автоматически из подписки (или введите своё)">
           </div>
 
           <div class="form-group flex-1">
@@ -2115,6 +2117,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.19"></script>
+  <script src="app.js?v=2.9.20"></script>
 </body>
 </html>
