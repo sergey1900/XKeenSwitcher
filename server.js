@@ -6905,11 +6905,13 @@ const server = http.createServer(async (req, res) => {
   if (urlParts === '/api/subscriptions' && req.method === 'POST') {
     try {
       const body = await parseJsonBody(req);
-      const { url, name, targetList: reqTargetList, routingId } = body;
+      const rawUrl = body.url || body.subscriptionUrl;
+      const { name, targetList: reqTargetList, routingId } = body;
 
-      if (!url || typeof url !== 'string' || !url.trim()) {
+      if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
         return sendJson(res, 400, { error: 'Укажите URL подписки' });
       }
+      const url = rawUrl.trim();
 
       const data = loadData();
       const targetList = (reqTargetList === 'whitelist') ? 'whitelist' : (reqTargetList === 'blacklist' ? 'blacklist' : 'mixed');

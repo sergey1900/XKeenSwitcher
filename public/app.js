@@ -2985,7 +2985,7 @@ async function onAddSubscriptionSubmit(e) {
     const res = await fetch('/api/subscriptions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, subscriptionUrl: url, targetList, routingId, hideUnreachable, autoUpdateHours })
+      body: JSON.stringify({ url, subscriptionUrl: url, name, targetList, routingId, hideUnreachable, autoUpdateHours })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');
@@ -3595,7 +3595,7 @@ async function onSubscriptionSubmit(e) {
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, name, targetList, routingId, hideUnreachable, autoUpdateHours })
+        body: JSON.stringify({ url, subscriptionUrl: url, name, targetList, routingId, hideUnreachable, autoUpdateHours })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки подписки');
