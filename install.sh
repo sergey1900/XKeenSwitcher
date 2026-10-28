@@ -197,6 +197,12 @@ fi
 rm -rf "$TMP_DIR"
 echo -e "${GREEN}[OK] Файлы приложения установлены в $INSTALL_DIR${NC}"
 
+# Очистка устаревших конфигураций Split-DNS и отключение перехвата DNS
+rm -f /opt/etc/xray/configs/02_dns.json /opt/etc/xray/config/02_dns.json /opt/etc/xray/02_dns.json /opt/etc/xkeen/configs/02_dns.json 2>/dev/null || true
+if command -v xkeen >/dev/null 2>&1; then
+  xkeen -dns off >/dev/null 2>&1 || true
+fi
+
 echo -e "${BLUE}[3/5] Инициализация начальной конфигурации...${NC}"
 
 mkdir -p "$INSTALL_DIR/data"

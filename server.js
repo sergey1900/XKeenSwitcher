@@ -901,8 +901,32 @@ function detectConfigPaths() {
   }
 
   ensureMihomoGeodataSymlinks();
+  cleanupLegacyDnsArtifacts();
 
   return { outboundPath, routingPath };
+}
+
+// Automatically clean up any stale 02_dns.json files left over from legacy Split-DNS
+function cleanupLegacyDnsArtifacts() {
+  const candidateDnsFiles = [
+    '/opt/etc/xray/configs/02_dns.json',
+    '/opt/etc/xray/config/02_dns.json',
+    '/opt/etc/xray/02_dns.json',
+    '/opt/etc/xkeen/configs/02_dns.json',
+    '/opt/etc/xkeen/config/02_dns.json',
+    '/opt/etc/xkeen/02_dns.json',
+    '/opt/etc/v2ray/configs/02_dns.json'
+  ];
+  for (const f of candidateDnsFiles) {
+    if (fs.existsSync(f)) {
+      try {
+        fs.unlinkSync(f);
+        console.log(`[DNS Cleanup] Removed stale DNS configuration: ${f}`);
+      } catch (e) {
+        console.warn(`[DNS Cleanup] Failed to remove ${f}:`, e.message);
+      }
+    }
+  }
 }
 
 // Ensure dat symlinks for Xray and Mihomo if needed
@@ -4452,6 +4476,8 @@ function loadData() {
       if (!data.settings.stopCommand || data.settings.stopCommand.includes('S99xkeen-switcher')) {
         data.settings.stopCommand = 'xkeen -stop';
       }
+      if (data.settings.dnsPath) delete data.settings.dnsPath;
+      if (data.settings.dnsServers) delete data.settings.dnsServers;
 
       // Load Groups
       if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
@@ -4631,6 +4657,7 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
   let restartStatus = { executed: false, output: '', error: '' };
 
   try {
+    cleanupLegacyDnsArtifacts();
     if (isMihomoRequired) {
       // 1. Switch core to Mihomo if not already active (stop previous core first to release ports)
       if (coreInfo.activeCore !== 'mihomo' && coreInfo.hasMihomo) {
@@ -8076,6 +8103,8 @@ server.listen(PORT, HOST, () => {
   console.log(`===================================================`);
   console.log(`🚀 XKeenSwitcher 2.0 запущен на http://${HOST}:${PORT}`);
   console.log(`===================================================`);
+  cleanupLegacyDnsArtifacts();
+  runShellCommand('xkeen -dns off').catch(() => {});
   startFailoverWatchdog();
   startAutoFailoverWatchdog();
   startSubscriptionScheduler();
