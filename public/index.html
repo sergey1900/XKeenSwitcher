@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9.14">
+  <link rel="stylesheet" href="style.css?v=2.9.17">
 </head>
 <body>
   <div class="app-background"></div>
@@ -803,10 +803,6 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             ⚙️ Протоколы и сервисы
           </button>
-          <button type="button" class="routing-mode-tab" id="tab-routing-dns" onclick="switchRoutingTab('dns')">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
-            🌐 DNS / Split-DNS
-          </button>
           <button type="button" class="routing-mode-tab" id="tab-routing-json" onclick="switchRoutingTab('raw')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             💻 JSON
@@ -878,7 +874,7 @@
             <div class="routing-textareas-container">
               <!-- PROXY DOMAINS -->
               <div class="routing-text-pane" id="pane-proxy-domains">
-                <textarea id="builder-custom-proxy-domains" class="routing-textarea-large" placeholder="instagram.com # Соцсети&#10;chatgpt.com # ChatGPT&#10;oaistatic.com # Стили и скрипты ChatGPT&#10;oaiusercontent.com # Файлы и аватары&#10;youtube.com&#10;notion.so" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
+                <textarea id="builder-custom-proxy-domains" class="routing-textarea-large" placeholder="instagram.com # Соцсети&#10;youtube.com&#10;xda-developers.com&#10;xdaimages.com&#10;valnetcdn.com&#10;notion.so" spellcheck="false" oninput="updateRoutingListCounters()"></textarea>
               </div>
               <!-- PROXY IPS -->
               <div class="routing-text-pane hidden" id="pane-proxy-ips">
@@ -1085,83 +1081,6 @@
             </div>
             <div class="routing-card-hint">
               Куда направлять трафик, который не подошел ни под одно из указанных выше правил.
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 3: SPLIT-DNS & RESOLVER RULES -->
-        <div id="routing-section-dns" class="routing-builder-section hidden">
-          <div class="routing-card">
-            <div class="routing-card-header">
-              <span class="routing-card-title">🌐 Раздельный DNS (Split-DNS)</span>
-              <label class="switch-control">
-                <input type="checkbox" id="builder-dns-enable" onchange="toggleDnsSectionState()">
-                <span class="switch-slider"></span>
-              </label>
-            </div>
-            <div class="routing-card-hint">
-              Маршрутизация DNS-запросов через защищенный DoH-туннель или локальный резолвер роутера. Предотвращает утечки DNS (DNS Leaks) и позволяет резолвить заблокированные ресурсы через независимый DoH DNS.
-            </div>
-
-            <div id="dns-settings-body" class="dns-settings-body hidden" style="margin-top: 18px;">
-              <!-- DNS SERVER POOL HEADER & ADD BTN -->
-              <div class="dns-pool-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
-                <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Доступные DNS-серверы:</span>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="openAddDnsServerModal()">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Добавить свой DNS
-                </button>
-              </div>
-
-              <!-- DNS SERVERS CHIPS -->
-              <div class="dns-servers-chips" id="dns-servers-chips-container">
-                <!-- Dynamically populated chips -->
-              </div>
-
-              <!-- HELPER SYSTEM TOGGLES -->
-              <div class="routing-checks-grid" style="margin-top: 16px; margin-bottom: 16px;">
-                <label class="routing-check-item">
-                  <input type="checkbox" id="builder-dns-auto-proxy" checked>
-                  <div class="routing-check-item-text">
-                    <span class="routing-check-item-title">🛡️ Авто-резолв всех сайтов из списка «В туннель»</span>
-                    <span class="routing-check-item-desc">Автоматически направлять DNS-запросы доменов из белого списка в правило №1 через туннель</span>
-                  </div>
-                </label>
-                <label class="routing-check-item">
-                  <input type="checkbox" id="builder-dns-auto-ru" checked>
-                  <div class="routing-check-item-text">
-                    <span class="routing-check-item-title">🇷🇺 Резолвить российские домены локально</span>
-                    <span class="routing-check-item-desc">Зоны .ru, .su, .рф, Госуслуги, Yandex резолвить через локальный DNS без задержек</span>
-                  </div>
-                </label>
-              </div>
-
-              <!-- RULES LIST -->
-              <div class="dns-rules-header" style="display:flex; justify-content:space-between; align-items:center; margin-top: 20px; margin-bottom: 10px;">
-                <span style="font-size: 14px; font-weight: 600; color: var(--text-primary);">Правила выборочного резолва доменов</span>
-                <button type="button" class="btn btn-primary btn-sm" onclick="addDnsRule()">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  + Добавить правило DNS
-                </button>
-              </div>
-
-              <div id="dns-rules-list" class="dns-rules-list">
-                <!-- Dynamically populated rule cards -->
-              </div>
-
-              <!-- DEFAULT FALLBACK DNS -->
-              <div class="routing-card" style="margin-top: 16px; background: rgba(255,255,255,0.03); border: 1px dashed var(--glass-border);">
-                <div class="routing-card-header" style="margin-bottom: 8px;">
-                  <span class="routing-card-title">🎯 DNS по умолчанию (для всех остальных доменов)</span>
-                  <select id="builder-dns-default" class="form-control" style="max-width: 280px;">
-                    <!-- Populated from available servers -->
-                  </select>
-                </div>
-                <div class="routing-card-hint">
-                  Используется для запросов, не попавших ни под одно индивидуальное правило. Рекомендуется «Локальный Keenetic» для мгновенного резолва локальной сети.
-                </div>
-              </div>
-
             </div>
           </div>
         </div>
@@ -1412,41 +1331,6 @@
         <div class="modal-footer">
           <button type="submit" class="btn btn-primary" id="btn-save-group">Сохранить</button>
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-group-edit')">Отмена</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL: ADD CUSTOM DNS SERVER -->
-  <div class="modal-overlay hidden" id="modal-dns-server">
-    <div class="modal-card glass-card" style="max-width: 480px;">
-      <div class="modal-header">
-        <div>
-          <h3>Добавить свой DNS-сервер</h3>
-        </div>
-        <button type="button" class="close-btn" onclick="closeModal('modal-dns-server')">&times;</button>
-      </div>
-
-      <form id="form-dns-server" onsubmit="onAddDnsServerSubmit(event)">
-        <div class="form-group">
-          <label for="dns-new-name">Название DNS <span class="req">*</span></label>
-          <input type="text" id="dns-new-name" placeholder="Например: Мой DoH или AdGuard Home" required>
-        </div>
-
-        <div class="form-group">
-          <label for="dns-new-address">Адрес / DoH URL <span class="req">*</span></label>
-          <input type="text" id="dns-new-address" placeholder="https://doh.mullvad.net/dns-query или 1.1.1.1" required>
-          <div class="field-hint" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">Поддерживаются IP (например: 1.1.1.1, 192.168.1.50) и защищенные DoH HTTPS (https://.../dns-query).</div>
-        </div>
-
-        <div class="form-group" id="dns-new-port-group">
-          <label for="dns-new-port">Порт (для обычного IP DNS)</label>
-          <input type="number" id="dns-new-port" value="53" placeholder="53">
-        </div>
-
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-primary" id="btn-save-dns-server">Добавить</button>
-          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-dns-server')">Отмена</button>
         </div>
       </form>
     </div>
@@ -2231,6 +2115,6 @@
   <div id="toast-container"></div>
 
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.9.16"></script>
+  <script src="app.js?v=2.9.17"></script>
 </body>
 </html>

@@ -32,17 +32,6 @@ try {
   console.warn('Could not read package.json version:', e.message);
 }
 
-// Preset standard DNS servers for Split-DNS
-const DEFAULT_DNS_PRESETS = [
-  { id: 'dns_local', name: 'Локальный Keenetic', address: '192.168.1.1', port: 53, isPreset: true },
-  { id: 'dns_cf_doh', name: 'Cloudflare DoH', address: 'https://1.1.1.1/dns-query', isPreset: true },
-  { id: 'dns_google_doh', name: 'Google DoH', address: 'https://8.8.8.8/dns-query', isPreset: true },
-  { id: 'dns_quad9_doh', name: 'Quad9 DoH', address: 'https://9.9.9.9/dns-query', isPreset: true },
-  { id: 'dns_adguard_doh', name: 'AdGuard DoH', address: 'https://94.140.14.14/dns-query', isPreset: true },
-  { id: 'dns_cf_std', name: 'Cloudflare DNS (UDP/TCP)', address: '1.1.1.1', port: 53, isPreset: true },
-  { id: 'dns_google_std', name: 'Google DNS (UDP/TCP)', address: '8.8.8.8', port: 53, isPreset: true }
-];
-
 // Process error safety handlers
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught Exception:', err);
@@ -225,23 +214,6 @@ function extractProxyTag(conn) {
   return 'proxy';
 }
 
-// Extract server hostname if connection uses domain name instead of IP
-function extractServerDomain(conn) {
-  if (!conn) return null;
-  if (conn.address && typeof conn.address === 'string' && !net.isIP(conn.address.trim())) {
-    return conn.address.trim();
-  }
-  if (conn.outboundContent) {
-    try {
-      const meta = extractOutboundMetadata(conn.outboundContent);
-      if (meta && meta.serverAddress && !net.isIP(meta.serverAddress.trim())) {
-        return meta.serverAddress.trim();
-      }
-    } catch (e) {}
-  }
-  return null;
-}
-
 // Clean domains and IPs from comments (# or // or ;), preserving valid rules
 function extractCleanTargets(arr) {
   if (!Array.isArray(arr)) return [];
@@ -257,159 +229,8 @@ function extractCleanTargets(arr) {
   return res;
 }
 
-// Universal Xray DNS Compiler (02_dns.json)
-function formatDnsDomain(d) {
-  if (!d) return '';
-  d = d.trim();
-  if (!d) return '';
-  if (d.startsWith('*.')) return `domain:${d.slice(2)}`;
-  if (d.includes(':')) return d;
-  return `domain:${d}`;
-}
-
-function compileXrayDns(cfg, conn, dnsServersList) {
-  if (!cfg || !cfg.dnsConfig || !cfg.dnsConfig.enabled) {
-    return null;
-  }
-  const dnsConfig = cfg.dnsConfig;
-  const serversPool = Array.isArray(dnsServersList) && dnsServersList.length > 0
-    ? dnsServersList
-    : DEFAULT_DNS_PRESETS;
-
-  const findServer = (idOrAddr) => {
-    if (!idOrAddr) return { address: '192.168.1.1', port: 53 };
-    const found = serversPool.find(s => s.id === idOrAddr || s.address === idOrAddr);
-    if (found) return found;
-    return { address: idOrAddr, port: 53 };
-  };
-
-  const isLocalAddr = (addr) => {
-    if (!addr) return true;
-    if (addr === 'localhost' || addr === '127.0.0.1' || addr === '192.168.1.1') return true;
-    if (addr.startsWith('192.168.') || addr.startsWith('10.') || addr.startsWith('172.16.') || addr.startsWith('127.')) return true;
-    return false;
-  };
-
-  const servers = [];
-
-  // 0. Ensure active VPN server domain resolves via local/direct DNS to prevent connection deadlocks
-  const vpnHost = extractServerDomain(conn);
-  if (vpnHost) {
-    servers.push({
-      address: '192.168.1.1',
-      port: 53,
-      tag: 'dns-direct',
-      domains: [`full:${vpnHost}`],
-      skipFallback: true
-    });
-  }
-
-  const rules = Array.isArray(dnsConfig.rules) ? dnsConfig.rules : [];
-
-  for (let idx = 0; idx < rules.length; idx++) {
-    const r = rules[idx];
-    if (!r || !r.server) continue;
-    const srv = findServer(r.server);
-    if (!srv.address) continue;
-
-    const isLocal = isLocalAddr(srv.address);
-    const shouldProxy = Boolean(r.queryViaProxy);
-    const serverObj = {
-      address: srv.address,
-      tag: shouldProxy ? 'dns-remote' : 'dns-direct'
-    };
-    if (srv.port && srv.port !== 53 && !srv.address.startsWith('https://')) {
-      serverObj.port = Number(srv.port);
-    }
-
-    // Collect domains for this rule
-    let ruleDomains = extractCleanTargets(r.domains || []);
-    // If auto-proxy is enabled on this rule or on first rule by default
-    if (r.autoProxyDomains || (idx === 0 && dnsConfig.autoProxyDomains)) {
-      const proxyDomains = extractCleanTargets(cfg.customProxyDomains || []);
-      for (const d of proxyDomains) {
-        if (!ruleDomains.includes(d)) ruleDomains.push(d);
-      }
-    }
-
-    if (ruleDomains.length > 0) {
-      serverObj.domains = ruleDomains.map(formatDnsDomain).filter(Boolean);
-    }
-
-    // Fallbacks
-    if (Array.isArray(r.fallbacks) && r.fallbacks.length > 0) {
-      const fbList = r.fallbacks.map(fId => {
-        const fbSrv = findServer(fId);
-        return fbSrv ? fbSrv.address : null;
-      }).filter(Boolean);
-      if (fbList.length > 0) {
-        serverObj.fallbackServers = fbList;
-      }
-    }
-
-    servers.push(serverObj);
-  }
-
-  // Automatic Russian domains route to local DNS
-  if (dnsConfig.autoRuDomains !== false) {
-    const localSrv = findServer(dnsConfig.localDns || 'dns_local');
-    servers.push({
-      address: localSrv.address || '192.168.1.1',
-      port: Number(localSrv.port) || 53,
-      tag: 'dns-direct',
-      domains: [
-        'regexp:^([\\w\\-\\.]+\\.)ru$',
-        'regexp:^([\\w\\-\\.]+\\.)su$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--p1ai$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--p1acf$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80asehdb$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--c1avg$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80aswg$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--80adxhks$',
-        'regexp:^([\\w\\-\\.]+\\.)moscow$',
-        'regexp:^([\\w\\-\\.]+\\.)xn--d1acj3b$',
-        'ext:geosite_v2fly.dat:category-gov-ru',
-        'ext:geosite_v2fly.dat:yandex',
-        'ext:geosite_v2fly.dat:vk',
-        'domain:gosuslugi.ru',
-        'domain:yandex.ru',
-        'domain:ya.ru',
-        'domain:vk.com'
-      ],
-      skipFallback: true
-    });
-  }
-
-  // Default DNS server (for everything else)
-  const defSrv = findServer(dnsConfig.defaultServer || 'dns_local');
-  if (defSrv.address) {
-    const isDefLocal = isLocalAddr(defSrv.address);
-    const defObj = {
-      address: defSrv.address,
-      tag: isDefLocal ? 'dns-direct' : 'dns-remote'
-    };
-    if (defSrv.port && defSrv.port !== 53 && !defSrv.address.startsWith('https://')) {
-      defObj.port = Number(defSrv.port);
-    }
-    servers.push(defObj);
-  }
-  // Localhost fallback
-  servers.push({
-    address: 'localhost',
-    tag: 'dns-direct'
-  });
-
-  return JSON.stringify({
-    dns: {
-      tag: 'dns-remote',
-      servers: servers,
-      queryStrategy: 'UseIPv4'
-    }
-  }, null, 2);
-}
-
 // Universal Xray Routing Compiler
-function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, conn) {
+function compileXrayRouting(cfg, proxyTag = 'vless-reality') {
   if (!cfg || typeof cfg !== 'object') {
     return SYSTEM_ROUTING_ALL_VPN.content;
   }
@@ -418,65 +239,6 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, con
 
   const useGeosite = (cfg.useGeosite !== false);
   const useGeoip = (cfg.useGeoip !== false);
-
-  // 0. Always route active VPN server domain to direct to prevent connection deadlocks
-  const vpnHost = extractServerDomain(conn);
-  if (vpnHost) {
-    rules.push({
-      type: 'field',
-      domain: [`full:${vpnHost}`],
-      outboundTag: 'direct'
-    });
-  }
-
-  // 1. Split-DNS internal routing (if Split-DNS enabled)
-  if (cfg.dnsConfig && cfg.dnsConfig.enabled) {
-    rules.push({
-      type: 'field',
-      inboundTag: ['dns-remote'],
-      outboundTag: proxyTag
-    });
-    rules.push({
-      type: 'field',
-      inboundTag: ['dns-direct'],
-      outboundTag: 'direct'
-    });
-
-    // If any Split-DNS rule explicitly requests query via proxy, route that resolver's IP via tunnel
-    const proxyDnsIps = new Set();
-    const directDnsIps = new Set(['192.168.1.1/32', '127.0.0.1/32']);
-    const serversPool = Array.isArray(dnsServersList) && dnsServersList.length > 0 ? dnsServersList : DEFAULT_DNS_PRESETS;
-
-    if (Array.isArray(cfg.dnsConfig.rules)) {
-      for (const r of cfg.dnsConfig.rules) {
-        if (!r.queryViaProxy) continue;
-        const srv = serversPool.find(s => s.id === r.server || s.address === r.server);
-        if (srv && srv.address && net.isIP(srv.address)) {
-          proxyDnsIps.add(`${srv.address}/32`);
-        }
-        if (Array.isArray(r.fallbacks)) {
-          for (const fb of r.fallbacks) {
-            const fbSrv = serversPool.find(s => s.id === fb || s.address === fb);
-            if (fbSrv && fbSrv.address && net.isIP(fbSrv.address)) {
-              proxyDnsIps.add(`${fbSrv.address}/32`);
-            }
-          }
-        }
-      }
-    }
-    if (proxyDnsIps.size > 0) {
-      rules.push({
-        type: 'field',
-        ip: Array.from(proxyDnsIps),
-        outboundTag: proxyTag
-      });
-    }
-    rules.push({
-      type: 'field',
-      ip: Array.from(directDnsIps),
-      outboundTag: 'direct'
-    });
-  }
 
   // 1. NetBIOS dangerous ports
   if (cfg.blockNetbios) {
@@ -733,47 +495,45 @@ function compileXrayRouting(cfg, proxyTag = 'vless-reality', dnsServersList, con
     }
   }
 
-  // 10. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI / ChatGPT)
+  // 10. Extra GeoSite Proxy services (Google, Telegram, Meta, Twitter, Discord, OpenAI)
   if (cfg.geositeExtraProxy) {
-    const extraDomains = [];
     if (useGeosite) {
-      extraDomains.push(
-        'geosite:google',
-        'geosite:telegram',
-        'geosite:twitter',
-        'geosite:meta',
-        'geosite:discord',
-        'geosite:openai'
-      );
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'geosite:google',
+          'geosite:telegram',
+          'geosite:twitter',
+          'geosite:meta',
+          'geosite:discord',
+          'geosite:openai'
+        ]
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'domain:google.com',
+          'domain:youtube.com',
+          'domain:googlevideo.com',
+          'domain:t.me',
+          'domain:telegram.org',
+          'domain:twitter.com',
+          'domain:x.com',
+          'domain:instagram.com',
+          'domain:facebook.com',
+          'domain:cdninstagram.com',
+          'domain:discord.com',
+          'domain:discordapp.com',
+          'domain:openai.com',
+          'domain:chatgpt.com'
+        ]
+      });
     }
-    // Full domain fallback & complete coverage (including all essential OpenAI/ChatGPT web & voice assets)
-    extraDomains.push(
-      'domain:google.com',
-      'domain:youtube.com',
-      'domain:googlevideo.com',
-      'domain:t.me',
-      'domain:telegram.org',
-      'domain:twitter.com',
-      'domain:x.com',
-      'domain:instagram.com',
-      'domain:facebook.com',
-      'domain:cdninstagram.com',
-      'domain:discord.com',
-      'domain:discordapp.com',
-      'domain:openai.com',
-      'domain:chatgpt.com',
-      'domain:oaistatic.com',
-      'domain:oaiusercontent.com',
-      'domain:chat.com',
-      'domain:sora.com',
-      'domain:livekit.cloud'
-    );
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: proxyTag,
-      domain: extraDomains
-    });
   }
 
   // 11. Default Fallback
@@ -940,14 +700,6 @@ function compileMihomoRules(cfg) {
     lines.push('  - GEOSITE,meta,PROXY');
     lines.push('  - GEOSITE,discord,PROXY');
     lines.push('  - GEOSITE,openai,PROXY');
-    // Ensure all essential OpenAI / ChatGPT domains are proxied even if geosite is missing
-    lines.push('  - DOMAIN-SUFFIX,openai.com,PROXY');
-    lines.push('  - DOMAIN-SUFFIX,chatgpt.com,PROXY');
-    lines.push('  - DOMAIN-SUFFIX,oaistatic.com,PROXY');
-    lines.push('  - DOMAIN-SUFFIX,oaiusercontent.com,PROXY');
-    lines.push('  - DOMAIN-SUFFIX,chat.com,PROXY');
-    lines.push('  - DOMAIN-SUFFIX,sora.com,PROXY');
-    lines.push('  - DOMAIN-SUFFIX,livekit.cloud,PROXY');
   }
 
   // 12. Match Default
@@ -1040,11 +792,11 @@ function parseRawXrayToMihomoRules(rawJson) {
 }
 
 // Dynamic compilation for Xray routing file
-function compileRoutingForXray(routing, conn, dnsServersList) {
+function compileRoutingForXray(routing, conn) {
   if (!routing) return SYSTEM_ROUTING_ALL_VPN.content;
   const proxyTag = extractProxyTag(conn);
   if (routing.builderConfig) {
-    return compileXrayRouting(routing.builderConfig, proxyTag, dnsServersList, conn);
+    return compileXrayRouting(routing.builderConfig, proxyTag);
   }
   if (routing.content) {
     try {
@@ -1072,40 +824,6 @@ function compileRoutingForXray(routing, conn, dnsServersList) {
     return routing.content;
   }
   return SYSTEM_ROUTING_ALL_VPN.content;
-}
-
-// Synchronize Xray Split-DNS (02_dns.json & xkeen -dns on/off)
-async function syncXrayDns(routing, conn, settings) {
-  const dnsPath = (settings && settings.dnsPath) ? settings.dnsPath : '/opt/etc/xray/configs/02_dns.json';
-  const isEnabled = routing && routing.builderConfig && routing.builderConfig.dnsConfig && routing.builderConfig.dnsConfig.enabled;
-  if (isEnabled) {
-    const dnsServers = (settings && Array.isArray(settings.dnsServers)) ? settings.dnsServers : DEFAULT_DNS_PRESETS;
-    const dnsContent = compileXrayDns(routing.builderConfig, conn, dnsServers);
-    if (dnsContent) {
-      writeTargetFile(dnsPath, dnsContent);
-      // Ensure xkeen -dns is off to prevent router port 53 interception loops
-      try {
-        await runShellCommand('xkeen -dns off');
-      } catch (e) {
-        console.warn('Could not run xkeen -dns off:', e.message);
-      }
-      return true;
-    }
-  } else {
-    if (dnsPath && fs.existsSync(dnsPath)) {
-      try {
-        fs.unlinkSync(dnsPath);
-      } catch (e) {
-        console.warn('Could not remove dnsPath:', e.message);
-      }
-    }
-    try {
-      await runShellCommand('xkeen -dns off');
-    } catch (e) {
-      console.warn('Could not run xkeen -dns off:', e.message);
-    }
-    return false;
-  }
 }
 
 // Auto-detect existing xray/xkeen config paths on router
@@ -1136,7 +854,6 @@ function detectConfigPaths() {
 
   let outboundPath = path.join(detectedDir, '05_outbounds.json');
   let routingPath = path.join(detectedDir, '05_routing.json');
-  let dnsPath = path.join(detectedDir, '02_dns.json');
 
   if (fs.existsSync(detectedDir)) {
     try {
@@ -1178,13 +895,6 @@ function detectConfigPaths() {
           } catch (e) {}
         }
       }
-
-      // Look for DNS file
-      const dnsFile = files.find(f => /0[1234]_dns\.jsonc?$/i.test(f))
-        || files.find(f => /dns\.jsonc?$/i.test(f));
-      if (dnsFile) {
-        dnsPath = path.join(detectedDir, dnsFile);
-      }
     } catch (err) {
       console.error('Error scanning config directory:', err);
     }
@@ -1192,7 +902,7 @@ function detectConfigPaths() {
 
   ensureMihomoGeodataSymlinks();
 
-  return { outboundPath, routingPath, dnsPath, detectedDir };
+  return { outboundPath, routingPath };
 }
 
 // Ensure dat symlinks for Xray and Mihomo if needed
@@ -4636,8 +4346,6 @@ function loadData() {
     settings: {
       outboundPath: detected.outboundPath,
       routingPath: detected.routingPath,
-      dnsPath: detected.dnsPath,
-      dnsServers: DEFAULT_DNS_PRESETS,
       restartCommand: 'xkeen -restart',
       startCommand: 'xkeen -start',
       stopCommand: 'xkeen -stop',
@@ -4723,21 +4431,6 @@ function loadData() {
       if (data.settings.routingPath && !fs.existsSync(data.settings.routingPath) && fs.existsSync(detected.routingPath)) {
         data.settings.routingPath = detected.routingPath;
       }
-      if (data.settings.dnsPath && !fs.existsSync(data.settings.dnsPath) && fs.existsSync(detected.dnsPath)) {
-        data.settings.dnsPath = detected.dnsPath;
-      }
-      if (!data.settings.dnsPath) {
-        data.settings.dnsPath = detected.dnsPath;
-      }
-      const savedDnsServers = Array.isArray(parsed.settings && parsed.settings.dnsServers)
-        ? parsed.settings.dnsServers
-        : [];
-      const presets = DEFAULT_DNS_PRESETS.map(p => {
-        const found = savedDnsServers.find(s => s.id === p.id);
-        return found ? { ...p, ...found, isPreset: true } : p;
-      });
-      const customServers = savedDnsServers.filter(s => !s.isPreset && !DEFAULT_DNS_PRESETS.some(p => p.id === s.id));
-      data.settings.dnsServers = [...presets, ...customServers];
       if (!data.settings.defaultRoutingBlacklist) {
         data.settings.defaultRoutingBlacklist = 'routing_except_ru';
       }
@@ -4979,17 +4672,10 @@ async function activateConnectionInternal(connId, data, updateActiveState = true
         targetCore = 'xray';
       }
 
-      // Sync Split-DNS configuration
-      try {
-        await syncXrayDns(routing, conn, data.settings);
-      } catch (dnsErr) {
-        console.error('Error syncing DNS config:', dnsErr);
-      }
-
       // Standard connection: write Xray files
       writeTargetFile(outboundPath, conn.outboundContent);
       fileWriteStatus.outbound = true;
-      writeTargetFile(routingPath, compileRoutingForXray(routing, conn, data.settings.dnsServers));
+      writeTargetFile(routingPath, compileRoutingForXray(routing, conn));
       fileWriteStatus.routing = true;
     }
   } catch (err) {
@@ -6750,8 +6436,7 @@ const server = http.createServer(async (req, res) => {
 
       if (data.settings.activeConnectionId === id) {
         const { routingPath, restartCommand } = data.settings;
-        await syncXrayDns(targetRouting, conn, data.settings);
-        writeTargetFile(routingPath, compileRoutingForXray(targetRouting, conn, data.settings.dnsServers));
+        writeTargetFile(routingPath, compileRoutingForXray(targetRouting, conn));
         const isMihomoRequired = conn.protocol === 'wireguard' || conn.protocol === 'amneziawg' || conn.protocol === 'hysteria2' || conn.protocol === 'hy2' || Boolean(conn.amneziaConfig);
         const coreInfo = detectActiveProxyCore();
         if (isMihomoRequired || coreInfo.activeCore === 'mihomo') {
@@ -7495,8 +7180,7 @@ const server = http.createServer(async (req, res) => {
           customBlockDomains: parseList(body.builderConfig.customBlockDomains),
           customProxyIps: parseList(body.builderConfig.customProxyIps),
           customDirectIps: parseList(body.builderConfig.customDirectIps),
-          customBlockIps: parseList(body.builderConfig.customBlockIps),
-          dnsConfig: body.builderConfig.dnsConfig || null
+          customBlockIps: parseList(body.builderConfig.customBlockIps)
         };
         effectiveContent = compileXrayRouting(builderConfig, 'vless-reality');
       } else {
@@ -7646,8 +7330,7 @@ const server = http.createServer(async (req, res) => {
           customBlockDomains: parseList(body.builderConfig.customBlockDomains),
           customProxyIps: parseList(body.builderConfig.customProxyIps),
           customDirectIps: parseList(body.builderConfig.customDirectIps),
-          customBlockIps: parseList(body.builderConfig.customBlockIps),
-          dnsConfig: body.builderConfig.dnsConfig || null
+          customBlockIps: parseList(body.builderConfig.customBlockIps)
         };
         effectiveContent = compileXrayRouting(builderConfig, 'vless-reality');
       } else {
@@ -7686,8 +7369,7 @@ const server = http.createServer(async (req, res) => {
       const activeConn = data.connections.find(c => c.id === data.settings.activeConnectionId);
       if (activeConn && activeConn.routingId === id) {
         const { routingPath, restartCommand } = data.settings;
-        await syncXrayDns(routing, activeConn, data.settings);
-        writeTargetFile(routingPath, compileRoutingForXray(routing, activeConn, data.settings.dnsServers));
+        writeTargetFile(routingPath, compileRoutingForXray(routing, activeConn));
         const isMihomoRequired = activeConn.protocol === 'wireguard' || activeConn.protocol === 'amneziawg' || activeConn.protocol === 'hysteria2' || activeConn.protocol === 'hy2' || Boolean(activeConn.amneziaConfig);
         const coreInfo = detectActiveProxyCore();
         if (isMihomoRequired || coreInfo.activeCore === 'mihomo') {
@@ -7748,66 +7430,6 @@ const server = http.createServer(async (req, res) => {
     data.routings.splice(index, 1);
     saveData(data);
     return sendJson(res, 200, { message: 'Конфигурация маршрутизации удалена' });
-  }
-
-  // --- DNS SERVERS ROUTES ---
-
-  // GET /api/dns/servers - Get pool of DNS servers
-  if (urlParts === '/api/dns/servers' && req.method === 'GET') {
-    const data = loadData();
-    const servers = (data.settings && Array.isArray(data.settings.dnsServers) && data.settings.dnsServers.length > 0)
-      ? data.settings.dnsServers
-      : DEFAULT_DNS_PRESETS;
-    return sendJson(res, 200, { servers });
-  }
-
-  // POST /api/dns/servers - Add custom DNS server
-  if (urlParts === '/api/dns/servers' && req.method === 'POST') {
-    try {
-      const body = await parseJsonBody(req);
-      const { name, address, port } = body;
-      if (!name || !name.trim()) {
-        return sendJson(res, 400, { error: 'Укажите название DNS-сервера' });
-      }
-      if (!address || !address.trim()) {
-        return sendJson(res, 400, { error: 'Укажите адрес DNS-сервера (IP или DoH URL)' });
-      }
-      const data = loadData();
-      if (!Array.isArray(data.settings.dnsServers)) {
-        data.settings.dnsServers = [...DEFAULT_DNS_PRESETS];
-      }
-      const newServer = {
-        id: 'dns_custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-        name: name.trim(),
-        address: address.trim(),
-        port: port ? Number(port) : 53,
-        isPreset: false
-      };
-      data.settings.dnsServers.push(newServer);
-      saveData(data);
-      return sendJson(res, 201, { message: 'DNS-сервер добавлен', server: newServer, servers: data.settings.dnsServers });
-    } catch (err) {
-      return sendJson(res, 400, { error: err.message || 'Ошибка добавления DNS-сервера' });
-    }
-  }
-
-  // DELETE /api/dns/servers/:id - Delete custom DNS server
-  if (urlParts.startsWith('/api/dns/servers/') && req.method === 'DELETE') {
-    const id = urlParts.replace('/api/dns/servers/', '');
-    const data = loadData();
-    if (!Array.isArray(data.settings.dnsServers)) {
-      data.settings.dnsServers = [...DEFAULT_DNS_PRESETS];
-    }
-    const target = data.settings.dnsServers.find(s => s.id === id);
-    if (!target) {
-      return sendJson(res, 404, { error: 'DNS-сервер не найден' });
-    }
-    if (target.isPreset) {
-      return sendJson(res, 400, { error: 'Нельзя удалить предустановленный DNS-сервер' });
-    }
-    data.settings.dnsServers = data.settings.dnsServers.filter(s => s.id !== id);
-    saveData(data);
-    return sendJson(res, 200, { message: 'DNS-сервер удален', servers: data.settings.dnsServers });
   }
 
   // --- GEODATA ROUTES (GEOSITE & GEOIP) ---

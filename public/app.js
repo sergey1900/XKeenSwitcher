@@ -4412,17 +4412,15 @@ function switchRoutingTab(tab) {
   
   const tabLists = document.getElementById('tab-routing-lists');
   const tabRules = document.getElementById('tab-routing-rules');
-  const tabDns = document.getElementById('tab-routing-dns');
   const tabJson = document.getElementById('tab-routing-json');
 
   const secLists = document.getElementById('routing-section-lists');
   const secRules = document.getElementById('routing-section-rules');
-  const secDns = document.getElementById('routing-section-dns');
   const secJson = document.getElementById('routing-json-section');
   const formatBtn = document.getElementById('btn-format-routing');
 
-  [tabLists, tabRules, tabDns, tabJson].forEach(t => t?.classList.remove('active'));
-  [secLists, secRules, secDns, secJson].forEach(s => s?.classList.add('hidden'));
+  [tabLists, tabRules, tabJson].forEach(t => t?.classList.remove('active'));
+  [secLists, secRules, secJson].forEach(s => s?.classList.add('hidden'));
 
   if (tab === 'lists') {
     if (hiddenMode) hiddenMode.value = 'builder';
@@ -4438,12 +4436,6 @@ function switchRoutingTab(tab) {
     tabRules?.classList.add('active');
     secRules?.classList.remove('hidden');
     formatBtn?.classList.add('hidden');
-  } else if (tab === 'dns') {
-    if (hiddenMode) hiddenMode.value = 'builder';
-    tabDns?.classList.add('active');
-    secDns?.classList.remove('hidden');
-    formatBtn?.classList.add('hidden');
-    loadDnsServers();
   } else if (tab === 'raw') {
     if (hiddenMode) hiddenMode.value = 'raw';
     tabJson?.classList.add('active');
@@ -4732,50 +4724,6 @@ function collectBuilderConfig() {
     return val.split('\n').map(s => s.trimEnd()).filter(s => s.trim().length > 0);
   };
 
-  const dnsEnabled = Boolean(document.getElementById('builder-dns-enable')?.checked);
-  let dnsConfig = null;
-  if (dnsEnabled) {
-    const autoProxyDomains = Boolean(document.getElementById('builder-dns-auto-proxy')?.checked);
-    const autoRuDomains = Boolean(document.getElementById('builder-dns-auto-ru')?.checked);
-    const defaultServer = document.getElementById('builder-dns-default')?.value || 'dns_local';
-    
-    const ruleElements = document.querySelectorAll('.dns-rule-card');
-    const rules = [];
-    ruleElements.forEach((el) => {
-      const server = el.querySelector('.dns-rule-primary-select')?.value;
-      const domainsText = el.querySelector('.dns-rule-domains')?.value || '';
-      const domains = domainsText.split('\n').map(s => s.trimEnd()).filter(s => s.trim().length > 0);
-      const autoProxy = Boolean(el.querySelector('.dns-rule-auto-proxy')?.checked);
-      const queryViaProxy = Boolean(el.querySelector('.dns-rule-query-via-proxy')?.checked);
-      
-      const fallbackBadges = el.querySelectorAll('.dns-fallback-chip');
-      const fallbacks = [];
-      fallbackBadges.forEach(b => {
-        if (b.dataset.serverId) fallbacks.push(b.dataset.serverId);
-      });
-      
-      if (server) {
-        rules.push({
-          server,
-          fallbacks,
-          domains,
-          autoProxyDomains: autoProxy,
-          queryViaProxy
-        });
-      }
-    });
-
-    dnsConfig = {
-      enabled: true,
-      autoProxyDomains,
-      autoRuDomains,
-      defaultServer,
-      rules
-    };
-  } else {
-    dnsConfig = { enabled: false };
-  }
-
   return {
     defaultAction,
     bittorrent,
@@ -4794,8 +4742,7 @@ function collectBuilderConfig() {
     customDirectDomains: parseLines('builder-custom-direct-domains'),
     customDirectIps: parseLines('builder-custom-direct-ips'),
     customBlockDomains: parseLines('builder-custom-block-domains'),
-    customBlockIps: parseLines('builder-custom-block-ips'),
-    dnsConfig
+    customBlockIps: parseLines('builder-custom-block-ips')
   };
 }
 
@@ -4826,40 +4773,6 @@ function generateBuilderJson(cfg) {
 
   const useGeosite = (cfg.useGeosite !== false);
   const useGeoip = (cfg.useGeoip !== false);
-
-  // Split-DNS internal routing
-  if (cfg.dnsConfig && cfg.dnsConfig.enabled) {
-    rules.push({ type: 'field', inboundTag: ['dns-remote'], outboundTag: proxyTag });
-    rules.push({ type: 'field', inboundTag: ['dns-direct'], outboundTag: 'direct' });
-
-    const proxyDnsIps = new Set();
-    const directDnsIps = new Set(['192.168.1.1/32', '127.0.0.1/32']);
-    if (Array.isArray(cfg.dnsConfig.rules)) {
-      for (const r of cfg.dnsConfig.rules) {
-        if (!r.queryViaProxy) continue;
-        const srv = (typeof availableDnsServers !== 'undefined')
-          ? availableDnsServers.find(s => s.id === r.server || s.address === r.server)
-          : null;
-        if (srv && srv.address && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(srv.address)) {
-          proxyDnsIps.add(`${srv.address}/32`);
-        }
-        if (Array.isArray(r.fallbacks)) {
-          for (const fb of r.fallbacks) {
-            const fbSrv = (typeof availableDnsServers !== 'undefined')
-              ? availableDnsServers.find(s => s.id === fb || s.address === fb)
-              : null;
-            if (fbSrv && fbSrv.address && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(fbSrv.address)) {
-              proxyDnsIps.add(`${fbSrv.address}/32`);
-            }
-          }
-        }
-      }
-    }
-    if (proxyDnsIps.size > 0) {
-      rules.push({ type: 'field', ip: Array.from(proxyDnsIps), outboundTag: proxyTag });
-    }
-    rules.push({ type: 'field', ip: Array.from(directDnsIps), outboundTag: 'direct' });
-  }
 
   if (cfg.blockNetbios) {
     rules.push({ type: 'field', inboundTag: inbounds, outboundTag: 'block', network: 'udp', port: '135,137,138,139' });
@@ -5015,45 +4928,43 @@ function generateBuilderJson(cfg) {
     }
   }
   if (cfg.geositeExtraProxy) {
-    const extraDomains = [];
     if (useGeosite) {
-      extraDomains.push(
-        'geosite:google',
-        'geosite:telegram',
-        'geosite:twitter',
-        'geosite:meta',
-        'geosite:discord',
-        'geosite:openai'
-      );
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'geosite:google',
+          'geosite:telegram',
+          'geosite:twitter',
+          'geosite:meta',
+          'geosite:discord',
+          'geosite:openai'
+        ]
+      });
+    } else {
+      rules.push({
+        type: 'field',
+        inboundTag: inbounds,
+        outboundTag: proxyTag,
+        domain: [
+          'domain:google.com',
+          'domain:youtube.com',
+          'domain:googlevideo.com',
+          'domain:t.me',
+          'domain:telegram.org',
+          'domain:twitter.com',
+          'domain:x.com',
+          'domain:instagram.com',
+          'domain:facebook.com',
+          'domain:cdninstagram.com',
+          'domain:discord.com',
+          'domain:discordapp.com',
+          'domain:openai.com',
+          'domain:chatgpt.com'
+        ]
+      });
     }
-    // Complete coverage including all OpenAI / ChatGPT assets
-    extraDomains.push(
-      'domain:google.com',
-      'domain:youtube.com',
-      'domain:googlevideo.com',
-      'domain:t.me',
-      'domain:telegram.org',
-      'domain:twitter.com',
-      'domain:x.com',
-      'domain:instagram.com',
-      'domain:facebook.com',
-      'domain:cdninstagram.com',
-      'domain:discord.com',
-      'domain:discordapp.com',
-      'domain:openai.com',
-      'domain:chatgpt.com',
-      'domain:oaistatic.com',
-      'domain:oaiusercontent.com',
-      'domain:chat.com',
-      'domain:sora.com',
-      'domain:livekit.cloud'
-    );
-    rules.push({
-      type: 'field',
-      inboundTag: inbounds,
-      outboundTag: proxyTag,
-      domain: extraDomains
-    });
   }
   rules.push({
     type: 'field',
@@ -5112,337 +5023,7 @@ function populateBuilderForm(cfg = {}) {
   setText('builder-custom-block-domains', cfg.customBlockDomains);
   setText('builder-custom-block-ips', cfg.customBlockIps);
 
-  // Split-DNS settings population
-  const dnsConfig = cfg.dnsConfig || { enabled: false };
-  const dnsEnableCb = document.getElementById('builder-dns-enable');
-  if (dnsEnableCb) {
-    dnsEnableCb.checked = Boolean(dnsConfig.enabled);
-    toggleDnsSectionState();
-  }
-  const autoProxyCb = document.getElementById('builder-dns-auto-proxy');
-  if (autoProxyCb) autoProxyCb.checked = dnsConfig.autoProxyDomains !== false;
-  const autoRuCb = document.getElementById('builder-dns-auto-ru');
-  if (autoRuCb) autoRuCb.checked = dnsConfig.autoRuDomains !== false;
-  updateDnsDefaultSelect(dnsConfig.defaultServer || 'dns_local');
-  renderDnsRules(dnsConfig.rules || []);
-
   updateRoutingListCounters();
-}
-
-// ==========================================================================
-// SPLIT-DNS CLIENT LOGIC & RULES BUILDER
-// ==========================================================================
-
-let availableDnsServers = [
-  { id: 'dns_local', name: 'Локальный Keenetic', address: '192.168.1.1', port: 53, isPreset: true },
-  { id: 'dns_cf_doh', name: 'Cloudflare DoH', address: 'https://1.1.1.1/dns-query', isPreset: true },
-  { id: 'dns_google_doh', name: 'Google DoH', address: 'https://8.8.8.8/dns-query', isPreset: true },
-  { id: 'dns_quad9_doh', name: 'Quad9 DoH', address: 'https://9.9.9.9/dns-query', isPreset: true },
-  { id: 'dns_adguard_doh', name: 'AdGuard DoH', address: 'https://94.140.14.14/dns-query', isPreset: true },
-  { id: 'dns_cf_std', name: 'Cloudflare DNS (UDP/TCP)', address: '1.1.1.1', port: 53, isPreset: true },
-  { id: 'dns_google_std', name: 'Google DNS (UDP/TCP)', address: '8.8.8.8', port: 53, isPreset: true }
-];
-
-async function loadDnsServers() {
-  try {
-    const res = await fetch('/api/dns/servers');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.servers) && data.servers.length > 0) {
-        availableDnsServers = data.servers;
-      }
-    }
-  } catch (e) {
-    console.warn('Could not load /api/dns/servers:', e);
-  }
-  renderDnsServerChips();
-  updateDnsDefaultSelect();
-  refreshAllDnsRuleSelects();
-}
-
-function renderDnsServerChips() {
-  const container = document.getElementById('dns-servers-chips-container');
-  if (!container) return;
-
-  container.innerHTML = availableDnsServers.map(s => {
-    const isDoH = s.address && s.address.startsWith('https://');
-    const badgeType = isDoH ? 'DoH' : (s.port ? `:${s.port}` : 'UDP');
-    const deleteBtn = !s.isPreset
-      ? `<button type="button" class="dns-chip-delete" onclick="deleteCustomDnsServer('${s.id}')" title="Удалить свой DNS">✕</button>`
-      : '';
-    return `
-      <div class="dns-server-chip" title="${escapeHtml(s.address)}">
-        <span>${escapeHtml(s.name)}</span>
-        <span class="dns-chip-badge">${badgeType}</span>
-        ${deleteBtn}
-      </div>
-    `;
-  }).join('');
-}
-
-function updateDnsDefaultSelect(selectedId) {
-  const sel = document.getElementById('builder-dns-default');
-  if (!sel) return;
-  const curr = selectedId || sel.value || 'dns_local';
-  sel.innerHTML = availableDnsServers.map(s => {
-    return `<option value="${s.id}" ${s.id === curr ? 'selected' : ''}>${escapeHtml(s.name)} (${escapeHtml(s.address)})</option>`;
-  }).join('');
-}
-
-function toggleDnsSectionState() {
-  const enabled = Boolean(document.getElementById('builder-dns-enable')?.checked);
-  const body = document.getElementById('dns-settings-body');
-  if (!body) return;
-  if (enabled) {
-    body.classList.remove('hidden');
-    // If no rules exist yet, add rule 1
-    const list = document.getElementById('dns-rules-list');
-    if (list && list.children.length === 0) {
-      addDnsRule({
-        server: 'dns_cf_doh',
-        fallbacks: ['dns_google_doh'],
-        domains: [],
-        autoProxyDomains: true
-      });
-    }
-  } else {
-    body.classList.add('hidden');
-  }
-}
-
-function openAddDnsServerModal() {
-  const nameEl = document.getElementById('dns-new-name');
-  const addrEl = document.getElementById('dns-new-address');
-  const portEl = document.getElementById('dns-new-port');
-  if (nameEl) nameEl.value = '';
-  if (addrEl) addrEl.value = '';
-  if (portEl) portEl.value = '53';
-  openModal('modal-dns-server');
-}
-
-function closeAddDnsServerModal() {
-  closeModal('modal-dns-server');
-}
-
-async function onAddDnsServerSubmit(e) {
-  e.preventDefault();
-  const name = document.getElementById('dns-new-name')?.value.trim();
-  const address = document.getElementById('dns-new-address')?.value.trim();
-  const port = document.getElementById('dns-new-port')?.value.trim();
-
-  if (!name || !address) {
-    showToast('Заполните название и адрес DNS-сервера', 'warning');
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/dns/servers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, address, port })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка добавления DNS');
-    showToast('DNS-сервер добавлен', 'success');
-    closeModal('modal-dns-server');
-    await loadDnsServers();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-async function deleteCustomDnsServer(id) {
-  if (!confirm('Удалить этот DNS-сервер из списка?')) return;
-  try {
-    const res = await fetch(`/api/dns/servers/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка удаления DNS');
-    showToast('DNS-сервер удален', 'success');
-    await loadDnsServers();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-function renderDnsRules(rules = []) {
-  const container = document.getElementById('dns-rules-list');
-  if (!container) return;
-  container.innerHTML = '';
-
-  if (!rules || rules.length === 0) {
-    addDnsRule({
-      server: 'dns_cf_doh',
-      fallbacks: ['dns_google_doh'],
-      domains: [],
-      autoProxyDomains: true
-    });
-    return;
-  }
-
-  rules.forEach(r => addDnsRule(r));
-}
-
-function addDnsRule(ruleData = {}) {
-  const container = document.getElementById('dns-rules-list');
-  if (!container) return;
-
-  const ruleIndex = container.children.length + 1;
-  const primaryId = ruleData.server || 'dns_cf_doh';
-  const domainsStr = Array.isArray(ruleData.domains) ? ruleData.domains.join('\n') : (ruleData.domains || '');
-  const autoProxy = ruleData.autoProxyDomains !== false;
-  const queryViaProxy = Boolean(ruleData.queryViaProxy);
-  const fallbacks = Array.isArray(ruleData.fallbacks) ? ruleData.fallbacks : [];
-
-  const card = document.createElement('div');
-  card.className = 'dns-rule-card';
-
-  card.innerHTML = `
-    <div class="dns-rule-header">
-      <div class="dns-rule-title-group" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <span class="dns-rule-badge">Правило №${ruleIndex}</span>
-        <label class="routing-check-item" style="padding: 2px 6px; font-size: 0.78rem;">
-          <input type="checkbox" class="dns-rule-auto-proxy" ${autoProxy ? 'checked' : ''}>
-          <span>Включать домены из списка «В туннель»</span>
-        </label>
-        <label class="routing-check-item" style="padding: 2px 6px; font-size: 0.78rem;">
-          <input type="checkbox" class="dns-rule-query-via-proxy" ${queryViaProxy ? 'checked' : ''}>
-          <span>🛡️ Запросы к резолверу через туннель</span>
-        </label>
-      </div>
-      <button type="button" class="btn-text-action" onclick="removeDnsRule(this)" style="color:#f87171;" title="Удалить правило">
-        ✕ Удалить
-      </button>
-    </div>
-
-    <div class="dns-rule-row">
-      <div>
-        <div class="dns-rule-field-label">Основной DNS-сервер:</div>
-        <select class="form-control dns-rule-primary-select" onchange="onDnsRulePrimaryChange(this)">
-          ${availableDnsServers.map(s => `
-            <option value="${s.id}" ${s.id === primaryId ? 'selected' : ''}>${escapeHtml(s.name)} (${escapeHtml(s.address)})</option>
-          `).join('')}
-        </select>
-      </div>
-
-      <div>
-        <div class="dns-rule-field-label">
-          <span>Резервные DNS (fallback):</span>
-          <select class="dns-fallback-add-select" onchange="addDnsFallbackToRule(this)">
-            <option value="">+ Добавить резервный</option>
-            ${availableDnsServers.map(s => `
-              <option value="${s.id}">${escapeHtml(s.name)}</option>
-            `).join('')}
-          </select>
-        </div>
-        <div class="dns-fallbacks-wrap">
-          ${fallbacks.map(fId => {
-            const fbSrv = availableDnsServers.find(s => s.id === fId);
-            const name = fbSrv ? fbSrv.name : fId;
-            return `
-              <span class="dns-fallback-chip" data-server-id="${escapeHtml(fId)}">
-                <span>${escapeHtml(name)}</span>
-                <button type="button" class="dns-fallback-chip-del" onclick="removeDnsFallback(this)">✕</button>
-              </span>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <div class="dns-rule-field-label">
-        <span>Домены для резолва через этот DNS (по одному в строке):</span>
-      </div>
-      <textarea class="form-control dns-rule-domains" rows="3" placeholder="rutracker.org&#10;nnmclub.to&#10;*.google.com&#10;domain:openai.com" style="font-family: monospace; font-size: 0.82rem;">${escapeHtml(domainsStr)}</textarea>
-    </div>
-  `;
-
-  container.appendChild(card);
-  updateDnsRuleBadges();
-}
-
-function removeDnsRule(btn) {
-  const card = btn.closest('.dns-rule-card');
-  if (!card) return;
-  card.remove();
-  updateDnsRuleBadges();
-}
-
-function updateDnsRuleBadges() {
-  const container = document.getElementById('dns-rules-list');
-  if (!container) return;
-  const cards = container.querySelectorAll('.dns-rule-card');
-  cards.forEach((card, idx) => {
-    const badge = card.querySelector('.dns-rule-badge');
-    if (badge) badge.textContent = `Правило №${idx + 1}`;
-  });
-}
-
-function onDnsRulePrimaryChange(selectEl) {
-  // Available hook
-}
-
-function addDnsFallbackToRule(selectEl) {
-  const serverId = selectEl.value;
-  if (!serverId) return;
-  selectEl.value = '';
-
-  const card = selectEl.closest('.dns-rule-card');
-  if (!card) return;
-
-  const primarySelect = card.querySelector('.dns-rule-primary-select');
-  if (primarySelect && primarySelect.value === serverId) {
-    showToast('Основной сервер уже выбран как primary', 'warning');
-    return;
-  }
-
-  const wrap = card.querySelector('.dns-fallbacks-wrap');
-  if (!wrap) return;
-
-  const existing = wrap.querySelector(`[data-server-id="${serverId}"]`);
-  if (existing) {
-    showToast('Этот резервный DNS уже добавлен', 'info');
-    return;
-  }
-
-  const srv = availableDnsServers.find(s => s.id === serverId);
-  const name = srv ? srv.name : serverId;
-
-  const chip = document.createElement('span');
-  chip.className = 'dns-fallback-chip';
-  chip.dataset.serverId = serverId;
-  chip.innerHTML = `
-    <span>${escapeHtml(name)}</span>
-    <button type="button" class="dns-fallback-chip-del" onclick="removeDnsFallback(this)">✕</button>
-  `;
-  wrap.appendChild(chip);
-}
-
-function removeDnsFallback(btn) {
-  const chip = btn.closest('.dns-fallback-chip');
-  if (chip) chip.remove();
-}
-
-function refreshAllDnsRuleSelects() {
-  const cards = document.querySelectorAll('.dns-rule-card');
-  cards.forEach(card => {
-    const primarySelect = card.querySelector('.dns-rule-primary-select');
-    if (primarySelect) {
-      const currentVal = primarySelect.value;
-      primarySelect.innerHTML = availableDnsServers.map(s => `
-        <option value="${s.id}" ${s.id === currentVal ? 'selected' : ''}>${escapeHtml(s.name)} (${escapeHtml(s.address)})</option>
-      `).join('');
-    }
-    const fbSelect = card.querySelector('.dns-fallback-add-select');
-    if (fbSelect) {
-      fbSelect.innerHTML = `
-        <option value="">+ Добавить резервный</option>
-        ${availableDnsServers.map(s => `
-          <option value="${s.id}">${escapeHtml(s.name)}</option>
-        `).join('')}
-      `;
-    }
-  });
 }
 
 // Check status of geosite.dat and geoip.dat
