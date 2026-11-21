@@ -6018,13 +6018,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   align-items: center;
 }
 
-.quick-add-icon {
-  position: absolute;
-  left: 11px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
+input.quick-add-input,
 .quick-add-input {
   width: 100%;
   background: rgba(0, 0, 0, 0.4);
@@ -6032,11 +6026,12 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="url"]:focus, i
   border-radius: 8px;
   color: #f1f5f9;
   font-size: 0.86rem;
-  padding: 9px 12px 9px 34px;
+  padding: 9px 14px !important;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   outline: none;
 }
 
+input.quick-add-input:focus,
 .quick-add-input:focus {
   border-color: rgba(99, 102, 241, 0.6);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
