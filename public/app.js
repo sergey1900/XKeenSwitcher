@@ -167,6 +167,8 @@ async function loadData() {
     if (data.version) {
       const verEl = document.getElementById('app-version-text');
       if (verEl) verEl.textContent = `v${data.version}`;
+      const brandTag = document.querySelector('.brand-title-row .version-tag');
+      if (brandTag) brandTag.textContent = `v${data.version.split('.').slice(0, 2).join('.')}`;
     }
 
     // Check for updates on GitHub in the background
